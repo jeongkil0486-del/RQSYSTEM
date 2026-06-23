@@ -1847,9 +1847,12 @@
             currentDept = "";
             isAdmin = false;
             isSuperAdmin = false;
-            // 슈퍼관리자 패널 숨김
+            _superResetTargetAdminId = "";
+            // 슈퍼관리자 패널 및 팝업 숨김
             var sap = document.getElementById("superAdminPanel");
             if (sap) sap.style.display = "none";
+            var srm = document.getElementById("superResetChoiceModal");
+            if (srm) srm.style.display = "none";
             var grid = document.getElementById("mainCalendarGrid");
             if (grid) grid.style.display = "";
             currentAppMode = "NORMAL";
