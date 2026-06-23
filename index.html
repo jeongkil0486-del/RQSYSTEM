@@ -414,10 +414,59 @@
             </div>
             
             <!-- 슈퍼 관리자 전용 패널 -->
-            <div id="superAdminPanel" style="display:none; flex-direction:column; gap:15px; padding:10px;">
+            <div id="superAdminPanel" style="display:none; flex-direction:column; gap:15px; padding:10px; max-height:80vh; overflow-y:auto;">
+
+                <!-- 섹션1: 관리자 계정 비밀번호 초기화 -->
                 <div style="background:#fff3f3; border:1px solid #e53935; border-radius:8px; padding:15px;">
                     <div style="font-size:15px; font-weight:bold; color:#e53935; margin-bottom:12px;">🔑 관리자 계정 비밀번호 초기화</div>
                     <div id="superAdminPanelContent" style="overflow-x:auto;">로딩중...</div>
+                </div>
+
+                <!-- 섹션2: 지점별 직원 ID 일괄 등록 (엑셀 업로드) -->
+                <div style="background:#f0f7ff; border:1px solid #1565c0; border-radius:8px; padding:15px;">
+                    <div style="font-size:15px; font-weight:bold; color:#1565c0; margin-bottom:4px;">📋 지점별 직원 ID 일괄 등록 (엑셀 업로드)</div>
+                    <div style="font-size:12px; color:#888; margin-bottom:12px;">※ 엑셀 A열에 이름만 입력 / 1행은 헤더(무시됨) / 기존 명단에 추가됩니다 / 전 지점 중복 불가</div>
+
+                    <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:10px;">
+                        <label style="font-weight:bold; min-width:60px;">지점 선택:</label>
+                        <select id="superDeptSelect" style="padding:7px 12px; border:1px solid #ccc; border-radius:5px; font-size:13px;">
+                            <option value="">-- 지점 선택 --</option>
+                            <option value="TAE">TAE (대구)</option>
+                            <option value="PUS">PUS (부산)</option>
+                            <option value="CJJ">CJJ (청주)</option>
+                            <option value="KWJ">KWJ (광주)</option>
+                            <option value="ICN">ICN (인천)</option>
+                            <option value="GMP">GMP (김포)</option>
+                            <option value="CJU">CJU (제주)</option>
+                            <option value="RR">RR (예약센터)</option>
+                        </select>
+                        <label style="font-weight:bold; min-width:80px;">엑셀 파일:</label>
+                        <input type="file" id="superExcelUpload" accept=".xlsx,.xls" style="font-size:13px;">
+                        <button onclick="uploadDeptExcel()" style="background:#1565c0; color:#fff; border:none; border-radius:6px; padding:8px 18px; font-size:13px; font-weight:bold; cursor:pointer;">📤 업로드</button>
+                        <button onclick="downloadExcelTemplate()" style="background:#43a047; color:#fff; border:none; border-radius:6px; padding:8px 14px; font-size:13px; font-weight:bold; cursor:pointer;">📥 양식 다운로드</button>
+                    </div>
+                    <div id="uploadResultMsg" style="font-size:13px; color:#1565c0; min-height:20px;"></div>
+                </div>
+
+                <!-- 섹션3: 지점별 직원 비밀번호 초기화 -->
+                <div style="background:#fff8e1; border:1px solid #f9a825; border-radius:8px; padding:15px;">
+                    <div style="font-size:15px; font-weight:bold; color:#e65100; margin-bottom:12px;">🔒 지점별 전체 비밀번호 초기화</div>
+                    <div id="superResetPanelContent" style="overflow-x:auto;">로딩중...</div>
+                </div>
+
+            </div>
+
+            <!-- 슈퍼관리자 초기화 선택 팝업 -->
+            <div id="superResetChoiceModal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.55); z-index:99999; justify-content:center; align-items:center;">
+                <div style="background:#fff; border-radius:14px; padding:28px 26px 22px; width:340px; max-width:94%; box-shadow:0 8px 32px rgba(0,0,0,0.35); text-align:center; box-sizing:border-box;">
+                    <div style="font-size:20px; margin-bottom:6px;">🔒</div>
+                    <div style="font-size:15px; font-weight:bold; color:#222; margin-bottom:4px;" id="superResetModalDeptLabel">지점 초기화</div>
+                    <div style="font-size:12px; color:#888; margin-bottom:18px; line-height:1.6;">초기화 대상을 선택해주세요.<br>삭제된 비밀번호는 복구할 수 없습니다.</div>
+                    <div style="display:flex; flex-direction:column; gap:10px;">
+                        <button id="superResetAdminBtn" onclick="executeSuperReset('ADMIN')" style="background:#e53935; color:#fff; border:none; border-radius:8px; padding:13px; font-size:13px; font-weight:bold; cursor:pointer;">관리자 비밀번호만 초기화</button>
+                        <button id="superResetStaffBtn" onclick="executeSuperReset('STAFF')" style="background:#e67e22; color:#fff; border:none; border-radius:8px; padding:13px; font-size:13px; font-weight:bold; cursor:pointer;">해당 지점 직원 비밀번호 전체 초기화</button>
+                        <button onclick="closeSuperResetModal()" style="background:#adb5bd; color:#fff; border:none; border-radius:8px; padding:11px; font-size:13px; font-weight:bold; cursor:pointer; margin-top:2px;">취소</button>
+                    </div>
                 </div>
             </div>
 
@@ -1180,22 +1229,22 @@
             var container = document.getElementById("superAdminPanelContent");
             if (!container) return;
             var adminList = Object.keys(ADMIN_ACCOUNTS);
-            var html = "<table style='width:100%; border-collapse:collapse; font-size:14px;'>";
-            html += "<tr style='background:#f0f0f0;'><th style='padding:10px; border:1px solid #ddd; text-align:left;'>관리자 ID</th><th style='padding:10px; border:1px solid #ddd;'>지점</th><th style='padding:10px; border:1px solid #ddd;'>현재 비밀번호</th><th style='padding:10px; border:1px solid #ddd;'>초기화</th></tr>";
-
             var loaded = 0;
             var passMap = {};
+            container.innerHTML = "로딩중...";
             adminList.forEach(function(id) {
                 db.ref("trinity_system/__admin_pass__/" + id).once("value", function(snap) {
                     passMap[id] = snap.val() !== null ? snap.val() : ADMIN_DEFAULT_PASS[id];
                     loaded++;
                     if (loaded === adminList.length) {
+                        var html = "<table style='width:100%; border-collapse:collapse; font-size:13px;'>";
+                        html += "<tr style='background:#f0f0f0;'><th style='padding:8px; border:1px solid #ddd; text-align:left;'>관리자 ID</th><th style='padding:8px; border:1px solid #ddd;'>지점</th><th style='padding:8px; border:1px solid #ddd;'>현재 비밀번호</th><th style='padding:8px; border:1px solid #ddd;'>초기화</th></tr>";
                         adminList.forEach(function(id) {
                             html += "<tr>";
-                            html += "<td style='padding:10px; border:1px solid #ddd; font-weight:bold;'>" + id + "</td>";
-                            html += "<td style='padding:10px; border:1px solid #ddd; text-align:center; color:#555;'>" + ADMIN_ACCOUNTS[id].label + "</td>";
-                            html += "<td style='padding:10px; border:1px solid #ddd; text-align:center;'><code>" + passMap[id] + "</code></td>";
-                            html += "<td style='padding:10px; border:1px solid #ddd; text-align:center;'><button onclick=\"resetAdminPassword('" + id + "')\" style='background:#e53935; color:#fff; border:none; border-radius:5px; padding:6px 14px; cursor:pointer; font-weight:bold;'>초기화</button></td>";
+                            html += "<td style='padding:8px; border:1px solid #ddd; font-weight:bold;'>" + id + "</td>";
+                            html += "<td style='padding:8px; border:1px solid #ddd; text-align:center; color:#555;'>" + ADMIN_ACCOUNTS[id].label + "</td>";
+                            html += "<td style='padding:8px; border:1px solid #ddd; text-align:center;'><code>" + passMap[id] + "</code></td>";
+                            html += "<td style='padding:8px; border:1px solid #ddd; text-align:center;'><button onclick=\"resetAdminPassword('" + id + "')\" style='background:#e53935; color:#fff; border:none; border-radius:5px; padding:5px 12px; cursor:pointer; font-weight:bold; font-size:12px;'>초기화</button></td>";
                             html += "</tr>";
                         });
                         html += "</table>";
@@ -1203,6 +1252,176 @@
                     }
                 });
             });
+
+            // 섹션3: 지점별 직원 비밀번호 초기화 테이블
+            drawSuperResetPanel();
+        }
+
+        function drawSuperResetPanel() {
+            var container = document.getElementById("superResetPanelContent");
+            if (!container) return;
+            var adminList = Object.keys(ADMIN_ACCOUNTS);
+            var html = "<table style='width:100%; border-collapse:collapse; font-size:13px;'>";
+            html += "<tr style='background:#fff3e0;'><th style='padding:8px; border:1px solid #ddd; text-align:left;'>관리자 ID</th><th style='padding:8px; border:1px solid #ddd;'>지점</th><th style='padding:8px; border:1px solid #ddd;'>비밀번호 초기화</th></tr>";
+            adminList.forEach(function(id) {
+                html += "<tr>";
+                html += "<td style='padding:8px; border:1px solid #ddd; font-weight:bold;'>" + id + "</td>";
+                html += "<td style='padding:8px; border:1px solid #ddd; text-align:center; color:#555;'>" + ADMIN_ACCOUNTS[id].label + "</td>";
+                html += "<td style='padding:8px; border:1px solid #ddd; text-align:center;'><button onclick=\"openSuperResetModal('" + id + "')\" style='background:#e67e22; color:#fff; border:none; border-radius:5px; padding:5px 12px; cursor:pointer; font-weight:bold; font-size:12px;'>초기화 선택</button></td>";
+                html += "</tr>";
+            });
+            html += "</table>";
+            container.innerHTML = html;
+        }
+
+        // 슈퍼관리자 초기화 팝업
+        var _superResetTargetAdminId = "";
+        function openSuperResetModal(adminId) {
+            if (!isSuperAdmin) return;
+            _superResetTargetAdminId = adminId;
+            var info = ADMIN_ACCOUNTS[adminId];
+            document.getElementById("superResetModalDeptLabel").innerText = info ? info.label + " 초기화 선택" : "초기화 선택";
+            document.getElementById("superResetChoiceModal").style.display = "flex";
+        }
+        function closeSuperResetModal() {
+            document.getElementById("superResetChoiceModal").style.display = "none";
+            _superResetTargetAdminId = "";
+        }
+        function executeSuperReset(mode) {
+            if (!isSuperAdmin || !_superResetTargetAdminId) return;
+            var adminId = _superResetTargetAdminId;
+            var dept = ADMIN_ACCOUNTS[adminId] ? ADMIN_ACCOUNTS[adminId].dept : null;
+            if (!dept) { alert("지점 정보를 찾을 수 없습니다."); closeSuperResetModal(); return; }
+
+            if (mode === "ADMIN") {
+                if (!confirm("[" + adminId + "] 관리자 비밀번호를 초기값으로 초기화하시겠습니까?")) { closeSuperResetModal(); return; }
+                db.ref("trinity_system/__admin_pass__/" + adminId).remove();
+                alert("✨ [" + adminId + "] 관리자 비밀번호가 초기값(" + ADMIN_DEFAULT_PASS[adminId] + ")으로 초기화되었습니다.");
+                closeSuperResetModal();
+                drawSuperAdminPanel();
+
+            } else if (mode === "STAFF") {
+                if (!confirm("[" + dept + "] 지점 전체 직원 비밀번호를 초기화하시겠습니까?\n직원들은 다음 로그인 시 새 비밀번호를 등록해야 합니다.")) { closeSuperResetModal(); return; }
+                if (!confirm("🛑 최종 확인: [" + dept + "] 지점 직원 비밀번호를 전부 삭제합니다. 계속하시겠습니까?")) { closeSuperResetModal(); return; }
+                db.ref("trinity_system/" + dept).once("value", function(snap) {
+                    var data = snap.val() || {};
+                    var count = 0;
+                    Object.keys(data).forEach(function(key) {
+                        if (key.startsWith("user_pwd_")) {
+                            db.ref("trinity_system/" + dept + "/" + key).remove();
+                            count++;
+                        }
+                    });
+                    alert("✨ [" + dept + "] 지점 직원 비밀번호 " + count + "개가 초기화되었습니다.");
+                    closeSuperResetModal();
+                });
+            }
+        }
+
+        // ====== 엑셀 업로드 - 지점별 직원 ID 일괄 등록 ======
+        function uploadDeptExcel() {
+            if (!isSuperAdmin) return;
+            var dept = document.getElementById("superDeptSelect").value;
+            var fileInput = document.getElementById("superExcelUpload");
+            var msgEl = document.getElementById("uploadResultMsg");
+
+            if (!dept) { msgEl.innerText = "❌ 지점을 선택해주세요."; msgEl.style.color="#e53935"; return; }
+            if (!fileInput.files || fileInput.files.length === 0) { msgEl.innerText = "❌ 엑셀 파일을 선택해주세요."; msgEl.style.color="#e53935"; return; }
+
+            var file = fileInput.files[0];
+            var reader = new FileReader();
+            msgEl.innerText = "⏳ 파일 읽는 중...";
+            msgEl.style.color = "#1565c0";
+
+            reader.onload = function(e) {
+                try {
+                    var data = new Uint8Array(e.target.result);
+                    var workbook = XLSX.read(data, { type: "array" });
+                    var sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    var rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+                    // A열 값 추출 (1행 헤더 제외)
+                    var names = [];
+                    for (var i = 1; i < rows.length; i++) {
+                        var val = rows[i][0];
+                        if (val !== undefined && val !== null && String(val).trim() !== "") {
+                            names.push(String(val).trim());
+                        }
+                    }
+                    if (names.length === 0) { msgEl.innerText = "❌ A열에 유효한 이름이 없습니다."; msgEl.style.color="#e53935"; return; }
+
+                    msgEl.innerText = "⏳ 전 지점 중복 검사 중... (" + names.length + "명)";
+
+                    // 전 지점 명단 수집 후 중복 검사
+                    var allDepts = ["TAE","PUS","CJJ","KWJ","ICN","GMP","CJU","RR"];
+                    var loadedDepts = 0;
+                    var existingAllNames = {}; // name -> dept
+
+                    allDepts.forEach(function(d) {
+                        db.ref("trinity_system/" + d + "/allowed_users_list").once("value", function(snap) {
+                            var raw = snap.val();
+                            if (raw) {
+                                try {
+                                    var list = typeof raw === "string" ? JSON.parse(raw) : raw;
+                                    if (Array.isArray(list)) {
+                                        list.forEach(function(n) { existingAllNames[n] = d; });
+                                    }
+                                } catch(e) {}
+                            }
+                            loadedDepts++;
+                            if (loadedDepts === allDepts.length) {
+                                // 관리자 ID도 중복불가
+                                Object.keys(ADMIN_ACCOUNTS).forEach(function(aid) { existingAllNames[aid] = "__admin__"; });
+                                existingAllNames[SUPER_ADMIN_ID] = "__super__";
+
+                                var duplicates = [];
+                                var toAdd = [];
+                                names.forEach(function(name) {
+                                    if (existingAllNames[name] !== undefined) {
+                                        duplicates.push(name + "(" + existingAllNames[name] + ")");
+                                    } else {
+                                        toAdd.push(name);
+                                    }
+                                });
+
+                                if (toAdd.length === 0) {
+                                    msgEl.innerText = "❌ 추가할 수 있는 이름이 없습니다. 전부 중복: " + duplicates.join(", ");
+                                    msgEl.style.color = "#e53935";
+                                    return;
+                                }
+
+                                var confirmMsg = "[" + dept + "] 지점에 " + toAdd.length + "명을 등록합니다.\n\n등록: " + toAdd.join(", ");
+                                if (duplicates.length > 0) confirmMsg += "\n\n⚠️ 중복으로 제외(" + duplicates.length + "명): " + duplicates.join(", ");
+                                if (!confirm(confirmMsg)) { msgEl.innerText = "취소되었습니다."; msgEl.style.color="#888"; return; }
+
+                                // 해당 지점 현재 명단 가져와서 합산 저장
+                                db.ref("trinity_system/" + dept + "/allowed_users_list").once("value", function(snap2) {
+                                    var current = [];
+                                    var raw2 = snap2.val();
+                                    if (raw2) { try { current = typeof raw2 === "string" ? JSON.parse(raw2) : raw2; } catch(e) {} }
+                                    var merged = current.concat(toAdd);
+                                    db.ref("trinity_system/" + dept + "/allowed_users_list").set(JSON.stringify(merged));
+                                    msgEl.innerText = "✅ [" + dept + "] 지점에 " + toAdd.length + "명 등록 완료!" + (duplicates.length > 0 ? " (" + duplicates.length + "명 중복 제외)" : "");
+                                    msgEl.style.color = "#2e7d32";
+                                    fileInput.value = "";
+                                });
+                            }
+                        });
+                    });
+                } catch(err) {
+                    msgEl.innerText = "❌ 파일 파싱 오류: " + err.message;
+                    msgEl.style.color = "#e53935";
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // 엑셀 양식 다운로드
+        function downloadExcelTemplate() {
+            var ws = XLSX.utils.aoa_to_sheet([["이름"], ["홍길동"], ["김철수"]]);
+            var wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "직원명단");
+            XLSX.writeFile(wb, "직원ID_등록양식.xlsx");
         }
 
         function resetAdminPassword(adminId) {
