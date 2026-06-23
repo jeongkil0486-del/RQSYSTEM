@@ -226,13 +226,14 @@
             .admin-console-box .console-section { width: 100%; flex-wrap: wrap; gap: 6px; }
             .admin-console-box input, .admin-console-box select { flex-grow: 1; width: 100% !important; }
             .admin-console-box button { width: 100%; padding: 8px; }
-            .calendar-grid { grid-auto-rows: minmax(70px, auto); min-height: auto; }
-            .date, .empty { height: 80px; min-height: 80px; padding: 3px; }
-            .days { font-size: 12px; }
-            .count-badge { font-size: 9px; padding: 1px 4px; }
-            .user-note { font-size: 11px; padding: 4px 0; width: 100%; margin-top: 5px; }
+            .calendar-grid { grid-auto-rows: auto; min-height: auto; }
+            .date { height: auto; min-height: 70px; padding: 3px; overflow: visible; }
+            .empty { height: 70px; min-height: 70px; padding: 3px; }
+            .days { font-size: 11px; }
+            .count-badge { font-size: 8px; padding: 1px 3px; display: block; margin-top: 2px; }
+            .user-note { font-size: 9px; padding: 2px 0; width: 100%; margin-top: 2px; border-radius: 3px; }
             .admin-list { grid-template-columns: repeat(2, 1fr); gap: 2px; }
-            .admin-item { font-size: 9px; padding: 2px 1px; }
+            .admin-item { font-size: 8px; padding: 1px; }
             .custom-floating-tooltip { position: fixed; top: auto; bottom: 10px; left: 5% !important; width: 90% !important; min-width: auto; max-width: 90%; box-sizing: border-box; }
         }
     </style>
