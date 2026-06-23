@@ -406,9 +406,21 @@
 
                     <label style="margin-left: 20px;">📊 스케줄 :</label>
                     <button type="button" class="excel-download-btn" onclick="exportToExcel()">📥 다운로드</button>
+
+                    <label style="margin-left: 20px;">🔑 내 비밀번호 변경 :</label>
+                    <input type="password" id="newAdminPassInput" placeholder="새 비밀번호" style="width: 110px;">
+                    <button type="button" class="config-save-btn" onclick="changeMyAdminPassword()">변경</button>
                 </div>
             </div>
             
+            <!-- 슈퍼 관리자 전용 패널 -->
+            <div id="superAdminPanel" style="display:none; flex-direction:column; gap:15px; padding:10px;">
+                <div style="background:#fff3f3; border:1px solid #e53935; border-radius:8px; padding:15px;">
+                    <div style="font-size:15px; font-weight:bold; color:#e53935; margin-bottom:12px;">🔑 관리자 계정 비밀번호 초기화</div>
+                    <div id="superAdminPanelContent" style="overflow-x:auto;">로딩중...</div>
+                </div>
+            </div>
+
             <div class="calendar-grid" id="mainCalendarGrid"></div>
 
         </div>
@@ -429,18 +441,35 @@
 
         // ====== 부서별 관리자 계정 정의 ======
         var ADMIN_ACCOUNTS = {
-            "TAESKD": { pass: "TAESKD", dept: "TAE", label: "대구(TAE)" },
-            "PUSSKD": { pass: "PUSSKD", dept: "PUS", label: "부산(PUS)" },
-            "CJJSKD": { pass: "CJJSKD", dept: "CJJ", label: "청주(CJJ)" }
+            "TAESKD": { dept: "TAE", label: "대구(TAE)" },
+            "PUSSKD": { dept: "PUS", label: "부산(PUS)" },
+            "CJJSKD": { dept: "CJJ", label: "청주(CJJ)" },
+            "KWJSKD": { dept: "KWJ", label: "광주(KWJ)" },
+            "ICNSKD": { dept: "ICN", label: "인천(ICN)" },
+            "GMPSKD": { dept: "GMP", label: "김포(GMP)" },
+            "CJUSKD": { dept: "CJU", label: "제주(CJU)" },
+            "RRSKD":  { dept: "RR",  label: "예약센터(RR)" }
         };
+
+        // 각 관리자 초기 비밀번호 (DB에 저장된 값이 없을 때 사용)
+        var ADMIN_DEFAULT_PASS = {
+            "TAESKD": "TAESKD", "PUSSKD": "PUSSKD", "CJJSKD": "CJJSKD",
+            "KWJSKD": "KWJSKD", "ICNSKD": "ICNSKD", "GMPSKD": "GMPSKD",
+            "CJUSKD": "CJUSKD", "RRSKD":  "RRSKD"
+        };
+
+        // 슈퍼 관리자 (관리자 비밀번호 초기화 전용)
+        var SUPER_ADMIN_ID   = "TASSKD";
+        var SUPER_ADMIN_PASS = "TASCM";
 
         var modal = document.getElementById("calendarModal");
         var currentUser = "";
-        var currentDept = "";   // 로그인한 사용자의 부서 (TAE / PUS / CJJ)
+        var currentDept = "";
         var isAdmin = false;
+        var isSuperAdmin = false;
         var liveDBData = {};
         var currentAppMode = "NORMAL";
-        var dbListener = null; // 부서별 리스너 참조 보관
+        var dbListener = null;
 
         // 초기 기본 세팅 명단 (TAE 부서 기본값 - DB에 저장된 값이 없을 때만 사용)
         var allowedUsers = [
@@ -459,12 +488,13 @@
         var defaultGroupE = [];
 
         // ====== 부서 DB 리스너 연결 (로그인 후 호출) ======
-        function connectDeptDB(dept) {
+        function connectDeptDB(dept, onFirstLoad) {
             // 기존 리스너 해제
             if (dbListener) {
                 db.ref("trinity_system/" + dbListener).off("value");
             }
             dbListener = dept;
+            var firstLoad = true;
             db.ref("trinity_system/" + dept).on("value", function(snapshot) {
                 liveDBData = snapshot.val() || {};
 
@@ -473,7 +503,6 @@
                     try { allowedUsers = JSON.parse(savedUsersStr); }
                     catch(e) { console.error("ID 명단 로드 오류"); }
                 } else {
-                    // TAE 부서만 기본 명단 자동 저장, 나머지는 빈 명단으로 시작
                     if (dept === "TAE") {
                         setFirebaseItem("allowed_users_list", JSON.stringify(allowedUsers));
                     } else {
@@ -481,7 +510,10 @@
                     }
                 }
 
-                if (currentUser !== "") {
+                if (firstLoad) {
+                    firstLoad = false;
+                    if (onFirstLoad) onFirstLoad();
+                } else if (currentUser !== "") {
                     refreshData();
                 }
             });
@@ -988,25 +1020,38 @@
                 return;
             }
 
-            // ====== 관리자 계정 확인 ======
-            if (ADMIN_ACCOUNTS[name] !== undefined) {
-                var adminInfo = ADMIN_ACCOUNTS[name];
-                if (pass !== adminInfo.pass) {
-                    alert("❌ 비밀번호가 틀렸습니다.");
-                    return;
-                }
-                currentDept = adminInfo.dept;
-                isAdmin = true;
-                connectDeptDB(currentDept);
-                alert("👑 관리자(" + adminInfo.label + ") 계정으로 접속합니다.");
-                loginSuccess(name);
+            // ====== 슈퍼 관리자 ======
+            if (name === SUPER_ADMIN_ID) {
+                if (pass !== SUPER_ADMIN_PASS) { alert("❌ 비밀번호가 틀렸습니다."); return; }
+                isSuperAdmin = true;
+                isAdmin = false;
+                currentUser = name;
+                currentDept = "";
+                document.getElementById("loginArea").style.display = "none";
+                modal.style.display = "flex";
+                showSuperAdminPanel();
                 return;
             }
 
-            // ====== 직원 계정: 모든 부서에서 이름 검색 ======
-            // 먼저 liveDBData에 이미 연결된 부서가 있으면 그쪽 확인
-            // 부서를 모르므로 3개 부서 DB를 순차 조회
-            var depts = ["TAE", "PUS", "CJJ"];
+            // ====== 일반 관리자 ======
+            if (ADMIN_ACCOUNTS[name] !== undefined) {
+                var adminInfo = ADMIN_ACCOUNTS[name];
+                db.ref("trinity_system/__admin_pass__/" + name).once("value", function(snap) {
+                    var storedPass = snap.val() !== null ? snap.val() : ADMIN_DEFAULT_PASS[name];
+                    if (pass !== storedPass) { alert("❌ 비밀번호가 틀렸습니다."); return; }
+                    currentDept = adminInfo.dept;
+                    isAdmin = true;
+                    isSuperAdmin = false;
+                    connectDeptDB(currentDept, function() {
+                        alert("👑 관리자(" + adminInfo.label + ") 계정으로 접속합니다.");
+                        loginSuccess(name);
+                    });
+                });
+                return;
+            }
+
+            // ====== 직원 계정: 전 부서 검색 ======
+            var depts = ["TAE", "PUS", "CJJ", "KWJ", "ICN", "GMP", "CJU", "RR"];
             var checkedCount = 0;
             var foundDept = null;
 
@@ -1017,32 +1062,31 @@
                     if (raw && foundDept === null) {
                         try {
                             var list = typeof raw === "string" ? JSON.parse(raw) : raw;
-                            if (list.includes(name)) {
-                                foundDept = dept;
-                            }
+                            if (list.includes(name)) foundDept = dept;
                         } catch(e) {}
                     }
                     if (checkedCount === depts.length) {
-                        // 모든 부서 조회 완료
                         if (foundDept === null) {
                             alert("🛑 등록되지 않은 사용자이거나 비밀번호 오류입니다!");
                             return;
                         }
-                        // 해당 부서 비밀번호 확인
                         currentDept = foundDept;
                         db.ref("trinity_system/" + foundDept + "/user_pwd_" + name).once("value", function(pwdSnap) {
                             var savedPassword = pwdSnap.val();
                             isAdmin = false;
-                            connectDeptDB(foundDept);
+                            isSuperAdmin = false;
                             if (savedPassword === null || savedPassword === undefined) {
-                                // 신규 등록
-                                setFirebaseItem("user_pwd_" + name, pass);
-                                alert("✨ 신규 사용자로 정상 등록되었습니다!");
-                                loginSuccess(name);
+                                connectDeptDB(foundDept, function() {
+                                    setFirebaseItem("user_pwd_" + name, pass);
+                                    alert("✨ 신규 사용자로 정상 등록되었습니다!");
+                                    loginSuccess(name);
+                                });
                             } else {
                                 if (savedPassword === pass) {
-                                    alert("🔓 인증 성공! 반갑습니다, " + name + "님.");
-                                    loginSuccess(name);
+                                    connectDeptDB(foundDept, function() {
+                                        alert("🔓 인증 성공! 반갑습니다, " + name + "님.");
+                                        loginSuccess(name);
+                                    });
                                 } else {
                                     alert("❌ 비밀번호가 틀렸습니다.");
                                     currentDept = "";
@@ -1052,7 +1096,6 @@
                     }
                 });
             }
-
             depts.forEach(function(d) { checkDept(d); });
         }
 
@@ -1061,6 +1104,83 @@
             refreshData(); 
             document.getElementById("loginArea").style.display = "none";
             modal.style.display = "flex";
+        }
+
+        // ====== 슈퍼 관리자 패널 ======
+        function showSuperAdminPanel() {
+            document.getElementById("welcomeMessage").innerHTML =
+                "🔑 슈퍼 관리자 모드<br><span style='font-size:13px; color:#e53935; font-weight:bold;'>관리자 계정 비밀번호 초기화 전용</span>";
+
+            var toggleModeBtn = document.getElementById("toggleModeBtn");
+            var userResetBtn  = document.getElementById("userResetBtn");
+            var resetBtn      = document.getElementById("resetAllBtn");
+            var resetConfigBtn= document.getElementById("resetConfigBtn");
+            var adminConsole  = document.getElementById("adminConsole");
+            var scBtn         = document.getElementById("scheduleCodeApplyBtn");
+
+            if(toggleModeBtn)  toggleModeBtn.style.display  = "none";
+            if(userResetBtn)   userResetBtn.style.display   = "none";
+            if(resetBtn)       resetBtn.style.display       = "none";
+            if(resetConfigBtn) resetConfigBtn.style.display = "none";
+            if(adminConsole)   adminConsole.style.display   = "none";
+            if(scBtn)          scBtn.style.display          = "none";
+
+            // 슈퍼관리자 전용 패널 표시
+            document.getElementById("superAdminPanel").style.display = "flex";
+            document.getElementById("mainCalendarGrid").style.display = "none";
+            drawSuperAdminPanel();
+        }
+
+        function drawSuperAdminPanel() {
+            var container = document.getElementById("superAdminPanelContent");
+            if (!container) return;
+            var adminList = Object.keys(ADMIN_ACCOUNTS);
+            var html = "<table style='width:100%; border-collapse:collapse; font-size:14px;'>";
+            html += "<tr style='background:#f0f0f0;'><th style='padding:10px; border:1px solid #ddd; text-align:left;'>관리자 ID</th><th style='padding:10px; border:1px solid #ddd;'>지점</th><th style='padding:10px; border:1px solid #ddd;'>현재 비밀번호</th><th style='padding:10px; border:1px solid #ddd;'>초기화</th></tr>";
+
+            var loaded = 0;
+            var passMap = {};
+            adminList.forEach(function(id) {
+                db.ref("trinity_system/__admin_pass__/" + id).once("value", function(snap) {
+                    passMap[id] = snap.val() !== null ? snap.val() : ADMIN_DEFAULT_PASS[id];
+                    loaded++;
+                    if (loaded === adminList.length) {
+                        adminList.forEach(function(id) {
+                            html += "<tr>";
+                            html += "<td style='padding:10px; border:1px solid #ddd; font-weight:bold;'>" + id + "</td>";
+                            html += "<td style='padding:10px; border:1px solid #ddd; text-align:center; color:#555;'>" + ADMIN_ACCOUNTS[id].label + "</td>";
+                            html += "<td style='padding:10px; border:1px solid #ddd; text-align:center;'><code>" + passMap[id] + "</code></td>";
+                            html += "<td style='padding:10px; border:1px solid #ddd; text-align:center;'><button onclick=\"resetAdminPassword('" + id + "')\" style='background:#e53935; color:#fff; border:none; border-radius:5px; padding:6px 14px; cursor:pointer; font-weight:bold;'>초기화</button></td>";
+                            html += "</tr>";
+                        });
+                        html += "</table>";
+                        container.innerHTML = html;
+                    }
+                });
+            });
+        }
+
+        function resetAdminPassword(adminId) {
+            if (!isSuperAdmin) return;
+            var defaultPass = ADMIN_DEFAULT_PASS[adminId];
+            if (confirm("[" + adminId + "] 관리자 비밀번호를 초기값(" + defaultPass + ")으로 초기화하시겠습니까?")) {
+                db.ref("trinity_system/__admin_pass__/" + adminId).remove();
+                alert("✨ [" + adminId + "] 비밀번호가 초기값(" + defaultPass + ")으로 초기화되었습니다.");
+                drawSuperAdminPanel();
+            }
+        }
+
+        // ====== 일반 관리자 비밀번호 변경 ======
+        function changeMyAdminPassword() {
+            if (!isAdmin) return;
+            var newPass = document.getElementById("newAdminPassInput").value.trim();
+            if (newPass === "") { alert("새 비밀번호를 입력해주세요."); return; }
+            if (newPass.length < 4) { alert("비밀번호는 4자 이상 입력해주세요."); return; }
+            if (confirm("관리자 비밀번호를 [" + newPass + "] 으로 변경하시겠습니까?")) {
+                db.ref("trinity_system/__admin_pass__/" + currentUser).set(newPass);
+                alert("✨ 비밀번호가 변경되었습니다. 다음 로그인부터 새 비밀번호를 사용하세요.");
+                document.getElementById("newAdminPassInput").value = "";
+            }
         }
 
         function formatDateTimeString(dateTimeStr) {
@@ -1281,6 +1401,9 @@
         }
 
         function refreshData() {
+            // 슈퍼관리자는 달력 렌더링 불필요 - 패널만 표시
+            if (isSuperAdmin) { showSuperAdminPanel(); return; }
+
             var toggleModeBtn = document.getElementById("toggleModeBtn");
             var userResetBtn = document.getElementById("userResetBtn");
             var resetBtn = document.getElementById("resetAllBtn");
@@ -1389,7 +1512,7 @@
         }
 
         function resetMyRequests() {
-            if (isAdmin) return;
+            if (isAdmin || isSuperAdmin) return;
             // 커스텀 선택 팝업 표시
             document.getElementById("resetChoiceModal").style.display = "flex";
         }
@@ -1459,6 +1582,12 @@
             currentUser = "";
             currentDept = "";
             isAdmin = false;
+            isSuperAdmin = false;
+            // 슈퍼관리자 패널 숨김
+            var sap = document.getElementById("superAdminPanel");
+            if (sap) sap.style.display = "none";
+            var grid = document.getElementById("mainCalendarGrid");
+            if (grid) grid.style.display = "";
             currentAppMode = "NORMAL";
             currentScheduleCode = "";
             var btn = document.getElementById("toggleModeBtn");
@@ -1471,6 +1600,7 @@
 
         function editDate(date) {
             var tm = getTargetYearMonth();
+            if (isSuperAdmin) return; // 슈퍼관리자는 날짜 클릭 불가
             if (isAdmin) {
                 manageAdminSelection(date);
                 return;
