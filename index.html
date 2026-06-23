@@ -264,7 +264,7 @@
             <input type="password" id="password" placeholder="비밀번호를 입력하세요">
         </div>
         
-        <button type="button" class="submit-btn" onclick="checkAuth()">RQ 신청</button>
+        <button type="button" class="submit-btn" onclick="checkAuth()">로그인</button>
     </div>
 
     <div id="calendarModal" class="modal-overlay">
@@ -580,16 +580,61 @@
                 alert("추가할 직원의 이름을 입력해주세요.");
                 return;
             }
-            if (allowedUsers.includes(newName)) {
-                alert("이미 등록되어 있는 ID입니다.");
+
+            // 관리자 계정 ID와 중복 불가
+            if (Object.keys(ADMIN_ACCOUNTS).includes(newName) || newName === SUPER_ADMIN_ID) {
+                alert("🛑 오류: 관리자 계정 ID와 동일한 이름은 직원 ID로 등록할 수 없습니다.");
                 return;
             }
+
+            // 현재 부서 중복 체크
+            if (allowedUsers.includes(newName)) {
+                alert("이미 현재 지점에 등록되어 있는 ID입니다.");
+                return;
+            }
+
+            // 전 지점 중복 체크 (비동기)
+            var allDepts = ["TAE","PUS","CJJ","KWJ","ICN","GMP","CJU","RR"];
+            var otherDepts = allDepts.filter(function(d){ return d !== currentDept; });
+            var checkedCount = 0;
+            var duplicateDept = null;
+
+            if (otherDepts.length === 0) {
+                // 다른 부서 없으면 바로 등록
+                doAddUser(newName);
+                return;
+            }
+
+            otherDepts.forEach(function(dept) {
+                db.ref("trinity_system/" + dept + "/allowed_users_list").once("value", function(snap) {
+                    checkedCount++;
+                    var raw = snap.val();
+                    if (raw && duplicateDept === null) {
+                        try {
+                            var list = typeof raw === "string" ? JSON.parse(raw) : raw;
+                            if (Array.isArray(list) && list.includes(newName)) {
+                                duplicateDept = dept;
+                            }
+                        } catch(e) {}
+                    }
+                    if (checkedCount === otherDepts.length) {
+                        if (duplicateDept !== null) {
+                            alert("🛑 중복 오류: [" + newName + "] 은(는) 이미 [" + duplicateDept + "] 지점에 등록된 ID입니다.\n전 지점 통틀어 동일한 이름은 사용할 수 없습니다.");
+                            return;
+                        }
+                        doAddUser(newName);
+                    }
+                });
+            });
+        }
+
+        function doAddUser(newName) {
             allowedUsers.push(newName);
             setFirebaseItem("allowed_users_list", JSON.stringify(allowedUsers));
-            alert(`✨ [${newName}] ID가 정상적으로 등록(생성)되었습니다.`);
+            alert("✨ [" + newName + "] ID가 정상적으로 등록(생성)되었습니다.");
             document.getElementById("manageIdInput").value = "";
             drawAllowedUsersBoard();
-            drawLiveGroupBoards(); // ID가 추가되면 자동으로 미편성에도 업데이트됨
+            drawLiveGroupBoards();
         }
 
         function removeAllowedUser() {
