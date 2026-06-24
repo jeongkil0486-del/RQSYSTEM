@@ -1363,9 +1363,9 @@
                 if (loginBtn) { loginBtn.disabled = false; loginBtn.innerText = "로그인"; }
             };
 
-            // ====== 슈퍼 관리자: DB에서 ID/PW 조회 (하드코딩 없음) ======
-            db.ref("trinity_system/__super_admin__").once("value", function(superSnap) {
-                var superData = superSnap.val();
+            // ====== 슈퍼 관리자: DB에서 ID/PW 조회 (에러 핸들링 포함) ======
+            function proceedLogin(superData) {
+                // 슈퍼관리자 체크
                 if (superData && name === superData.id) {
                     if (pass !== superData.pass) { alert("❌ 비밀번호가 틀렸습니다."); restoreLoginBtn(); return; }
                     SUPER_ADMIN_ID = superData.id;
@@ -1386,7 +1386,7 @@
                     db.ref("trinity_system/__admin_pass__/" + name).once("value", function(snap) {
                         var storedPass = snap.val();
                         if (storedPass === null) {
-                            alert("❌ 관리자 비밀번호가 설정되지 않았습니다. Firebase DB에서 직접 설정해주세요.\n경로: trinity_system/__admin_pass__/" + name);
+                            alert("❌ 관리자 비밀번호가 설정되지 않았습니다.\nFirebase DB 경로: trinity_system/__admin_pass__/" + name + " 에 비밀번호를 직접 입력해주세요.");
                             restoreLoginBtn();
                             return;
                         }
@@ -1398,6 +1398,9 @@
                             alert("👑 관리자(" + adminInfo.label + ") 계정으로 접속합니다.");
                             loginSuccess(name);
                         });
+                    }, function(err) {
+                        alert("❌ 관리자 비밀번호 조회 실패: " + err.message);
+                        restoreLoginBtn();
                     });
                     return;
                 }
@@ -1406,8 +1409,8 @@
                 var depts = ["TAE", "PUS", "CJJ", "KWJ", "ICN", "GMP", "CJU", "RR"];
                 var checkedCount = 0;
                 var foundDept = null;
-
                 var loginProcessed = false;
+
                 function checkDept(dept) {
                     db.ref("trinity_system/" + dept + "/allowed_users_list").once("value", function(snap) {
                         if (loginProcessed) return;
@@ -1454,6 +1457,14 @@
                     });
                 }
                 depts.forEach(function(d) { checkDept(d); });
+            }
+
+            // 슈퍼관리자 DB 조회 시도 - 규칙으로 막혀있으면 일반 로그인 흐름으로 진행
+            db.ref("trinity_system/__super_admin__").once("value", function(superSnap) {
+                proceedLogin(superSnap.val());
+            }, function(error) {
+                // 보안 규칙으로 읽기가 막힌 경우 → 슈퍼관리자가 아닌 것으로 처리하고 일반 로그인 진행
+                proceedLogin(null);
             });
         }
 
