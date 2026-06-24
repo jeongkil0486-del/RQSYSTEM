@@ -29,3 +29,5 @@ var defaultGroupE = [];
 
 var _deptListeners = [];
 var isLegacyPasswordFeatureEnabled = false;
+var currentDeptAccessRestricted = false;
+var currentDeptAccessErrorMessage = "";

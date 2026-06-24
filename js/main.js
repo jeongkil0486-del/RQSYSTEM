@@ -31,6 +31,8 @@ function resetSessionState() {
     currentAppMode = "NORMAL";
     currentScheduleCode = "";
     _superResetTargetAdminId = "";
+    currentDeptAccessRestricted = false;
+    currentDeptAccessErrorMessage = "";
 }
 
 function resetUiToLoggedOut() {
@@ -192,6 +194,49 @@ function updateLoginCopy() {
     setLoginButtonState(false, "로그인");
 }
 
+function renderRestrictedRoleView() {
+    var toggleModeBtn = document.getElementById("toggleModeBtn");
+    var userResetBtn = document.getElementById("userResetBtn");
+    var resetBtn = document.getElementById("resetAllBtn");
+    var resetConfigBtn = document.getElementById("resetConfigBtn");
+    var adminConsole = document.getElementById("adminConsole");
+    var grid = document.getElementById("mainCalendarGrid");
+    var message = currentDeptAccessErrorMessage || "권한 설정 중입니다.";
+
+    if (toggleModeBtn) toggleModeBtn.style.display = "none";
+    if (userResetBtn) userResetBtn.style.display = "none";
+    if (resetBtn) resetBtn.style.display = "none";
+    if (resetConfigBtn) resetConfigBtn.style.display = "none";
+    if (adminConsole) adminConsole.style.display = "none";
+    if (grid) grid.innerHTML = "";
+
+    if (isAdmin) {
+        document.getElementById("welcomeMessage").innerHTML =
+            "관리자 모드<br><span style='font-size:13px; color:#d9534f; font-weight:bold;'>지점 데이터 권한 설정 중입니다. 현재는 프로필만 확인된 상태입니다.<br>" + message + "</span>";
+    } else {
+        document.getElementById("welcomeMessage").innerHTML =
+            "직원 모드<br><span style='font-size:13px; color:#007bff; font-weight:bold;'>권한 설정 중입니다. 현재는 프로필만 확인된 상태입니다.<br>" + message + "</span>";
+    }
+}
+
+function connectDeptDBSafe(dept) {
+    return new Promise(function(resolve, reject) {
+        var probePath = "trinity_system/" + dept + "/rq_current_target_year_month";
+
+        db.ref(probePath).once("value", function() {
+            try {
+                connectDeptDB(dept, function() {
+                    resolve();
+                });
+            } catch (error) {
+                reject(error);
+            }
+        }, function(error) {
+            reject(error);
+        });
+    });
+}
+
 function handleSignedInUser(user) {
     setLoginButtonState(true, "사용자 확인 중...");
 
@@ -220,7 +265,13 @@ function handleSignedInUser(user) {
             return;
         }
 
-        connectDeptDB(currentDept, function() {
+        return connectDeptDBSafe(currentDept).then(function() {
+            currentDeptAccessRestricted = false;
+            currentDeptAccessErrorMessage = "";
+            loginSuccess(currentUser);
+        }).catch(function(error) {
+            currentDeptAccessRestricted = true;
+            currentDeptAccessErrorMessage = error && error.message ? error.message : "권한 설정 중입니다.";
             loginSuccess(currentUser);
         });
     }).catch(function(error) {
@@ -359,5 +410,15 @@ function changeMyAdminPassword() {
         alert(error && error.message ? error.message : "비밀번호 변경에 실패했습니다.");
     });
 }
+
+var _legacyRefreshData = refreshData;
+refreshData = function() {
+    if (currentDeptAccessRestricted) {
+        renderRestrictedRoleView();
+        return;
+    }
+
+    return _legacyRefreshData();
+};
 
 updateLoginCopy();
