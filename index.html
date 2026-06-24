@@ -7,6 +7,7 @@
     
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
@@ -262,12 +263,12 @@
         
         <div class="input-group">
             <label for="username">이름 입력</label>
-            <input type="text" id="username" placeholder="이름을 입력하세요">
+            <input type="text" id="username" placeholder="이름을 입력하세요" onkeydown="if(event.key==='Enter'){document.getElementById('password').focus();}">
         </div>
         
         <div class="input-group">
             <label for="password">비밀번호 입력</label>
-            <input type="password" id="password" placeholder="비밀번호를 입력하세요">
+            <input type="password" id="password" placeholder="비밀번호를 입력하세요" onkeydown="if(event.key==='Enter'){checkAuth();}">
         </div>
         
         <button type="button" class="submit-btn" onclick="checkAuth()">로그인</button>
@@ -524,16 +525,13 @@
             "RRSKD":  { dept: "RR",  label: "예약센터(RR)" }
         };
 
-        // 각 관리자 초기 비밀번호 (DB에 저장된 값이 없을 때 사용)
-        var ADMIN_DEFAULT_PASS = {
-            "TAESKD": "TAESKD", "PUSSKD": "PUSSKD", "CJJSKD": "CJJSKD",
-            "KWJSKD": "KWJSKD", "ICNSKD": "ICNSKD", "GMPSKD": "GMPSKD",
-            "CJUSKD": "CJUSKD", "RRSKD":  "RRSKD"
-        };
+        // 관리자 초기 비밀번호는 소스코드에서 제거됨 → Firebase DB에서만 조회
+        // 초기값이 없는 경우 관리자가 직접 DB에 설정해야 함
+        var ADMIN_DEFAULT_PASS = {};
 
-        // 슈퍼 관리자 (관리자 비밀번호 초기화 전용)
-        var SUPER_ADMIN_ID   = "TASSKD";
-        var SUPER_ADMIN_PASS = "TASCM";
+        // 슈퍼 관리자 ID/PW는 소스코드에서 제거됨 → Firebase DB에서만 조회
+        var SUPER_ADMIN_ID   = null; // DB에서 동적으로 로드됨
+        var SUPER_ADMIN_PASS = null; // DB에서 동적으로 로드됨
 
         var modal = document.getElementById("calendarModal");
         var currentUser = "";
@@ -544,15 +542,8 @@
         var currentAppMode = "NORMAL";
         var dbListener = null;
 
-        // 초기 기본 세팅 명단 (TAE 부서 기본값 - DB에 저장된 값이 없을 때만 사용)
-        var allowedUsers = [
-            "김인숙", "정재연", "서한별", "채원숙", "서희정", "이지현", "이가림", "김아란", "손주희", "서세영",
-            "김민정", "이도희", "이지현2", "서은영", "임효영", "정현정", "박가현", "손상희", "이예지", "차현서",
-            "배정은", "배효진", "노수지", "김수형", "전보현", "조윤성", "조연아", "김광수", "김규리", "손정선",
-            "김혁진", "김예진", "김가연", "박시연", "김유진", "이은지", "박민영", "이윤재", "서승희", "김세은",
-            "곽예린", "이예슬", "김단영", "김영훈", "정소영", "이민아", "김련희", "김경종", "이향기", "신은지",
-            "이균동", "김진관"
-        ];
+        // 직원 명단은 소스코드에서 제거됨 → Firebase DB에서만 로드
+        var allowedUsers = [];
 
         var defaultGroupA = [];
         var defaultGroupB = [];
@@ -576,11 +567,7 @@
                     try { allowedUsers = JSON.parse(savedUsersStr); }
                     catch(e) { console.error("ID 명단 로드 오류"); }
                 } else {
-                    if (dept === "TAE") {
-                        setFirebaseItem("allowed_users_list", JSON.stringify(allowedUsers));
-                    } else {
-                        allowedUsers = [];
-                    }
+                    allowedUsers = [];
                 }
 
                 if (firstLoad) {
@@ -656,6 +643,10 @@
         }
 
         function setFirebaseItem(key, value) {
+            if (!currentDept) {
+                console.error("setFirebaseItem 호출 오류: currentDept가 설정되지 않은 상태입니다. (key: " + key + ")");
+                return;
+            }
             var path = "trinity_system/" + currentDept + "/" + key;
             if (value === null) {
                 db.ref(path).remove();
@@ -1365,87 +1356,112 @@
                 return;
             }
 
-            // ====== 슈퍼 관리자 ======
-            if (name === SUPER_ADMIN_ID) {
-                if (pass !== SUPER_ADMIN_PASS) { alert("❌ 비밀번호가 틀렸습니다."); return; }
-                isSuperAdmin = true;
-                isAdmin = false;
-                currentUser = name;
-                currentDept = "";
-                document.getElementById("loginArea").style.display = "none";
-                modal.style.display = "flex";
-                showSuperAdminPanel();
-                return;
-            }
+            // 로그인 중 버튼 비활성화 (중복 클릭 방지)
+            var loginBtn = document.querySelector(".submit-btn");
+            if (loginBtn) { loginBtn.disabled = true; loginBtn.innerText = "로그인 중..."; }
+            var restoreLoginBtn = function() {
+                if (loginBtn) { loginBtn.disabled = false; loginBtn.innerText = "로그인"; }
+            };
 
-            // ====== 일반 관리자 ======
-            if (ADMIN_ACCOUNTS[name] !== undefined) {
-                var adminInfo = ADMIN_ACCOUNTS[name];
-                db.ref("trinity_system/__admin_pass__/" + name).once("value", function(snap) {
-                    var storedPass = snap.val() !== null ? snap.val() : ADMIN_DEFAULT_PASS[name];
-                    if (pass !== storedPass) { alert("❌ 비밀번호가 틀렸습니다."); return; }
-                    currentDept = adminInfo.dept;
-                    isAdmin = true;
-                    isSuperAdmin = false;
-                    connectDeptDB(currentDept, function() {
-                        alert("👑 관리자(" + adminInfo.label + ") 계정으로 접속합니다.");
-                        loginSuccess(name);
-                    });
-                });
-                return;
-            }
+            // ====== 슈퍼 관리자: DB에서 ID/PW 조회 (하드코딩 없음) ======
+            db.ref("trinity_system/__super_admin__").once("value", function(superSnap) {
+                var superData = superSnap.val();
+                if (superData && name === superData.id) {
+                    if (pass !== superData.pass) { alert("❌ 비밀번호가 틀렸습니다."); restoreLoginBtn(); return; }
+                    SUPER_ADMIN_ID = superData.id;
+                    isSuperAdmin = true;
+                    isAdmin = false;
+                    currentUser = name;
+                    currentDept = "";
+                    restoreLoginBtn();
+                    document.getElementById("loginArea").style.display = "none";
+                    modal.style.display = "flex";
+                    showSuperAdminPanel();
+                    return;
+                }
 
-            // ====== 직원 계정: 전 부서 검색 ======
-            var depts = ["TAE", "PUS", "CJJ", "KWJ", "ICN", "GMP", "CJU", "RR"];
-            var checkedCount = 0;
-            var foundDept = null;
-
-            function checkDept(dept) {
-                db.ref("trinity_system/" + dept + "/allowed_users_list").once("value", function(snap) {
-                    checkedCount++;
-                    var raw = snap.val();
-                    if (raw && foundDept === null) {
-                        try {
-                            var list = typeof raw === "string" ? JSON.parse(raw) : raw;
-                            if (list.includes(name)) foundDept = dept;
-                        } catch(e) {}
-                    }
-                    if (checkedCount === depts.length) {
-                        if (foundDept === null) {
-                            alert("🛑 등록되지 않은 사용자이거나 비밀번호 오류입니다!");
+                // ====== 일반 관리자 ======
+                if (ADMIN_ACCOUNTS[name] !== undefined) {
+                    var adminInfo = ADMIN_ACCOUNTS[name];
+                    db.ref("trinity_system/__admin_pass__/" + name).once("value", function(snap) {
+                        var storedPass = snap.val();
+                        if (storedPass === null) {
+                            alert("❌ 관리자 비밀번호가 설정되지 않았습니다. Firebase DB에서 직접 설정해주세요.\n경로: trinity_system/__admin_pass__/" + name);
+                            restoreLoginBtn();
                             return;
                         }
-                        currentDept = foundDept;
-                        db.ref("trinity_system/" + foundDept + "/user_pwd_" + name).once("value", function(pwdSnap) {
-                            var savedPassword = pwdSnap.val();
+                        if (pass !== storedPass) { alert("❌ 비밀번호가 틀렸습니다."); restoreLoginBtn(); return; }
+                        currentDept = adminInfo.dept;
+                        isAdmin = true;
+                        isSuperAdmin = false;
+                        connectDeptDB(currentDept, function() {
+                            alert("👑 관리자(" + adminInfo.label + ") 계정으로 접속합니다.");
+                            loginSuccess(name);
+                        });
+                    });
+                    return;
+                }
+
+                // ====== 직원 계정: 전 부서 검색 ======
+                var depts = ["TAE", "PUS", "CJJ", "KWJ", "ICN", "GMP", "CJU", "RR"];
+                var checkedCount = 0;
+                var foundDept = null;
+
+                var loginProcessed = false;
+                function checkDept(dept) {
+                    db.ref("trinity_system/" + dept + "/allowed_users_list").once("value", function(snap) {
+                        if (loginProcessed) return;
+                        checkedCount++;
+                        var raw = snap.val();
+                        if (raw && foundDept === null) {
+                            try {
+                                var list = typeof raw === "string" ? JSON.parse(raw) : raw;
+                                if (list.includes(name)) foundDept = dept;
+                            } catch(e) {}
+                        }
+                        if (checkedCount === depts.length) {
+                            loginProcessed = true;
+                            if (foundDept === null) {
+                                alert("🛑 등록되지 않은 사용자이거나 비밀번호 오류입니다!");
+                                restoreLoginBtn();
+                                return;
+                            }
                             isAdmin = false;
                             isSuperAdmin = false;
-                            if (savedPassword === null || savedPassword === undefined) {
-                                connectDeptDB(foundDept, function() {
-                                    setFirebaseItem("user_pwd_" + name, pass);
-                                    alert("✨ 신규 사용자로 정상 등록되었습니다!");
-                                    loginSuccess(name);
-                                });
-                            } else {
-                                if (savedPassword === pass) {
+                            db.ref("trinity_system/" + foundDept + "/user_pwd_" + name).once("value", function(pwdSnap) {
+                                var savedPassword = pwdSnap.val();
+                                if (savedPassword === null || savedPassword === undefined) {
+                                    currentDept = foundDept;
                                     connectDeptDB(foundDept, function() {
-                                        alert("🔓 인증 성공! 반갑습니다, " + name + "님.");
+                                        setFirebaseItem("user_pwd_" + name, pass);
+                                        alert("✨ 신규 사용자로 정상 등록되었습니다!");
                                         loginSuccess(name);
                                     });
                                 } else {
-                                    alert("❌ 비밀번호가 틀렸습니다.");
-                                    currentDept = "";
+                                    if (savedPassword === pass) {
+                                        currentDept = foundDept;
+                                        connectDeptDB(foundDept, function() {
+                                            alert("🔓 인증 성공! 반갑습니다, " + name + "님.");
+                                            loginSuccess(name);
+                                        });
+                                    } else {
+                                        alert("❌ 비밀번호가 틀렸습니다.");
+                                        restoreLoginBtn();
+                                    }
                                 }
-                            }
-                        });
-                    }
-                });
-            }
-            depts.forEach(function(d) { checkDept(d); });
+                            });
+                        }
+                    });
+                }
+                depts.forEach(function(d) { checkDept(d); });
+            });
         }
 
         function loginSuccess(name) {
             currentUser = name;
+            // 로그인 버튼 복원 (성공 후 닫기 → 재로그인 시 사용 가능하도록)
+            var loginBtn = document.querySelector(".submit-btn");
+            if (loginBtn) { loginBtn.disabled = false; loginBtn.innerText = "로그인"; }
             refreshData(); 
             document.getElementById("loginArea").style.display = "none";
             modal.style.display = "flex";
@@ -1494,7 +1510,7 @@
                             html += "<tr>";
                             html += "<td style='padding:8px; border:1px solid #ddd; font-weight:bold;'>" + id + "</td>";
                             html += "<td style='padding:8px; border:1px solid #ddd; text-align:center; color:#555;'>" + ADMIN_ACCOUNTS[id].label + "</td>";
-                            html += "<td style='padding:8px; border:1px solid #ddd; text-align:center;'><code>" + passMap[id] + "</code></td>";
+                        html += "<td style='padding:8px; border:1px solid #ddd; text-align:center;'><code style='color:#999;'>보안상 비표시</code></td>";
                             html += "<td style='padding:8px; border:1px solid #ddd; text-align:center;'><button onclick=\"resetAdminPassword('" + id + "')\" style='background:#e53935; color:#fff; border:none; border-radius:5px; padding:5px 12px; cursor:pointer; font-weight:bold; font-size:12px;'>초기화</button></td>";
                             html += "</tr>";
                         });
@@ -1547,7 +1563,7 @@
             if (mode === "ADMIN") {
                 if (!confirm("[" + adminId + "] 관리자 비밀번호를 초기값으로 초기화하시겠습니까?")) { closeSuperResetModal(); return; }
                 db.ref("trinity_system/__admin_pass__/" + adminId).remove();
-                alert("✨ [" + adminId + "] 관리자 비밀번호가 초기값(" + ADMIN_DEFAULT_PASS[adminId] + ")으로 초기화되었습니다.");
+                alert("✨ [" + adminId + "] 관리자 비밀번호가 초기화되었습니다.\nFirebase DB에서 새 비밀번호를 직접 설정해주세요.\n경로: trinity_system/__admin_pass__/" + adminId);
                 closeSuperResetModal();
                 drawSuperAdminPanel();
 
@@ -1677,10 +1693,9 @@
 
         function resetAdminPassword(adminId) {
             if (!isSuperAdmin) return;
-            var defaultPass = ADMIN_DEFAULT_PASS[adminId];
-            if (confirm("[" + adminId + "] 관리자 비밀번호를 초기값(" + defaultPass + ")으로 초기화하시겠습니까?")) {
+            if (confirm("[" + adminId + "] 관리자 비밀번호를 삭제(초기화)하시겠습니까?\n\n⚠️ 초기화 후 해당 관리자는 Firebase DB에서 비밀번호를 새로 설정해야 합니다.\n경로: trinity_system/__admin_pass__/" + adminId)) {
                 db.ref("trinity_system/__admin_pass__/" + adminId).remove();
-                alert("✨ [" + adminId + "] 비밀번호가 초기값(" + defaultPass + ")으로 초기화되었습니다.");
+                alert("✨ [" + adminId + "] 비밀번호가 초기화되었습니다.\nFirebase DB에서 새 비밀번호를 직접 설정해주세요.");
                 drawSuperAdminPanel();
             }
         }
@@ -2206,17 +2221,18 @@
             var tm = getTargetYearMonth();
             var deletedCount = 0;
 
+            var rqPrefix = "rq_" + currentUser + "_" + tm.fullStr + "_";
+            var scUserPattern = "_" + currentUser + "_" + tm.fullStr + "_";
+
             if (mode === "ALL") {
                 // 휴무/청원 + 스케줄 코드 (연차 보호)
-                var rqPrefix = "rq_" + currentUser + "_" + tm.fullStr + "_";
-                var scPrefix = "sc_";
                 Object.keys(liveDBData).forEach(function(key) {
                     if (key.startsWith(rqPrefix) && !key.endsWith("_annual")) {
                         setFirebaseItem(key, null); deletedCount++;
                     }
                 });
                 Object.keys(liveDBData).forEach(function(key) {
-                    if (key.startsWith(scPrefix) && key.includes("_" + currentUser + "_" + tm.fullStr + "_")
+                    if (key.startsWith("sc_") && key.includes(scUserPattern)
                         && !key.startsWith("sc_glimit_")) {
                         setFirebaseItem(key, null); deletedCount++;
                     }
@@ -2225,9 +2241,9 @@
 
             } else if (mode === "SCHEDULE") {
                 // 스케줄 코드만
-                var scPrefix = "sc_";
                 Object.keys(liveDBData).forEach(function(key) {
-                    if (key.startsWith(scPrefix) && key.includes("_" + currentUser + "_" + tm.fullStr + "_")) {
+                    if (key.startsWith("sc_") && key.includes(scUserPattern)
+                        && !key.startsWith("sc_glimit_")) {
                         setFirebaseItem(key, null); deletedCount++;
                     }
                 });
@@ -2235,7 +2251,6 @@
 
             } else if (mode === "HOLIDAY") {
                 // 휴무/청원만 (연차 보호)
-                var rqPrefix = "rq_" + currentUser + "_" + tm.fullStr + "_";
                 Object.keys(liveDBData).forEach(function(key) {
                     if (key.startsWith(rqPrefix) && !key.endsWith("_annual")) {
                         setFirebaseItem(key, null); deletedCount++;
@@ -2246,6 +2261,11 @@
         }
 
         function closeCalendar() {
+            // Firebase 실시간 리스너 해제 (메모리 누수 방지 및 로그인 화면에서 콜백 방지)
+            if (dbListener) {
+                db.ref("trinity_system/" + dbListener).off("value");
+                dbListener = null;
+            }
             modal.style.display = "none";
             document.getElementById("username").value = "";
             document.getElementById("password").value = "";
@@ -2500,38 +2520,61 @@
         function manageAdminSelection(date) {
             var applicants = [];
             var tm = getTargetYearMonth();
-            var targetSuffix = `_${tm.fullStr}_${date}`;
+            var targetSuffix = "_" + tm.fullStr + "_" + date;
 
+            // 휴무 / 청원 / 연차 수집
+            // 키 형태: rq_이름_YYYYMM_일 / rq_이름_YYYYMM_일_petition / rq_이름_YYYYMM_일_annual
             Object.keys(liveDBData).forEach(function(key) {
-                if (key.startsWith("rq_") && !key.startsWith("rq_special_limit_")) {
-                    if (key.endsWith(targetSuffix)) {
-                        var empName = key.split("_")[1];
-                        var regTime = Number(liveDBData[key]) || 9999999999999;
-                        applicants.push({ key: key, name: empName + " (휴무)", time: regTime });
-                    }
-                    if (key.endsWith(targetSuffix + "_petition")) {
-                        var empName = key.split("_")[1];
-                        var regTime = Number(liveDBData[key]) || 9999999999999;
-                        applicants.push({ key: key, name: empName + " (⚠️청원)", time: regTime });
-                    }
-                    if (key.endsWith(targetSuffix + "_annual")) {
-                        var empName = key.split("_")[1];
-                        var regTime = Number(liveDBData[key]) || 9999999999999;
-                        applicants.push({ key: key, name: empName + " (🟢연차)", time: regTime });
-                    }
+                if (!key.startsWith("rq_")) return;
+                // 설정/메타 키 제외
+                if (key.startsWith("rq_special_limit_") || key.startsWith("rq_limit_")
+                    || key.startsWith("rq_config_") || key.startsWith("rq_allowed_")
+                    || key.startsWith("rq_current_") || key.startsWith("rq_live_group_")) return;
+
+                var empName, regTime;
+                if (key.endsWith(targetSuffix + "_annual")) {
+                    // annual 먼저 체크 (endsWith targetSuffix보다 긴 패턴 우선)
+                    empName = key.slice(3, key.length - (targetSuffix + "_annual").length);
+                    regTime = Number(liveDBData[key]) || 9999999999999;
+                    if (empName) applicants.push({ key: key, name: empName + " (🟢연차)", time: regTime });
+                } else if (key.endsWith(targetSuffix + "_petition")) {
+                    empName = key.slice(3, key.length - (targetSuffix + "_petition").length);
+                    regTime = Number(liveDBData[key]) || 9999999999999;
+                    if (empName) applicants.push({ key: key, name: empName + " (⚠️청원)", time: regTime });
+                } else if (key.endsWith(targetSuffix)) {
+                    empName = key.slice(3, key.length - targetSuffix.length);
+                    regTime = Number(liveDBData[key]) || 9999999999999;
+                    if (empName) applicants.push({ key: key, name: empName + " (휴무)", time: regTime });
                 }
             });
 
+            // 스케줄 코드 수집 (키: sc_코드명_이름_YYYYMM_일)
+            var scList = getScheduleCodeList();
+            scList.forEach(function(codeObj) {
+                var prefix = "sc_" + codeObj.name + "_";
+                Object.keys(liveDBData).forEach(function(key) {
+                    if (key.startsWith(prefix) && key.endsWith(targetSuffix)) {
+                        // prefix 이후 ~ targetSuffix 이전 부분이 이름
+                        var rest = key.slice(prefix.length); // "이름_YYYYMM_일"
+                        // targetSuffix는 "_YYYYMM_일" 형태이므로 앞의 _ 포함
+                        var empName = rest.slice(0, rest.length - targetSuffix.length);
+                        if (empName === "") return; // 잘못된 키 스킵
+                        var regTime = Number(liveDBData[key]) || 9999999999999;
+                        applicants.push({ key: key, name: empName + " (" + codeObj.name + ")", time: regTime });
+                    }
+                });
+            });
+
             if (applicants.length === 0) {
-                alert(`${parseInt(tm.month)}월 ${date}일에는 신청된 내역이 없습니다.`);
+                alert(parseInt(tm.month) + "월 " + date + "일에는 신청된 내역이 없습니다.");
                 return;
             }
 
             applicants.sort(function(a, b) { return a.time - b.time; });
 
-            var message = `[관리자] ${parseInt(tm.month)}월 ${date}일 신청 명단입니다.\n삭제할 번호를 입력하세요 (취소는 '취소' 클릭)\n\n`;
+            var message = "[관리자] " + parseInt(tm.month) + "월 " + date + "일 신청 명단입니다.\n삭제할 번호를 입력하세요 (취소는 '취소' 클릭)\n\n";
             applicants.forEach(function(item, index) {
-                message += `${index + 1}. ${item.name}\n`;
+                message += (index + 1) + ". " + item.name + "\n";
             });
 
             var selectIndexStr = prompt(message);
@@ -2541,15 +2584,13 @@
                     alert("❌ 번호를 잘못 입력하셨습니다.");
                     return;
                 }
-
                 var targetUser = applicants[selectedIndex];
-                if (confirm(`진짜로 [${targetUser.name}] 내역을 삭제하시겠습니까?`)) {
+                if (confirm("진짜로 [" + targetUser.name + "] 내역을 삭제하시겠습니까?")) {
                     setFirebaseItem(targetUser.key, null);
                     alert("삭제 완료.");
                 }
             }
         }
-
         function getMyTotalCount() {
             var count = 0;
             var tm = getTargetYearMonth();
@@ -2574,12 +2615,33 @@
             return count;
         }
 
+        // 관리자용: 해당 날짜 전체 신청 인원수 (청원/연차 포함)
+        function getDayTotalCountAll(date) {
+            var count = 0;
+            var tm = getTargetYearMonth();
+            var targetSuffix = `_${tm.fullStr}_${date}`;
+            Object.keys(liveDBData).forEach(function(key) {
+                if (key.startsWith("rq_") && !key.startsWith("rq_special_limit_")
+                    && !key.startsWith("rq_limit_") && !key.startsWith("rq_config_")
+                    && !key.startsWith("rq_allowed_") && !key.startsWith("rq_current_")
+                    && !key.startsWith("rq_live_group_")
+                    && key.endsWith(targetSuffix)) {
+                    count++;
+                }
+            });
+            return count;
+        }
+
         function getDayTotalCount(date) {
             var count = 0;
             var tm = getTargetYearMonth();
             var targetSuffix = `_${tm.fullStr}_${date}`;
             Object.keys(liveDBData).forEach(function(key) {
-                if (key.startsWith("rq_") && !key.startsWith("rq_special_limit_") && key.endsWith(targetSuffix)) {
+                // _petition, _annual은 일별 한도 카운트에서 제외 (청원/연차는 별도 관리)
+                if (key.startsWith("rq_") && !key.startsWith("rq_special_limit_")
+                    && key.endsWith(targetSuffix)
+                    && !key.endsWith("_petition")
+                    && !key.endsWith("_annual")) {
                     count++;
                 }
             });
@@ -2653,7 +2715,7 @@
                 var specialDayLimitVal = getFirebaseItem(`rq_special_limit_${tm.fullStr}_${d}`, null);
                 var currentMax = specialDayLimitVal !== null ? parseInt(specialDayLimitVal) : "기본";
 
-                var total = getDayTotalCount(d);
+                var total = getDayTotalCountAll(d); // 관리자는 청원/연차 포함 전체 카운트
                 var badge = document.createElement("span");
                 badge.className = "count-badge " + (specialDayLimitVal !== null ? "badge-full" : "badge-safe");
                 badge.innerText = `총 ${total}명 / 한도:${currentMax}`;
@@ -2664,26 +2726,27 @@
                 listContainer.className = "admin-list";
 
                 var dayApplicants = [];
+                var daySuffix = targetSuffix + d;  // "_YYYYMM_" + d
                 Object.keys(liveDBData).forEach(function(key) {
-                    if (key.startsWith("rq_") && !key.startsWith("rq_special_limit_") && key.includes(targetSuffix)) {
-                        if (key.endsWith(`_${d}`)) {
-                            var parts = key.split("_");
-                            var empName = parts[1]; 
-                            var regTime = Number(liveDBData[key]) || 9999999999999;
-                            dayApplicants.push({ name: empName, type: "NORMAL", time: regTime });
-                        }
-                        if (key.endsWith(`_${d}_petition`)) {
-                            var parts = key.split("_");
-                            var empName = parts[1]; 
-                            var regTime = Number(liveDBData[key]) || 9999999999999;
-                            dayApplicants.push({ name: empName, type: "PETITION", time: regTime });
-                        }
-                        if (key.endsWith(`_${d}_annual`)) {
-                            var parts = key.split("_");
-                            var empName = parts[1];
-                            var regTime = Number(liveDBData[key]) || 9999999999999;
-                            dayApplicants.push({ name: empName, type: "ANNUAL", time: regTime });
-                        }
+                    if (!key.startsWith("rq_") || key.startsWith("rq_special_limit_")
+                        || key.startsWith("rq_limit_") || key.startsWith("rq_config_")
+                        || key.startsWith("rq_allowed_") || key.startsWith("rq_current_")
+                        || key.startsWith("rq_live_group_")) return;
+                    if (!key.includes(targetSuffix)) return;
+
+                    var empName, regTime;
+                    if (key.endsWith(daySuffix + "_annual")) {
+                        empName = key.slice(3, key.length - (daySuffix + "_annual").length);
+                        regTime = Number(liveDBData[key]) || 9999999999999;
+                        if (empName) dayApplicants.push({ name: empName, type: "ANNUAL", time: regTime });
+                    } else if (key.endsWith(daySuffix + "_petition")) {
+                        empName = key.slice(3, key.length - (daySuffix + "_petition").length);
+                        regTime = Number(liveDBData[key]) || 9999999999999;
+                        if (empName) dayApplicants.push({ name: empName, type: "PETITION", time: regTime });
+                    } else if (key.endsWith(daySuffix)) {
+                        empName = key.slice(3, key.length - daySuffix.length);
+                        regTime = Number(liveDBData[key]) || 9999999999999;
+                        if (empName) dayApplicants.push({ name: empName, type: "NORMAL", time: regTime });
                     }
                 });
 
@@ -2711,10 +2774,13 @@
                 scList.forEach(function(c) {
                     var col = getScheduleCodeColor(c.name);
                     var scApplicants = [];
+                    var scPrefix = "sc_" + c.name + "_";
+                    var scSuffix = "_" + tm.fullStr + "_" + d;
                     Object.keys(liveDBData).forEach(function(key) {
-                        if (key.startsWith("sc_" + c.name + "_") && key.endsWith("_" + tm.fullStr + "_" + d)) {
-                            var parts = key.split("_");
-                            scApplicants.push(parts[2]);
+                        if (key.startsWith(scPrefix) && key.endsWith(scSuffix)) {
+                            // sc_코드명_이름_YYYYMM_일 → 이름 정확 추출
+                            var scEmpName = key.slice(scPrefix.length, key.length - scSuffix.length);
+                            if (scEmpName) scApplicants.push(scEmpName);
                         }
                     });
                     if (scApplicants.length > 0) {
