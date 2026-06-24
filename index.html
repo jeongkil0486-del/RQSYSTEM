@@ -222,6 +222,11 @@
             .calendar-header { flex-direction: column; align-items: flex-start; gap: 10px; }
             .header-buttons { width: 100%; justify-content: space-between; flex-wrap: wrap; gap: 5px; }
             .header-buttons button { padding: 6px 10px; font-size: 12px; flex-grow: 1; }
+            /* 직원 모바일 2줄 레이아웃: 휴무/코드/초기화 → 새로고침/닫기 */
+            .header-buttons .toggle-mode-btn,
+            .header-buttons .reset-all-btn[id="userResetBtn"] { flex-basis: calc(33% - 4px); flex-grow: 1; }
+            .header-buttons .refresh-btn,
+            .header-buttons .close-btn { flex-basis: calc(50% - 4px); flex-grow: 1; }
             .admin-console-box { flex-direction: column; align-items: flex-start; gap: 12px; padding: 10px; }
             .admin-console-box .console-section { width: 100%; flex-wrap: wrap; gap: 6px; }
             .admin-console-box input, .admin-console-box select { flex-grow: 1; width: 100% !important; }
@@ -274,12 +279,12 @@
             <div class="calendar-header">
                 <div class="calendar-title" id="welcomeMessage">연월 로딩중...</div>
                 <div class="header-buttons">
-                    <button type="button" id="toggleModeBtn" class="toggle-mode-btn" onclick="toggleApplicationMode()">현재 : 휴무</button>
-                    <button type="button" id="scheduleCodeApplyBtn" class="toggle-mode-btn" onclick="toggleScheduleCodeMode()" style="display:none; background-color:#868e96;">스케줄 코드</button>
-                    <button type="button" id="userResetBtn" class="reset-all-btn" onclick="resetMyRequests()" style="display: none; background-color: #e67e22;">🗑️ 전체 초기화</button>
-                    <button type="button" id="resetAllBtn" class="reset-all-btn" onclick="resetAllRequests()">⚠️ 스케줄 전체 초기화</button>
-                    <button type="button" id="resetConfigBtn" class="reset-config-btn" onclick="resetAllConfigurations()">⚙️ 설정 전체 초기화</button>
-                    <button type="button" class="refresh-btn" onclick="refreshData()">🔄 새로고침</button>
+                    <button type="button" id="toggleModeBtn" class="toggle-mode-btn" onclick="toggleApplicationMode()">휴무</button>
+                    <button type="button" id="scheduleCodeApplyBtn" class="toggle-mode-btn" onclick="toggleScheduleCodeMode()" style="display:none; background-color:#868e96;">근무</button>
+                    <button type="button" id="userResetBtn" class="reset-all-btn" onclick="resetMyRequests()" style="display: none; background-color: #e67e22;">초기화</button>
+                    <button type="button" id="resetAllBtn" class="reset-all-btn" onclick="resetAllRequests()">스케줄 전체 초기화</button>
+                    <button type="button" id="resetConfigBtn" class="reset-config-btn" onclick="resetAllConfigurations()">설정 전체 초기화</button>
+                    <button type="button" class="refresh-btn" onclick="refreshData()">새로고침</button>
                     <button type="button" class="close-btn" onclick="closeCalendar()">닫기 ✕</button>
                 </div>
             </div>
@@ -316,53 +321,35 @@
                 <div class="console-section" style="border-left: 2px solid #3498db; padding-left: 10px;">
                     
                     <div style="position: relative; display: flex; align-items: center;">
-                        <label class="hover-tooltip-trigger" style="font-size:13px; color:#2c3e50; font-weight: bold; cursor: help;">🎯 특정일 제한 ⓘ</label>
+                        <label id="specialDayTriggerBtn" style="font-size:13px; color:#2c3e50; font-weight: bold; cursor: pointer;" onclick="toggleSpecialDayBoard(event)">🎯 특정일 제한 (클릭) :</label>
                         <div class="custom-floating-tooltip" id="specialDayTooltipBoard"></div>
                     </div>
                     
                     <input type="number" id="specialDayInput" min="1" max="31" class="small-num-input" placeholder="일" style="width:45px; margin-left: 5px;">
                     <input type="number" id="specialDayLimit" min="0" max="40" class="small-num-input" placeholder="명" style="width:45px;">
                     <button type="button" class="config-save-btn" onclick="setSpecialDayLimit(true)">적용</button>
-                    <button type="button" class="limit-clear-btn" onclick="setSpecialDayLimit(false)">해제</button>
 
                     <label for="dayMaxConfig" style="margin-left: 15px;">📢 일별 신청 제한 :</label>
                     <input type="number" id="dayMaxConfig" min="1" max="40" class="small-num-input" placeholder="10">
                     <button type="button" class="config-save-btn" onclick="saveDayMaxConstraint()">적용</button>
 
                     <div style="position: relative; display: flex; align-items: center; margin-left: 15px;">
-                        <label for="limitEmpName" class="hover-tooltip-trigger" style="font-size:13px; color:#2c3e50; font-weight: bold; cursor: help;">📊 직원별 신청 제한 ⓘ</label>
+                        <label id="limitListTriggerBtn" style="font-size:13px; color:#2c3e50; font-weight: bold; cursor: pointer;" onclick="toggleLimitListBoard(event)">📊 직원별 신청 제한 (클릭) :</label>
                         <div class="custom-floating-tooltip" id="limitListTooltipBoard"></div>
                     </div>
                     
                     <input type="text" id="limitEmpName" placeholder="직원 이름" style="width: 80px; margin-left: 5px;">
                     <input type="number" id="limitEmpCount" min="0" max="31" class="small-num-input" placeholder="개수">
                     <button type="button" class="config-save-btn" onclick="setUserRequestLimit(true)">적용</button>
-                    <button type="button" class="limit-clear-btn" onclick="setUserRequestLimit(false)">초기화</button>
                 </div>
 
-                <!-- 👤 휴무 신청 개수 + 🟢 연차 제한 개수 -->
-                <div class="console-section" style="border-left: 2px solid #e74c3c; padding-left: 10px;">
-                    <label for="globalUserMaxConfig" style="font-weight: bold; color: #2c3e50;">👤 휴무 신청 개수 :</label>
-                    <input type="number" id="globalUserMaxConfig" min="1" max="31" class="small-num-input" placeholder="4">
-                    <button type="button" class="config-save-btn" onclick="saveGlobalUserMaxConstraint()">적용</button>
-                    
-                    <label for="annualUserMaxConfig" style="margin-left:15px; font-weight: bold; color: #2c3e50;">🟢 연차 제한 개수 :</label>
-                    <input type="number" id="annualUserMaxConfig" min="1" max="31" class="small-num-input" placeholder="15">
-                    <button type="button" class="config-save-btn" onclick="saveAnnualUserMaxConstraint()">적용</button>
-                </div>
-
-                <!-- 💡 그룹 관리 시스템 (드래그 앤 드롭 전용 - 입력창 및 추가/제외 버튼 삭제) -->
-                <div class="console-section" style="border-left: 2px solid #1abc9c; padding-left: 10px;">
+                <!-- 조별 신청한도 (클릭=그룹팝업) + 휴무 개수 + 연차 (한 줄) -->
+                <div class="console-section" style="border-left: 2px solid #9b59b6; padding-left: 10px;">
                     <div style="position: relative; display: flex; align-items: center;">
-                        <label id="groupPopupTriggerBtn" style="font-size:13px; color:#2c3e50; font-weight: bold; cursor: pointer;" onclick="toggleGroupBoard(event)">👥 그룹 관리 (클릭) ⓘ</label>
+                        <label id="groupPopupTriggerBtn" style="font-weight: bold; color: #9b59b6; cursor: pointer;" onclick="toggleGroupBoard(event)">👥 조별 신청 한도 (클릭) :</label>
                         <div class="custom-floating-tooltip" id="groupListTooltipBoard" style="min-width: 380px;"></div>
                     </div>
-                </div>
-
-                <!-- 조별 신청 한도 -->
-                <div class="console-section" style="border-left: 2px solid #9b59b6; padding-left: 10px;">
-                    <label>👥 조별 신청 한도 :</label>
-                    <label for="groupMaxConfigA" style="font-size: 11px; color: #2980b9;">A조</label>
+                    <label for="groupMaxConfigA" style="font-size: 11px; color: #2980b9; margin-left:4px;">A조</label>
                     <input type="number" id="groupMaxConfigA" min="1" max="40" class="small-num-input" placeholder="2">
                     <label for="groupMaxConfigB" style="font-size: 11px; color: #8e44ad; margin-left: 2px;">B조</label>
                     <input type="number" id="groupMaxConfigB" min="1" max="40" class="small-num-input" placeholder="2">
@@ -373,20 +360,57 @@
                     <label for="groupMaxConfigE" style="font-size: 11px; color: #e84393; margin-left: 2px;">E조</label>
                     <input type="number" id="groupMaxConfigE" min="1" max="40" class="small-num-input" placeholder="2">
                     <button type="button" class="config-save-btn" style="margin-left: 5px;" onclick="saveGroupMaxConstraints()">적용</button>
+
+                    <!-- 휴무 개수 + 연차 (같은 줄, 구분선) -->
+                    <span style="margin-left:12px; border-left:1px solid #ddd; padding-left:12px; display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap;">
+                        <label for="globalUserMaxConfig" style="font-weight:bold; color:#2c3e50; font-size:13px; white-space:nowrap;">👤 휴무 개수 :</label>
+                        <input type="number" id="globalUserMaxConfig" min="1" max="31" class="small-num-input" placeholder="4">
+                        <button type="button" class="config-save-btn" onclick="saveGlobalUserMaxConstraint()">적용</button>
+                        <div style="position:relative; display:inline-flex; align-items:center; margin-left:8px;">
+                            <label id="annualStatusTrigger" style="font-weight:bold; color:#28a745; cursor:pointer; white-space:nowrap; font-size:13px;" onclick="toggleAnnualStatusBoard(event)">📋 연차 (클릭) :</label>
+                            <div class="custom-floating-tooltip" id="annualStatusTooltipBoard" style="min-width:380px;"></div>
+                        </div>
+                        <input type="file" id="annualExcelUpload" accept=".xlsx,.xls" style="display:none;">
+                        <button type="button" class="config-save-btn" onclick="triggerAnnualUpload()">업로드</button>
+                        <button type="button" class="limit-clear-btn" onclick="downloadAnnualTemplate()">양식</button>
+                    </span>
                 </div>
-                
-                <!-- 🗓️ 스케줄 코드 생성 -->
-                <div class="console-section" style="border-left: 2px solid #e91e8c; padding-left: 10px;">
-                    <label style="font-weight: bold; color: #2c3e50;">🗓️ 스케줄 코드 :</label>
-                    <input type="text" id="scheduleCodeInput" placeholder="코드명 (예: OFF-A)" style="width: 100px;">
-                    <input type="number" id="scheduleCodeLimit" min="1" max="999" class="small-num-input" placeholder="제한수" style="width:60px;">
-                    <button type="button" class="config-save-btn" onclick="createScheduleCode()">생성</button>
-                    <button type="button" class="limit-clear-btn" onclick="deleteScheduleCode()">삭제</button>
-                    <div style="position: relative; display: flex; align-items: center; margin-left: 8px;">
-                        <label id="scheduleCodeListTrigger" style="font-size:13px; color:#e91e8c; font-weight: bold; cursor: pointer;" onclick="toggleScheduleCodeBoard(event)">📋 코드 목록 (클릭) ⓘ</label>
-                        <div class="custom-floating-tooltip" id="scheduleCodeTooltipBoard" style="min-width: 320px;"></div>
+
+                <!-- 🔢 조별 코드 제한 + 🗓️ 스케줄 코드 (한 줄) -->
+                <div class="console-section" style="border-left: 2px solid #c0392b; padding-left: 10px;">
+                    <div style="position: relative; display: flex; align-items: center;">
+                        <label id="scGroupLimitListTrigger" style="font-weight: bold; color: #c0392b; cursor: pointer;" onclick="toggleScGroupLimitBoard(event)">🔢 조별 코드 제한 (클릭) :</label>
+                        <div class="custom-floating-tooltip" id="scGroupLimitTooltipBoard" style="min-width: 360px;"></div>
                     </div>
+                    <select id="scGroupLimitCodeSelect" style="padding:5px 6px; border:1px solid #ccc; border-radius:4px; font-size:12px; background:#fff; color:#333; width:80px;">
+                        <option value="">코드</option>
+                    </select>
+                    <label style="font-size:11px; color:#2980b9; margin-left:4px;">A조</label>
+                    <input type="number" id="scGroupLimitA" min="0" max="99" class="small-num-input" placeholder="-">
+                    <label style="font-size:11px; color:#8e44ad; margin-left:2px;">B조</label>
+                    <input type="number" id="scGroupLimitB" min="0" max="99" class="small-num-input" placeholder="-">
+                    <label style="font-size:11px; color:#d35400; margin-left:2px;">C조</label>
+                    <input type="number" id="scGroupLimitC" min="0" max="99" class="small-num-input" placeholder="-">
+                    <label style="font-size:11px; color:#1abc9c; margin-left:2px;">D조</label>
+                    <input type="number" id="scGroupLimitD" min="0" max="99" class="small-num-input" placeholder="-">
+                    <label style="font-size:11px; color:#e84393; margin-left:2px;">E조</label>
+                    <input type="number" id="scGroupLimitE" min="0" max="99" class="small-num-input" placeholder="-">
+                    <button type="button" class="config-save-btn" style="margin-left:4px;" onclick="saveScGroupLimit()">적용</button>
+
+                    <!-- 스케줄 코드 (같은 줄, 구분선) -->
+                    <span style="margin-left:12px; border-left:1px solid #ddd; padding-left:12px; display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap;">
+                        <div style="position: relative; display: inline-flex; align-items: center;">
+                            <label id="scheduleCodeListTrigger" style="font-weight: bold; color: #e91e8c; cursor: pointer; font-size:13px; white-space:nowrap;" onclick="toggleScheduleCodeBoard(event)">🗓️ 스케줄 코드 (클릭) :</label>
+                            <div class="custom-floating-tooltip" id="scheduleCodeTooltipBoard" style="min-width: 320px;"></div>
+                        </div>
+                        <input type="text" id="scheduleCodeInput" placeholder="코드" style="width: 70px; padding:5px 6px; border:1px solid #ccc; border-radius:4px; font-size:12px;">
+                        <input type="number" id="scheduleCodeLimit" min="1" max="999" class="small-num-input" placeholder="제한" style="width:50px;">
+                        <button type="button" class="config-save-btn" onclick="createScheduleCode()">생성</button>
+                    </span>
                 </div>
+
+
+
 
                 <!-- 👤 ID 신청 + 🔒 비밀번호 초기화 + 📊 스케줄 다운로드 (한 줄 배치) -->
                 <div class="console-section" style="border-left: 2px solid #34495e; padding-left: 10px;">
@@ -398,7 +422,6 @@
                     
                     <input type="text" id="manageIdInput" placeholder="이름" style="width: 80px; margin-left: 5px;">
                     <button type="button" class="config-save-btn" onclick="addAllowedUser()">생성</button>
-                    <button type="button" class="limit-clear-btn" onclick="removeAllowedUser()">삭제</button>
 
                     <label for="targetEmpName" style="margin-left: 20px;">🔒 비밀번호 초기화 :</label>
                     <input type="text" id="targetEmpName" placeholder="이름" style="width: 80px;">
@@ -406,7 +429,7 @@
                     <button type="button" class="limit-clear-btn" onclick="resetAllPasswords()">전체</button>
 
                     <label style="margin-left: 20px;">📊 스케줄 :</label>
-                    <button type="button" class="excel-download-btn" onclick="exportToExcel()">📥 다운로드</button>
+                    <button type="button" class="excel-download-btn" onclick="exportToExcel()">다운로드</button>
 
                     <label style="margin-left: 20px;">🔑 내 비밀번호 변경 :</label>
                     <input type="password" id="newAdminPassInput" placeholder="새 비밀번호" style="width: 110px;">
@@ -594,6 +617,38 @@
                     scBoard.classList.remove("active");
                 }
             }
+
+            var scGlBoard = document.getElementById("scGroupLimitTooltipBoard");
+            var scGlTrigger = document.getElementById("scGroupLimitListTrigger");
+            if (scGlBoard && scGlBoard.classList.contains("active")) {
+                if (!scGlBoard.contains(event.target) && event.target !== scGlTrigger) {
+                    scGlBoard.classList.remove("active");
+                }
+            }
+
+            var annBoard = document.getElementById("annualStatusTooltipBoard");
+            var annTrigger = document.getElementById("annualStatusTrigger");
+            if (annBoard && annBoard.classList.contains("active")) {
+                if (!annBoard.contains(event.target) && event.target !== annTrigger) {
+                    annBoard.classList.remove("active");
+                }
+            }
+
+            var spBoard = document.getElementById("specialDayTooltipBoard");
+            var spTrigger = document.getElementById("specialDayTriggerBtn");
+            if (spBoard && spBoard.classList.contains("active")) {
+                if (!spBoard.contains(event.target) && event.target !== spTrigger) {
+                    spBoard.classList.remove("active");
+                }
+            }
+
+            var limBoard = document.getElementById("limitListTooltipBoard");
+            var limTrigger = document.getElementById("limitListTriggerBtn");
+            if (limBoard && limBoard.classList.contains("active")) {
+                if (!limBoard.contains(event.target) && event.target !== limTrigger) {
+                    limBoard.classList.remove("active");
+                }
+            }
         });
 
         function getFirebaseItem(key, defaultValue) {
@@ -716,6 +771,21 @@
                 drawLiveGroupBoards();
             }
         }
+
+        function deleteAllowedUserFromBoard(event, name) {
+            event.preventDefault();
+            if (!confirm("[" + name + "] ID를 명단에서 삭제하시겠습니까?")) return;
+            allowedUsers = allowedUsers.filter(function(n){ return n !== name; });
+            setFirebaseItem("allowed_users_list", JSON.stringify(allowedUsers));
+            ['A','B','C','D','E'].forEach(function(letter) {
+                var grp = getLiveGroupList(letter);
+                if (grp.includes(name)) {
+                    setFirebaseItem("rq_live_group_" + letter, grp.filter(function(n){ return n !== name; }));
+                }
+            });
+            drawAllowedUsersBoard();
+            drawLiveGroupBoards();
+        }
         
         // 🔄 ID 드래그 보드
         function drawAllowedUsersBoard() {
@@ -730,7 +800,7 @@
                 html += `<span style="color:#aaa; font-style:italic;">(등록된 ID가 없습니다)</span>`;
             } else {
                 allowedUsers.forEach(function(n, index) { 
-                    html += `<span class="tooltip-badge draggable-badge" draggable="true" data-index="${index}">${n}</span>`; 
+                    html += `<span class="tooltip-badge draggable-badge" draggable="true" data-index="${index}" data-name="${n}">${n}</span>`; 
                 });
             }
             html += `</div>`;
@@ -738,6 +808,16 @@
 
             var listContainer = document.getElementById("sortable-id-list");
             if (listContainer) {
+                // 우클릭 삭제 이벤트 위임
+                listContainer.addEventListener("contextmenu", function(e) {
+                    var badge = e.target.closest(".draggable-badge");
+                    if (!badge) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    var name = badge.getAttribute("data-name");
+                    if (name) deleteAllowedUserFromBoard(e, name);
+                });
+
                 var dragSrcEl = null;
                 var items = listContainer.querySelectorAll('.draggable-badge');
 
@@ -960,9 +1040,9 @@
             }
             // 버튼 텍스트 갱신
             if (btn) {
-                if (currentAppMode === "NORMAL")   btn.innerText = "현재 : 휴무";
-                if (currentAppMode === "PETITION") btn.innerText = "현재 : 청원";
-                if (currentAppMode === "ANNUAL")   btn.innerText = "현재 : 연차";
+                if (currentAppMode === "NORMAL")   btn.innerText = "휴무";
+                if (currentAppMode === "PETITION") btn.innerText = "청원";
+                if (currentAppMode === "ANNUAL")   btn.innerText = "연차";
             }
             setModeButtonStyles();
         }
@@ -1020,17 +1100,187 @@
             var container = document.getElementById("scheduleCodeTooltipBoard");
             if (!container) return;
             var list = getScheduleCodeList();
-            var html = `<strong>🗓️ 생성된 스케줄 코드 목록</strong>`;
+            var html = "<strong style='color:#fff;font-size:13px;'>🗓️ 스케줄 코드 목록</strong>"
+                     + "<div style='font-size:10px;color:#bdc3c7;margin:3px 0 7px;'>우클릭으로 삭제</div>";
             if (list.length === 0) {
-                html += `<div style="color:#aaa; font-style:italic; margin-top:5px;">(생성된 코드 없음)</div>`;
+                html += "<div style='color:#bdc3c7;font-style:italic;font-size:12px;'>(생성된 코드 없음)</div>";
             } else {
-                html += `<div style="margin-top:6px;">`;
+                html += "<div style='display:flex;flex-wrap:wrap;gap:5px;'>";
                 list.forEach(function(c) {
-                    html += `<span class="tooltip-badge" style="background:rgba(233,30,140,0.2); color:#e91e8c; border:1px solid #e91e8c;">${c.name} (제한: ${c.limit}개)</span>`;
+                    html += "<span class='sc-code-badge'"
+                          + " data-code='" + c.name + "'"
+                          + " style='background:rgba(233,30,140,0.3);color:#ff80b0;border:1px solid #e91e8c;"
+                          + "border-radius:5px;padding:4px 10px;font-size:12px;font-weight:bold;white-space:nowrap;cursor:context-menu;'>"
+                          + c.name + " <span style='color:#f8bbd0;font-weight:normal;pointer-events:none;'>제한 " + c.limit + "개</span></span>";
                 });
-                html += `</div>`;
+                html += "</div>";
             }
             container.innerHTML = html;
+            container.oncontextmenu = function(e) {
+                var badge = e.target.closest(".sc-code-badge");
+                if (!badge) return;
+                e.preventDefault();
+                deleteScheduleCodeFromBoard(e, badge.getAttribute("data-code"));
+            };
+            updateScGroupLimitCodeSelect();
+        }
+
+        function deleteScheduleCodeFromBoard(event, codeName) {
+            event.preventDefault();
+            if (!confirm("[" + codeName + "] 스케줄 코드를 삭제하시겠습니까?")) return;
+            var list = getScheduleCodeList().filter(function(c){ return c.name !== codeName; });
+            setFirebaseItem("schedule_codes_list", JSON.stringify(list));
+            drawScheduleCodeBoard();
+        }
+
+        // ====== 스케줄 코드 조별 일자 제한 ======
+
+        // 코드 선택 셀렉트 동기화
+        function updateScGroupLimitCodeSelect() {
+            var sel = document.getElementById("scGroupLimitCodeSelect");
+            if (!sel) return;
+            var list = getScheduleCodeList();
+            var currentVal = sel.value;
+            sel.innerHTML = '<option value="">코드 선택</option>';
+            list.forEach(function(c) {
+                var opt = document.createElement("option");
+                opt.value = c.name;
+                opt.innerText = c.name;
+                sel.appendChild(opt);
+            });
+            if (currentVal) sel.value = currentVal;
+        }
+
+        // DB 키: sc_glimit_코드명_조(A/B/C/D/E)
+        function getScGroupLimit(codeName, groupLetter) {
+            var key = "sc_glimit_" + codeName + "_" + groupLetter;
+            var val = getFirebaseItem(key, null);
+            return val !== null ? parseInt(val) : null;
+        }
+
+        function saveScGroupLimit() {
+            if (!isAdmin) return;
+            var sel = document.getElementById("scGroupLimitCodeSelect");
+            var codeName = sel ? sel.value.trim() : "";
+            if (!codeName) { alert("❌ 코드를 선택해주세요."); return; }
+
+            var vals = {
+                A: document.getElementById("scGroupLimitA").value.trim(),
+                B: document.getElementById("scGroupLimitB").value.trim(),
+                C: document.getElementById("scGroupLimitC").value.trim(),
+                D: document.getElementById("scGroupLimitD").value.trim(),
+                E: document.getElementById("scGroupLimitE").value.trim()
+            };
+
+            var applied = [];
+            var hasAny = false;
+            var groups = ['A','B','C','D','E'];
+            for (var gi = 0; gi < groups.length; gi++) {
+                var g = groups[gi];
+                if (vals[g] !== "") {
+                    var num = parseInt(vals[g]);
+                    if (isNaN(num) || num < 0) {
+                        alert("❌ " + g + "조 값이 올바르지 않습니다. (0 이상 숫자)");
+                        return;
+                    }
+                    applied.push({ g: g, num: num });
+                    hasAny = true;
+                }
+            }
+
+            if (!hasAny) { alert("❌ 최소 한 개 조의 제한 값을 입력해주세요."); return; }
+
+            // 유효성 통과 후 일괄 저장
+            for (var ai = 0; ai < applied.length; ai++) {
+                setFirebaseItem("sc_glimit_" + codeName + "_" + applied[ai].g, applied[ai].num);
+            }
+            alert("✨ [" + codeName + "] 코드 조별 일자 제한 적용 완료!\n" + applied.map(function(x){ return x.g + "조: " + x.num + "명"; }).join(" | "));
+            drawScGroupLimitBoard();
+        }
+
+        function clearScGroupLimit() {
+            if (!isAdmin) return;
+            var sel = document.getElementById("scGroupLimitCodeSelect");
+            var codeName = sel ? sel.value.trim() : "";
+            if (!codeName) { alert("❌ 코드를 선택해주세요."); return; }
+            if (!confirm("[" + codeName + "] 코드의 전체 조별 일자 제한을 해제하시겠습니까?")) return;
+            ['A','B','C','D','E'].forEach(function(g) {
+                setFirebaseItem("sc_glimit_" + codeName + "_" + g, null);
+            });
+            // 입력창 초기화
+            ['A','B','C','D','E'].forEach(function(g) {
+                var el = document.getElementById("scGroupLimit" + g);
+                if (el) el.value = "";
+            });
+            alert("✨ 해제 완료.");
+            drawScGroupLimitBoard();
+        }
+
+        function toggleScGroupLimitBoard(event) {
+            var board = document.getElementById("scGroupLimitTooltipBoard");
+            if (board) board.classList.toggle("active");
+            if (event) event.stopPropagation();
+        }
+
+        function drawScGroupLimitBoard() {
+            var container = document.getElementById("scGroupLimitTooltipBoard");
+            if (!container) return;
+            var list = getScheduleCodeList();
+            var GROUP_LABELS = { A: "🔵A조", B: "🟣B조", C: "🟠C조", D: "🟢D조", E: "🔴E조" };
+            var html = "<strong style='color:#fff;font-size:13px;'>🔢 코드별 조별 제한 현황</strong>"
+                     + "<div style='font-size:10px;color:#bdc3c7;margin:3px 0 7px;'>우클릭으로 해당 조 제한 삭제</div>";
+            if (list.length === 0) {
+                html += "<div style='color:#aaa;font-style:italic;font-size:12px;'>(생성된 코드 없음)</div>";
+            } else {
+                html += "<div style='display:flex;flex-direction:column;gap:6px;'>";
+                list.forEach(function(c) {
+                    html += "<div style='display:flex;flex-wrap:wrap;align-items:center;gap:4px;'>";
+                    html += "<span style='color:#ff80b0;font-weight:bold;font-size:13px;'>[" + c.name + "]</span> ";
+                    var hasLimit = false;
+                    ['A','B','C','D','E'].forEach(function(g) {
+                        var v = getScGroupLimit(c.name, g);
+                        if (v !== null) {
+                            hasLimit = true;
+                            html += "<span class='scgl-badge'"
+                                  + " data-code='" + c.name + "'"
+                                  + " data-group='" + g + "'"
+                                  + " style='background:rgba(233,30,140,0.25);border:1px solid #e91e8c;border-radius:5px;"
+                                  + "padding:3px 8px;font-size:12px;color:#f8bbd0;font-weight:bold;cursor:context-menu;white-space:nowrap;'>"
+                                  + GROUP_LABELS[g] + ": " + v + "명</span>";
+                        }
+                    });
+                    if (!hasLimit) {
+                        html += "<span style='color:#aaa;font-size:11px;'>제한 없음</span>";
+                    }
+                    html += "</div>";
+                });
+                html += "</div>";
+            }
+            container.innerHTML = html;
+            container.oncontextmenu = function(e) {
+                var badge = e.target.closest(".scgl-badge");
+                if (!badge) return;
+                e.preventDefault();
+                deleteScGroupLimitFromBoard(e, badge.getAttribute("data-code"), badge.getAttribute("data-group"));
+            };
+        }
+
+        function deleteScGroupLimitFromBoard(event, codeName, groupLetter) {
+            event.preventDefault();
+            if (!confirm("[" + codeName + "] 코드의 " + groupLetter + "조 제한을 삭제하시겠습니까?")) return;
+            setFirebaseItem("sc_glimit_" + codeName + "_" + groupLetter, null);
+            drawScGroupLimitBoard();
+        }
+
+        // 해당 조에서 특정 코드를 특정 일자에 쓴 인원수 카운트
+        function getGroupScCodeCountByDate(groupArray, codeName, date) {
+            var count = 0;
+            var tm = getTargetYearMonth();
+            groupArray.forEach(function(member) {
+                var scKey = "sc_" + codeName + "_" + member + "_" + tm.fullStr + "_" + date;
+                if (liveDBData[scKey] !== undefined) count++;
+            });
+            return count;
         }
 
         // ====== 스케줄 코드 색상 팔레트 (코드명 → 고유 색상) ======
@@ -1082,7 +1332,7 @@
                 currentScheduleCode = availList[nextIdx].name;
             }
 
-            if (scBtn) scBtn.innerText = "현재 : " + currentScheduleCode;
+            if (scBtn) scBtn.innerText = currentScheduleCode;
             setModeButtonStyles();
             refreshData();
         }
@@ -1504,16 +1754,128 @@
 
         function saveAnnualUserMaxConstraint() {
             if (!isAdmin) return;
-            var annualMaxInput = document.getElementById("annualUserMaxConfig").value.trim();
+            var annualMaxInput = document.getElementById("annualUserMaxConfig") ? document.getElementById("annualUserMaxConfig").value.trim() : "";
             var annualMax = annualMaxInput === "" ? 15 : parseInt(annualMaxInput);
-            
-            if (isNaN(annualMax) || annualMax < 0) {
-                alert("❌ 연차 제한 개수는 올바른 값을 입력해주세요.");
-                return;
-            }
-            
+            if (isNaN(annualMax) || annualMax < 0) { alert("❌ 연차 제한 개수는 올바른 값을 입력해주세요."); return; }
             setFirebaseItem("rq_config_annual_user_max", annualMax);
-            alert(`✨ 적용 완료: 이제 전 직원의 한 달 연차 제한 개수가 [ 최대 ${annualMax}개 ]로 일괄 제한 제어됩니다.`);
+            alert(`✨ 적용 완료.`);
+        }
+
+        // ====== 직원별 연차 개수 업로드/관리 ======
+        // DB 키: annual_quota_이름  (해당 월 연차 총 부여 개수)
+
+        function getAnnualQuota(userName) {
+            var val = getFirebaseItem("annual_quota_" + userName, null);
+            return val !== null ? parseInt(val) : null;
+        }
+
+        // 파일선택 없이 버튼 클릭 → hidden input 트리거 → 선택 즉시 업로드
+        function triggerAnnualUpload() {
+            var fi = document.getElementById("annualExcelUpload");
+            if (!fi) return;
+            fi.onchange = function() {
+                if (fi.files && fi.files.length > 0) uploadAnnualExcel();
+            };
+            fi.click();
+        }
+
+        function uploadAnnualExcel() {
+            if (!isAdmin) return;
+            var fileInput = document.getElementById("annualExcelUpload");
+            if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+                alert("❌ 엑셀 파일을 선택해주세요."); return;
+            }
+            var file = fileInput.files[0];
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    var data = new Uint8Array(e.target.result);
+                    var workbook = XLSX.read(data, { type: "array" });
+                    var sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    var rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                    var toUpload = [];
+                    var errors = [];
+                    for (var i = 1; i < rows.length; i++) {
+                        var uName = rows[i][0] !== undefined ? String(rows[i][0]).trim() : "";
+                        var quota = rows[i][1] !== undefined ? parseInt(rows[i][1]) : NaN;
+                        if (uName === "") continue;
+                        if (isNaN(quota) || quota < 0) { errors.push((i+1) + "행 [" + uName + "]: 개수 오류"); continue; }
+                        if (!allowedUsers.includes(uName)) { errors.push(uName + ": 명단에 없는 직원"); continue; }
+                        toUpload.push({ name: uName, quota: quota });
+                    }
+                    if (toUpload.length === 0) {
+                        alert("❌ 등록할 유효한 데이터가 없습니다.\n" + (errors.length > 0 ? errors.join("\n") : ""));
+                        return;
+                    }
+                    var confirmMsg = toUpload.length + "명의 연차를 업로드합니다:\n" + toUpload.map(function(x){ return x.name + ": " + x.quota + "일"; }).join(", ");
+                    if (errors.length > 0) confirmMsg += "\n\n⚠️ 제외(" + errors.length + "건):\n" + errors.join("\n");
+                    if (!confirm(confirmMsg)) return;
+                    toUpload.forEach(function(x) { setFirebaseItem("annual_quota_" + x.name, x.quota); });
+                    alert("✨ " + toUpload.length + "명 연차 업로드 완료!");
+                    fileInput.value = "";
+                    drawAnnualStatusBoard();
+                } catch(err) { alert("❌ 파일 오류: " + err.message); }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function downloadAnnualTemplate() {
+            var ws = XLSX.utils.aoa_to_sheet([["이름","연차개수"],["홍길동",15],["김철수",10]]);
+            var wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "연차업로드양식");
+            XLSX.writeFile(wb, "연차업로드_양식.xlsx");
+        }
+
+        function toggleAnnualStatusBoard(event) {
+            var board = document.getElementById("annualStatusTooltipBoard");
+            if (board) board.classList.toggle("active");
+            if (event) event.stopPropagation();
+        }
+
+        function drawAnnualStatusBoard() {
+            var container = document.getElementById("annualStatusTooltipBoard");
+            if (!container) return;
+            var tm = getTargetYearMonth();
+            var html = "<strong style='color:#fff;font-size:13px;'>📊 직원별 연차 현황</strong>"
+                     + "<div style='font-size:11px;color:#bdc3c7;margin:4px 0 8px;'>이름 &nbsp; 부여 / 사용 / 잔 &nbsp; (우클릭으로 삭제)</div>"
+                     + "<div style='display:flex;flex-wrap:wrap;gap:5px;'>";
+            var hasAny = false;
+            allowedUsers.forEach(function(name) {
+                var quota = getAnnualQuota(name);
+                if (quota === null) return;
+                hasAny = true;
+                var used = 0;
+                var prefix = "rq_" + name + "_" + tm.fullStr + "_";
+                Object.keys(liveDBData).forEach(function(key) {
+                    if (key.startsWith(prefix) && key.endsWith("_annual")) used++;
+                });
+                var remain = quota - used;
+                var bgColor = remain <= 0 ? "rgba(229,57,53,0.25)" : remain <= 2 ? "rgba(245,127,23,0.25)" : "rgba(46,125,50,0.25)";
+                var bdColor = remain <= 0 ? "#e53935" : remain <= 2 ? "#f57f17" : "#43a047";
+                var txColor = remain <= 0 ? "#ff8a80" : remain <= 2 ? "#ffcc02" : "#a5d6a7";
+                html += "<span class='ann-quota-badge'"
+                      + " data-name='" + name + "'"
+                      + " style='background:" + bgColor + ";border:1px solid " + bdColor + ";border-radius:5px;"
+                      + "padding:4px 8px;font-size:12px;color:" + txColor + ";font-weight:bold;white-space:nowrap;cursor:context-menu;'>"
+                      + name + " " + quota + "/" + used + "/" + remain
+                      + "</span>";
+            });
+            if (!hasAny) html += "<span style='color:#aaa;font-style:italic;font-size:12px;'>업로드된 연차 없음</span>";
+            html += "</div>";
+            container.innerHTML = html;
+            container.oncontextmenu = function(e) {
+                var badge = e.target.closest(".ann-quota-badge");
+                if (!badge) return;
+                e.preventDefault();
+                deleteAnnualQuotaFromBoard(e, badge.getAttribute("data-name"));
+            };
+        }
+
+        function deleteAnnualQuotaFromBoard(event, name) {
+            event.preventDefault();
+            if (!confirm("[" + name + "] 직원의 연차 할당량을 삭제하시겠습니까?")) return;
+            setFirebaseItem("annual_quota_" + name, null);
+            drawAnnualStatusBoard();
         }
 
         function setSpecialDayLimit(isSet) {
@@ -1623,11 +1985,23 @@
             }
         }
 
+        function toggleSpecialDayBoard(event) {
+            var board = document.getElementById("specialDayTooltipBoard");
+            if (board) board.classList.toggle("active");
+            if (event) event.stopPropagation();
+        }
+
+        function toggleLimitListBoard(event) {
+            var board = document.getElementById("limitListTooltipBoard");
+            if (board) board.classList.toggle("active");
+            if (event) event.stopPropagation();
+        }
+
         function updateLimitTooltipBoard() {
             var limitContainer = document.getElementById("limitListTooltipBoard");
             var specialContainer = document.getElementById("specialDayTooltipBoard");
             if (!limitContainer || !specialContainer) return;
-            
+
             var limitedUsers = [];
             var specialDays = [];
             var tm = getTargetYearMonth();
@@ -1635,34 +2009,71 @@
             Object.keys(liveDBData).forEach(function(key) {
                 if (key.startsWith("rq_limit_")) {
                     limitedUsers.push({ name: key.replace("rq_limit_", ""), count: liveDBData[key] });
-                } else if (key.startsWith(`rq_special_limit_${tm.fullStr}_`)) {
-                    specialDays.push({ day: key.replace(`rq_special_limit_${tm.fullStr}_`, ""), count: liveDBData[key] });
+                } else if (key.startsWith("rq_special_limit_" + tm.fullStr + "_")) {
+                    specialDays.push({ day: key.replace("rq_special_limit_" + tm.fullStr + "_", ""), count: liveDBData[key] });
                 }
             });
-            
-            var limitHtml = `<strong>📊 직원별 개별 한도 지정 현황</strong>`;
+
+            // 직원별 신청제한 팝업
+            var limitHtml = "<strong style='color:#fff;font-size:13px;'>📊 직원별 개별 한도 현황</strong>"
+                          + "<div style='font-size:10px;color:#bdc3c7;margin:3px 0 7px;'>우클릭으로 삭제</div>";
             if (limitedUsers.length === 0) {
-                limitHtml += `<div style="color:#aaa; font-style:italic; margin-bottom:8px;">(개별 제한 설정된 직원이 없습니다)</div>`;
+                limitHtml += "<div style='color:#aaa;font-style:italic;font-size:12px;'>(개별 제한 없음)</div>";
             } else {
-                limitHtml += `<div style="margin-bottom:8px;">`;
-                limitedUsers.sort(function(a, b) { return a.name.localeCompare(b.name); }).forEach(function(item) {
-                    limitHtml += `<span class="tooltip-badge">${item.name}: ${item.count}개</span>`;
+                limitHtml += "<div style='display:flex;flex-wrap:wrap;gap:5px;'>";
+                limitedUsers.sort(function(a,b){ return a.name.localeCompare(b.name); }).forEach(function(item) {
+                    limitHtml += "<span class='lim-badge'"
+                               + " data-name='" + item.name + "'"
+                               + " style='background:rgba(52,152,219,0.25);border:1px solid #3498db;border-radius:5px;"
+                               + "padding:4px 8px;font-size:12px;color:#74b9ff;font-weight:bold;cursor:context-menu;white-space:nowrap;'>"
+                               + item.name + ": " + item.count + "개</span>";
                 });
-                limitHtml += `</div>`;
+                limitHtml += "</div>";
             }
             limitContainer.innerHTML = limitHtml;
+            limitContainer.oncontextmenu = function(e) {
+                var badge = e.target.closest(".lim-badge");
+                if (!badge) return;
+                e.preventDefault();
+                deleteUserLimitFromBoard(e, badge.getAttribute("data-name"));
+            };
 
-            var specialHtml = `<strong style="color:#3498db;">🎯 당월 특정일 인원수 제한 현황</strong>`;
+            // 특정일 제한 팝업
+            var specialHtml = "<strong style='color:#fff;font-size:13px;'>🎯 당월 특정일 제한 현황</strong>"
+                            + "<div style='font-size:10px;color:#bdc3c7;margin:3px 0 7px;'>우클릭으로 삭제</div>";
             if (specialDays.length === 0) {
-                specialHtml += `<div style="color:#aaa; font-style:italic; margin-top:5px;">(별도 인원수 제한이 걸린 날짜가 없습니다)</div>`;
+                specialHtml += "<div style='color:#aaa;font-style:italic;font-size:12px;'>(특정일 제한 없음)</div>";
             } else {
-                specialHtml += `<div style="margin-top:8px;">`;
-                specialDays.sort(function(a,b){ return parseInt(a.day) - parseInt(b.day); }).forEach(function(item){
-                    specialHtml += `<span class="tooltip-badge" style="background:rgba(52,152,219,0.3); color:#54a0ff;">${item.day}일: ${item.count}명한정</span>`;
+                specialHtml += "<div style='display:flex;flex-wrap:wrap;gap:5px;'>";
+                specialDays.sort(function(a,b){ return parseInt(a.day)-parseInt(b.day); }).forEach(function(item){
+                    specialHtml += "<span class='sp-day-badge'"
+                                 + " data-day='" + item.day + "'"
+                                 + " style='background:rgba(52,152,219,0.25);border:1px solid #54a0ff;border-radius:5px;"
+                                 + "padding:4px 8px;font-size:12px;color:#74b9ff;font-weight:bold;cursor:context-menu;white-space:nowrap;'>"
+                                 + item.day + "일: " + item.count + "명</span>";
                 });
-                specialHtml += `</div>`;
+                specialHtml += "</div>";
             }
             specialContainer.innerHTML = specialHtml;
+            specialContainer.oncontextmenu = function(e) {
+                var badge = e.target.closest(".sp-day-badge");
+                if (!badge) return;
+                e.preventDefault();
+                deleteSpecialDayFromBoard(e, badge.getAttribute("data-day"));
+            };
+        }
+
+        function deleteSpecialDayFromBoard(event, day) {
+            event.preventDefault();
+            var tm = getTargetYearMonth();
+            if (!confirm(parseInt(tm.month) + "월 " + day + "일 특정일 제한을 삭제하시겠습니까?")) return;
+            setFirebaseItem("rq_special_limit_" + tm.fullStr + "_" + day, null);
+        }
+
+        function deleteUserLimitFromBoard(event, name) {
+            event.preventDefault();
+            if (!confirm("[" + name + "] 직원의 개별 신청 제한을 삭제하시겠습니까?")) return;
+            setFirebaseItem("rq_limit_" + name, null);
         }
 
         function refreshData() {
@@ -1711,6 +2122,9 @@
                 drawAllowedUsersBoard(); 
                 drawLiveGroupBoards();
                 drawScheduleCodeBoard();
+                drawScGroupLimitBoard();
+                updateScGroupLimitCodeSelect();
+                drawAnnualStatusBoard();
             } else {
                 var savedConfig = getFirebaseItem("rq_allowed_start_datetime", null);
                 var savedEndConfig = getFirebaseItem("rq_allowed_end_datetime", null);
@@ -1728,7 +2142,8 @@
                 var myAnnualCount = getMyAnnualCount();
                 var customLimitStr = getFirebaseItem(`rq_limit_${currentUser}`, null);
                 var globalUserMax = parseInt(getFirebaseItem("rq_config_global_user_max", "4"));
-                var annualMaxLimit = parseInt(getFirebaseItem("rq_config_annual_user_max", "15"));
+                var personalQuotaDisp = getAnnualQuota(currentUser);
+                var annualMaxLimit = personalQuotaDisp !== null ? personalQuotaDisp : parseInt(getFirebaseItem("rq_config_annual_user_max", "15"));
                 var maxLimit = customLimitStr !== null ? parseInt(customLimitStr) : globalUserMax;
                 
                 if(toggleModeBtn) { toggleModeBtn.style.display = "flex"; }
@@ -1744,9 +2159,9 @@
                     if (scList.length > 0) {
                         scBtn.style.display = "flex";
                         if (currentAppMode === "SCHEDULE_CODE") {
-                            scBtn.innerText = "현재 : " + currentScheduleCode;
+                            scBtn.innerText = currentScheduleCode;
                         } else {
-                            scBtn.innerText = "스케줄 코드";
+                            scBtn.innerText = "근무";
                         }
                     } else {
                         scBtn.style.display = "none";
@@ -1754,9 +2169,9 @@
                 }
                 // 활성/비활성 버튼 색상 통일 적용
                 if (toggleModeBtn) {
-                    if (currentAppMode === "NORMAL")   toggleModeBtn.innerText = "현재 : 휴무";
-                    if (currentAppMode === "PETITION") toggleModeBtn.innerText = "현재 : 청원";
-                    if (currentAppMode === "ANNUAL")   toggleModeBtn.innerText = "현재 : 연차";
+                    if (currentAppMode === "NORMAL")   toggleModeBtn.innerText = "휴무";
+                    if (currentAppMode === "PETITION") toggleModeBtn.innerText = "청원";
+                    if (currentAppMode === "ANNUAL")   toggleModeBtn.innerText = "연차";
                 }
                 setModeButtonStyles();
 
@@ -1792,20 +2207,21 @@
             var deletedCount = 0;
 
             if (mode === "ALL") {
-                // 휴무/청원/연차 + 스케줄 코드 전체
+                // 휴무/청원 + 스케줄 코드 (연차 보호)
                 var rqPrefix = "rq_" + currentUser + "_" + tm.fullStr + "_";
                 var scPrefix = "sc_";
                 Object.keys(liveDBData).forEach(function(key) {
-                    if (key.startsWith(rqPrefix)) {
+                    if (key.startsWith(rqPrefix) && !key.endsWith("_annual")) {
                         setFirebaseItem(key, null); deletedCount++;
                     }
                 });
                 Object.keys(liveDBData).forEach(function(key) {
-                    if (key.startsWith(scPrefix) && key.includes("_" + currentUser + "_" + tm.fullStr + "_")) {
+                    if (key.startsWith(scPrefix) && key.includes("_" + currentUser + "_" + tm.fullStr + "_")
+                        && !key.startsWith("sc_glimit_")) {
                         setFirebaseItem(key, null); deletedCount++;
                     }
                 });
-                alert(deletedCount > 0 ? "✨ 휴무 + 스케줄 코드 전체 초기화 완료." : "ℹ️ 삭제할 내역이 없습니다.");
+                alert(deletedCount > 0 ? "✨ 휴무 + 스케줄 코드 초기화 완료. (연차 내역 보존)" : "ℹ️ 삭제할 내역이 없습니다.");
 
             } else if (mode === "SCHEDULE") {
                 // 스케줄 코드만
@@ -1818,14 +2234,14 @@
                 alert(deletedCount > 0 ? "✨ 스케줄 코드 내역이 초기화되었습니다." : "ℹ️ 삭제할 스케줄 코드 내역이 없습니다.");
 
             } else if (mode === "HOLIDAY") {
-                // 휴무/청원/연차만
+                // 휴무/청원만 (연차 보호)
                 var rqPrefix = "rq_" + currentUser + "_" + tm.fullStr + "_";
                 Object.keys(liveDBData).forEach(function(key) {
-                    if (key.startsWith(rqPrefix)) {
+                    if (key.startsWith(rqPrefix) && !key.endsWith("_annual")) {
                         setFirebaseItem(key, null); deletedCount++;
                     }
                 });
-                alert(deletedCount > 0 ? "✨ 휴무/청원/연차 내역이 초기화되었습니다." : "ℹ️ 삭제할 휴무 내역이 없습니다.");
+                alert(deletedCount > 0 ? "✨ 휴무/청원 내역이 초기화되었습니다. (연차 보존)" : "ℹ️ 삭제할 휴무 내역이 없습니다.");
             }
         }
 
@@ -1841,6 +2257,7 @@
             if(document.getElementById("specialDayInput")) document.getElementById("specialDayInput").value = "";
             if(document.getElementById("specialDayLimit")) document.getElementById("specialDayLimit").value = "";
             if(document.getElementById("annualUserMaxConfig")) document.getElementById("annualUserMaxConfig").value = "";
+            if(document.getElementById("annualExcelUpload")) document.getElementById("annualExcelUpload").value = "";
             if(document.getElementById("groupMaxConfigD")) document.getElementById("groupMaxConfigD").value = "";
             if(document.getElementById("groupMaxConfigE")) document.getElementById("groupMaxConfigE").value = "";
             
@@ -1859,9 +2276,9 @@
             currentAppMode = "NORMAL";
             currentScheduleCode = "";
             var btn = document.getElementById("toggleModeBtn");
-            if (btn) { btn.innerText = "현재 : 휴무"; }
+            if (btn) { btn.innerText = "휴무"; }
             var scBtn = document.getElementById("scheduleCodeApplyBtn");
-            if (scBtn) { scBtn.innerText = "스케줄 코드"; scBtn.style.display = "none"; }
+            if (scBtn) { scBtn.innerText = "근무"; scBtn.style.display = "none"; }
             setModeButtonStyles();
             document.getElementById("loginArea").style.display = "block";
         }
@@ -1950,6 +2367,27 @@
                     alert("❌ 신청 불가! [" + currentScheduleCode + "] 코드 개인 제한(" + codeObj.limit + "개)을 초과하였습니다.");
                     return;
                 }
+
+                // 조별 일자 제한 체크
+                var myGroupLetter = null;
+                if (getLiveGroupList('A').includes(currentUser)) myGroupLetter = 'A';
+                else if (getLiveGroupList('B').includes(currentUser)) myGroupLetter = 'B';
+                else if (getLiveGroupList('C').includes(currentUser)) myGroupLetter = 'C';
+                else if (getLiveGroupList('D').includes(currentUser)) myGroupLetter = 'D';
+                else if (getLiveGroupList('E').includes(currentUser)) myGroupLetter = 'E';
+
+                if (myGroupLetter !== null) {
+                    var groupLimit = getScGroupLimit(currentScheduleCode, myGroupLetter);
+                    if (groupLimit !== null) {
+                        var groupArr = getLiveGroupList(myGroupLetter);
+                        var groupUsed = getGroupScCodeCountByDate(groupArr, currentScheduleCode, date);
+                        if (groupUsed >= groupLimit) {
+                            alert("❌ 신청 불가! [" + currentScheduleCode + "] 코드는 " + myGroupLetter + "조에서 해당 일자에 최대 " + groupLimit + "명까지만 사용 가능합니다.\n(현재 " + groupUsed + "명 사용 중)");
+                            return;
+                        }
+                    }
+                }
+
                 setFirebaseItem(scKey, new Date().getTime());
                 return;
             }
@@ -1960,11 +2398,12 @@
             }
 
             if (currentAppMode === "ANNUAL") {
-                var myAnnualCount = getMyAnnualCount(); 
-                var annualUserMax = parseInt(getFirebaseItem("rq_config_annual_user_max", "15"));
-                
+                var myAnnualCount = getMyAnnualCount();
+                // 개인 연차 할당량 우선, 없으면 글로벌 제한
+                var personalQuota = getAnnualQuota(currentUser);
+                var annualUserMax = personalQuota !== null ? personalQuota : parseInt(getFirebaseItem("rq_config_annual_user_max", "15"));
                 if (myAnnualCount >= annualUserMax) {
-                    alert(`❌ 신청 불가! 배정된 연차 신청 개수 ${annualUserMax}개를 모두 소진하셨습니다.`);
+                    alert("❌ 신청 불가! 배정된 연차 개수(" + annualUserMax + "개)를 모두 소진하셨습니다.");
                     return;
                 }
                 setFirebaseItem(dataKey + "_annual", new Date().getTime());
@@ -2404,23 +2843,25 @@
                     var targetSuffix = "_" + tm.fullStr + "_";
 
                     Object.keys(liveDBData).forEach(function(key) {
-                        // 휴무/청원/연차 (rq_이름_YYYYMM_일 형태, 설정키 제외)
+                        // 휴무/청원 (연차_annual은 보호)
                         if (key.startsWith("rq_") && key.includes(targetSuffix)
                             && !key.startsWith("rq_special_limit_")
                             && !key.startsWith("rq_limit_")
                             && !key.startsWith("rq_config_")
                             && !key.startsWith("rq_allowed_")
                             && !key.startsWith("rq_current_")
-                            && !key.startsWith("rq_live_group_")) {
+                            && !key.startsWith("rq_live_group_")
+                            && !key.endsWith("_annual")) {   // ← 연차 보호
                             setFirebaseItem(key, null);
                         }
                         // 스케줄 코드 (sc_코드명_이름_YYYYMM_일 형태)
-                        if (key.startsWith("sc_") && key.includes(targetSuffix)) {
+                        if (key.startsWith("sc_") && key.includes(targetSuffix)
+                            && !key.startsWith("sc_glimit_")) {
                             setFirebaseItem(key, null);
                         }
                     });
                     
-                    alert("✨ 스케줄 전체 초기화 완료.");
+                    alert("✨ 스케줄 전체 초기화 완료.\n(연차 내역 및 연차 할당량은 보존됩니다)");
                 }
             }
         }
@@ -2428,7 +2869,7 @@
         function resetAllConfigurations() {
             if (!isAdmin) return;
 
-            if (confirm("⚙️ 경고: 관리자 제어 환경 설정값만 초기 상태로 리셋하시겠습니까?\n\n✅ 유지되는 항목:\n- 직원 휴무/청원/연차 신청 내역\n- 스케줄 코드 입력 내역\n- 생성된 스케줄 코드 목록\n- 비밀번호 / ID 명단 / 그룹 편성\n\n🛑 초기화되는 항목:\n- 신청 년월 / 오픈·마감 일시\n- 일별·직원별·조별 신청 제한\n- 특정일 인원 제한")) {
+            if (confirm("⚙️ 경고: 관리자 제어 환경 설정값만 초기 상태로 리셋하시겠습니까?\n\n✅ 유지되는 항목:\n- 직원 휴무/청원/연차 신청 내역\n- 스케줄 코드 입력 내역\n- 생성된 스케줄 코드 목록\n- 비밀번호 / ID 명단 / 그룹 편성\n\n🛑 초기화되는 항목:\n- 신청 년월 / 오픈·마감 일시\n- 일별·직원별·조별 신청 제한\n- 특정일 인원 제한\n- 스케줄 코드 조별 일자 제한")) {
                 if (confirm("🛑 최종 확인: 진행할까요?")) {
                     
                     var keysToRemove = [
@@ -2449,9 +2890,9 @@
                         setFirebaseItem(key, null);
                     });
 
-                    // 특정일 제한 / 직원별 제한만 삭제 (신청 내역·스케줄 코드 입력값 제외)
+                    // 특정일 제한 / 직원별 제한 / 스케줄코드 조별 제한 삭제
                     Object.keys(liveDBData).forEach(function(key) {
-                        if (key.startsWith("rq_special_limit_") || key.startsWith("rq_limit_")) {
+                        if (key.startsWith("rq_special_limit_") || key.startsWith("rq_limit_") || key.startsWith("sc_glimit_")) {
                             setFirebaseItem(key, null);
                         }
                     });
@@ -2519,7 +2960,7 @@
             <div style="display:flex; flex-direction:column; gap:10px;">
                 <button onclick="executeResetChoice('ALL')"
                     style="background:#e53935; color:#fff; border:none; border-radius:8px; padding:13px; font-size:14px; font-weight:bold; cursor:pointer;">
-                    전체 초기화 (휴무 + 스케줄 코드)
+                    전체 초기화 (휴무 + 코드, 연차 보존)
                 </button>
                 <button onclick="executeResetChoice('SCHEDULE')"
                     style="background:#e91e8c; color:#fff; border:none; border-radius:8px; padding:13px; font-size:14px; font-weight:bold; cursor:pointer;">
@@ -2527,7 +2968,7 @@
                 </button>
                 <button onclick="executeResetChoice('HOLIDAY')"
                     style="background:#e67e22; color:#fff; border:none; border-radius:8px; padding:13px; font-size:14px; font-weight:bold; cursor:pointer;">
-                    휴무만 초기화 (청원/연차 포함)
+                    휴무/청원만 초기화 (연차 보존)
                 </button>
                 <button onclick="closeResetChoiceModal()"
                     style="background:#adb5bd; color:#fff; border:none; border-radius:8px; padding:11px; font-size:13px; font-weight:bold; cursor:pointer; margin-top:2px;">
