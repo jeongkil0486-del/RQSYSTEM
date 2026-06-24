@@ -448,14 +448,6 @@
                         <label style="font-weight:bold; min-width:60px;">지점 선택:</label>
                         <select id="superDeptSelect" style="padding:7px 12px; border:1px solid #ccc; border-radius:5px; font-size:13px;">
                             <option value="">-- 지점 선택 --</option>
-                            <option value="TAE">TAE (대구)</option>
-                            <option value="PUS">PUS (부산)</option>
-                            <option value="CJJ">CJJ (청주)</option>
-                            <option value="KWJ">KWJ (광주)</option>
-                            <option value="ICN">ICN (인천)</option>
-                            <option value="GMP">GMP (김포)</option>
-                            <option value="CJU">CJU (제주)</option>
-                            <option value="RR">RR (예약센터)</option>
                         </select>
                         <label style="font-weight:bold; min-width:80px;">엑셀 파일:</label>
                         <input type="file" id="superExcelUpload" accept=".xlsx,.xls" style="font-size:13px;">
@@ -511,6 +503,7 @@
         var SUPER_ADMIN_ID   = null;
         var SUPER_ADMIN_PASS = null;
         var _adminAccountsLoaded = false;
+        var ALL_DEPTS = []; // 지점 코드 목록 — DB 로드 후 채워짐
 
         // 페이지 로드 시 로그인 버튼 비활성화 → 계정 목록 로드 완료 후 활성화
         (function() {
@@ -520,12 +513,32 @@
 
         db.ref("trinity_system/__admin_accounts__").once("value", function(snap) {
             var data = snap.val();
-            if (data) ADMIN_ACCOUNTS = data;
+            if (data) {
+                ADMIN_ACCOUNTS = data;
+                // 지점 코드 목록 추출
+                ALL_DEPTS = Object.keys(data).map(function(id) {
+                    return data[id].dept;
+                }).filter(function(v, i, a) { return a.indexOf(v) === i; }); // 중복제거
+
+                // 슈퍼관리자 패널 지점 select 동적 생성
+                var sel = document.getElementById("superDeptSelect");
+                if (sel) {
+                    ALL_DEPTS.forEach(function(dept) {
+                        var label = "";
+                        Object.keys(data).forEach(function(id) {
+                            if (data[id].dept === dept) label = data[id].label;
+                        });
+                        var opt = document.createElement("option");
+                        opt.value = dept;
+                        opt.text = label || dept;
+                        sel.appendChild(opt);
+                    });
+                }
+            }
             _adminAccountsLoaded = true;
             var btn = document.querySelector(".submit-btn");
             if (btn) { btn.disabled = false; btn.innerText = "로그인"; }
         }, function(err) {
-            // 보안 규칙으로 차단된 경우도 로그인은 가능하게 (직원 로그인은 영향 없음)
             console.warn("관리자 계정 목록 로드 실패:", err.message);
             _adminAccountsLoaded = true;
             var btn = document.querySelector(".submit-btn");
@@ -778,7 +791,7 @@
             }
 
             // 전 지점 중복 체크 (비동기)
-            var allDepts = ["TAE","PUS","CJJ","KWJ","ICN","GMP","CJU","RR"];
+            var allDepts = ALL_DEPTS.length > 0 ? ALL_DEPTS : Object.keys(ADMIN_ACCOUNTS).map(function(id){ return ADMIN_ACCOUNTS[id].dept; }).filter(function(v,i,a){ return a.indexOf(v)===i; });
             var otherDepts = allDepts.filter(function(d){ return d !== currentDept; });
             var checkedCount = 0;
             var duplicateDept = null;
@@ -1494,7 +1507,7 @@
                 }
 
                 // ====== 직원 계정: 전 부서 검색 ======
-                var depts = ["TAE", "PUS", "CJJ", "KWJ", "ICN", "GMP", "CJU", "RR"];
+                var depts = ALL_DEPTS.length > 0 ? ALL_DEPTS : Object.keys(ADMIN_ACCOUNTS).map(function(id){ return ADMIN_ACCOUNTS[id].dept; }).filter(function(v,i,a){ return a.indexOf(v)===i; });
                 var checkedCount = 0;
                 var foundDept = null;
                 var loginProcessed = false;
@@ -1719,7 +1732,7 @@
                     msgEl.innerText = "⏳ 전 지점 중복 검사 중... (" + names.length + "명)";
 
                     // 전 지점 명단 수집 후 중복 검사
-                    var allDepts = ["TAE","PUS","CJJ","KWJ","ICN","GMP","CJU","RR"];
+                    var allDepts = ALL_DEPTS.length > 0 ? ALL_DEPTS : Object.keys(ADMIN_ACCOUNTS).map(function(id){ return ADMIN_ACCOUNTS[id].dept; }).filter(function(v,i,a){ return a.indexOf(v)===i; });
                     var loadedDepts = 0;
                     var existingAllNames = {}; // name -> dept
 
