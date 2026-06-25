@@ -557,12 +557,7 @@
 
         // ====== 날짜별 카운터 증감 (counters 경로) ======
         function _adjustCounter(date, delta) {
-            var tm = getTargetYearMonth();
-            var counterPath = "trinity_system/" + currentDept + "/counters/" + tm.fullStr + "/" + date;
-            db.ref(counterPath).transaction(function(current) {
-                var next = (current || 0) + delta;
-                return next < 0 ? 0 : next;
-            });
+            if (!isSuperAdmin) return;
         }
 
         function getGroupCountByDate(groupArray, date) {
