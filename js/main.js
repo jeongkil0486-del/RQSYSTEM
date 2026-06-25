@@ -43,14 +43,19 @@ function resetUiToLoggedOut() {
     document.getElementById("username").value = "";
     document.getElementById("password").value = "";
 
-    if (document.getElementById("targetEmpName")) document.getElementById("targetEmpName").value = "";
-    if (document.getElementById("limitEmpName")) document.getElementById("limitEmpName").value = "";
-    if (document.getElementById("limitEmpCount")) document.getElementById("limitEmpCount").value = "";
-    if (document.getElementById("manageIdInput")) document.getElementById("manageIdInput").value = "";
-    if (document.getElementById("specialDayInput")) document.getElementById("specialDayInput").value = "";
-    if (document.getElementById("specialDayLimit")) document.getElementById("specialDayLimit").value = "";
-    if (document.getElementById("annualExcelUpload")) document.getElementById("annualExcelUpload").value = "";
-    if (document.getElementById("newAdminPassInput")) document.getElementById("newAdminPassInput").value = "";
+    [
+        "targetEmpName",
+        "limitEmpName",
+        "limitEmpCount",
+        "manageIdInput",
+        "specialDayInput",
+        "specialDayLimit",
+        "annualExcelUpload",
+        "newAdminPassInput"
+    ].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.value = "";
+    });
 
     var superAdminPanel = document.getElementById("superAdminPanel");
     if (superAdminPanel) superAdminPanel.style.display = "none";
@@ -114,41 +119,24 @@ function populateDeptSelect() {
 }
 
 function loadAdminAccountsDirectory() {
-    var paths = [
-        "adminAccounts",
-        "trinity_system/__admin_accounts__"
-    ];
-
-    function tryPath(index) {
-        if (index >= paths.length) {
-            ADMIN_ACCOUNTS = {};
-            ALL_DEPTS = [];
-            _adminAccountsLoaded = true;
-            populateDeptSelect();
-            return Promise.resolve({});
-        }
-
-        return db.ref(paths[index]).once("value").then(function(snap) {
-            var data = snap.val();
-            if (!data) {
-                return tryPath(index + 1);
-            }
-
-            ADMIN_ACCOUNTS = data;
-            ALL_DEPTS = Object.keys(data).map(function(id) {
-                return data[id].dept;
-            }).filter(function(value, idx, arr) {
-                return value && arr.indexOf(value) === idx;
-            });
-            _adminAccountsLoaded = true;
-            populateDeptSelect();
-            return data;
-        }).catch(function() {
-            return tryPath(index + 1);
+    return db.ref("adminAccounts").once("value").then(function(snap) {
+        var data = snap.val() || {};
+        ADMIN_ACCOUNTS = data;
+        ALL_DEPTS = Object.keys(data).map(function(id) {
+            return data[id].dept;
+        }).filter(function(value, idx, arr) {
+            return value && arr.indexOf(value) === idx;
         });
-    }
-
-    return tryPath(0);
+        _adminAccountsLoaded = true;
+        populateDeptSelect();
+        return data;
+    }).catch(function() {
+        ADMIN_ACCOUNTS = {};
+        ALL_DEPTS = [];
+        _adminAccountsLoaded = true;
+        populateDeptSelect();
+        return {};
+    });
 }
 
 function loadUserProfile(uid) {
@@ -207,34 +195,50 @@ function renderRestrictedRoleView() {
     if (userResetBtn) userResetBtn.style.display = "none";
     if (resetBtn) resetBtn.style.display = "none";
     if (resetConfigBtn) resetConfigBtn.style.display = "none";
-    if (adminConsole) adminConsole.style.display = "none";
+    if (adminConsole) adminConsole.style.display = isAdmin ? "flex" : "none";
     if (grid) grid.innerHTML = "";
 
     if (isAdmin) {
         document.getElementById("welcomeMessage").innerHTML =
-            "관리자 모드<br><span style='font-size:13px; color:#d9534f; font-weight:bold;'>지점 데이터 권한 설정 중입니다. 현재는 프로필만 확인된 상태입니다.<br>" + message + "</span>";
+            "관리자 모드<br><span style='font-size:13px; color:#d9534f; font-weight:bold;'>현재는 새 읽기 경로만 연결된 상태입니다.<br>" + message + "</span>";
     } else {
         document.getElementById("welcomeMessage").innerHTML =
-            "직원 모드<br><span style='font-size:13px; color:#007bff; font-weight:bold;'>권한 설정 중입니다. 현재는 프로필만 확인된 상태입니다.<br>" + message + "</span>";
+            "직원 모드<br><span style='font-size:13px; color:#007bff; font-weight:bold;'>현재는 새 읽기 경로만 연결된 상태입니다.<br>" + message + "</span>";
     }
 }
 
-function connectDeptDBSafe(dept) {
-    return new Promise(function(resolve, reject) {
-        var probePath = "trinity_system/" + dept + "/rq_current_target_year_month";
+function applyReadOnlyUi() {
+    var noticeId = "readOnlyNotice";
+    var welcome = document.getElementById("welcomeMessage");
+    if (welcome && !document.getElementById(noticeId)) {
+        var notice = document.createElement("div");
+        notice.id = noticeId;
+        notice.style.marginTop = "8px";
+        notice.style.fontSize = "12px";
+        notice.style.fontWeight = "bold";
+        notice.style.color = "#6c757d";
+        notice.innerText = "읽기 전용 단계입니다. 저장과 취소는 다음 단계 Cloud Functions로 이동합니다.";
+        welcome.appendChild(notice);
+    }
 
-        db.ref(probePath).once("value", function() {
-            try {
-                connectDeptDB(dept, function() {
-                    resolve();
-                });
-            } catch (error) {
-                reject(error);
-            }
-        }, function(error) {
-            reject(error);
+    if (isAdmin) {
+        var adminConsole = document.getElementById("adminConsole");
+        if (adminConsole) {
+            adminConsole.querySelectorAll("button, input, select, textarea").forEach(function(el) {
+                el.disabled = true;
+            });
+        }
+
+        ["resetAllBtn", "resetConfigBtn", "scheduleCodeApplyBtn", "toggleModeBtn", "userResetBtn"].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.style.display = "none";
         });
-    });
+    } else {
+        ["toggleModeBtn", "scheduleCodeApplyBtn", "userResetBtn"].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.style.display = "none";
+        });
+    }
 }
 
 function handleSignedInUser(user) {
@@ -248,32 +252,24 @@ function handleSignedInUser(user) {
         applyProfile(user, profile);
 
         if (!isSuperAdmin && !currentDept) {
-            throw new Error("사용자 프로필에 deptId 또는 dept 값이 필요합니다.");
+            throw new Error("사용자 프로필에 deptId 값이 필요합니다.");
         }
 
         if (!isSuperAdmin && !currentUser) {
-            throw new Error("기존 화면 연결을 위해 프로필에 legacyName 또는 name 값이 필요합니다.");
+            throw new Error("기존 화면 연결을 위해 profile.name 또는 profile.legacyName 값이 필요합니다.");
         }
 
-        return loadAdminAccountsDirectory();
-    }).then(function() {
         if (isSuperAdmin) {
-            document.getElementById("loginArea").style.display = "none";
-            modal.style.display = "flex";
-            showSuperAdminPanel();
-            setLoginButtonState(false, "로그인");
-            return;
+            return loadAdminAccountsDirectory().then(function() {
+                document.getElementById("loginArea").style.display = "none";
+                modal.style.display = "flex";
+                showSuperAdminPanel();
+                setLoginButtonState(false, "로그인");
+            });
         }
 
-        return connectDeptDBSafe(currentDept).then(function() {
-            currentDeptAccessRestricted = false;
-            currentDeptAccessErrorMessage = "";
-            loginSuccess(currentUser);
-        }).catch(function(error) {
-            currentDeptAccessRestricted = true;
-            currentDeptAccessErrorMessage = error && error.message ? error.message : "권한 설정 중입니다.";
-            loginSuccess(currentUser);
-        });
+        loginSuccess(currentUser);
+        setLoginButtonState(false, "로그인");
     }).catch(function(error) {
         var message = error && error.message ? error.message : "사용자 정보를 불러오지 못했습니다.";
         alert(message);
@@ -300,31 +296,31 @@ function closeCalendar() {
 
 function resetUserPassword() {
     if (!isAdmin) return;
-    alert("직원 비밀번호 초기화는 Firebase Auth 또는 서버 함수로 옮겨야 합니다.");
+    alert("직원 비밀번호 초기화는 Firebase Auth 또는 서버 함수에서 처리해야 합니다.");
 }
 
 function resetAllPasswords() {
     if (!isAdmin) return;
-    alert("일괄 비밀번호 초기화는 Firebase Admin SDK 또는 서버 함수로 옮겨야 합니다.");
+    alert("일괄 비밀번호 초기화는 Firebase Admin SDK 또는 서버 함수에서 처리해야 합니다.");
 }
 
 function resetAdminPassword() {
-    alert("관리자 비밀번호 초기화는 브라우저에서 직접 처리하지 않습니다. Firebase Console 또는 Admin SDK로 옮겨야 합니다.");
+    alert("관리자 비밀번호 초기화는 브라우저에서 직접 처리하지 않습니다. Firebase Console 또는 Admin SDK를 사용해주세요.");
 }
 
 function openSuperResetModal() {
-    alert("슈퍼 관리자 초기화 기능은 서버 함수로 옮긴 뒤 다시 연결해야 합니다.");
+    alert("슈퍼관리자 초기화 기능은 서버 함수로 다시 연결해야 합니다.");
 }
 
 function executeSuperReset() {
-    alert("슈퍼 관리자 초기화 기능은 서버 함수로 옮긴 뒤 다시 연결해야 합니다.");
+    alert("슈퍼관리자 초기화 기능은 서버 함수로 다시 연결해야 합니다.");
 }
 
 function drawSuperResetPanel() {
     var container = document.getElementById("superResetPanelContent");
     if (!container) return;
 
-    container.innerHTML = "<div style='font-size:13px; color:#555; line-height:1.6;'>직원 비밀번호 초기화는 Firebase Auth 기반 관리자 기능으로 옮길 예정입니다.<br>현재 브라우저에서는 직접 삭제하지 않도록 막아둔 상태입니다.</div>";
+    container.innerHTML = "<div style='font-size:13px; color:#555; line-height:1.6;'>직원 비밀번호 초기화는 Firebase Auth 관리자 기능으로 분리 예정입니다.<br>현재 브라우저에서는 직접 처리하지 않도록 막아둔 상태입니다.</div>";
 }
 
 function drawSuperAdminPanel() {
@@ -333,7 +329,7 @@ function drawSuperAdminPanel() {
 
     var adminIds = Object.keys(ADMIN_ACCOUNTS);
     if (adminIds.length === 0) {
-        container.innerHTML = "<div style='font-size:13px; color:#666;'>관리자 목록을 아직 불러오지 못했습니다. 관리자 디렉터리 경로와 Rules를 확인해주세요.</div>";
+        container.innerHTML = "<div style='font-size:13px; color:#666;'>관리자 목록을 아직 불러오지 못했습니다. adminAccounts 경로와 Rules를 확인해주세요.</div>";
         drawSuperResetPanel();
         return;
     }
@@ -355,7 +351,7 @@ function drawSuperAdminPanel() {
 
 function showSuperAdminPanel() {
     document.getElementById("welcomeMessage").innerHTML =
-        "슈퍼 관리자 모드<br><span style='font-size:13px; color:#e53935; font-weight:bold;'>비밀번호 직접 조회와 초기화는 제거하고 Firebase Auth 기준으로 이행 중입니다.</span>";
+        "슈퍼 관리자 모드<br><span style='font-size:13px; color:#e53935; font-weight:bold;'>비밀번호 직접 조회와 초기화는 제거하고 Firebase Auth 기반으로 이동 중입니다.</span>";
 
     var toggleModeBtn = document.getElementById("toggleModeBtn");
     var userResetBtn = document.getElementById("userResetBtn");
@@ -413,12 +409,28 @@ function changeMyAdminPassword() {
 
 var _legacyRefreshData = refreshData;
 refreshData = function() {
-    if (currentDeptAccessRestricted) {
-        renderRestrictedRoleView();
-        return;
+    if (isSuperAdmin) {
+        return _legacyRefreshData();
     }
 
-    return _legacyRefreshData();
+    return loadRoleBasedData().then(function() {
+        currentDeptAccessRestricted = false;
+        currentDeptAccessErrorMessage = "";
+        _legacyRefreshData();
+        applyReadOnlyUi();
+    }).catch(function() {
+        renderRestrictedRoleView();
+        applyReadOnlyUi();
+    });
+};
+
+var _legacyEditDate = editDate;
+editDate = function() {
+    if (isSuperAdmin) {
+        return _legacyEditDate.apply(this, arguments);
+    }
+
+    alert("읽기 전용 단계입니다. 신청 저장과 취소는 다음 단계 Cloud Functions로 옮길 예정입니다.");
 };
 
 updateLoginCopy();
