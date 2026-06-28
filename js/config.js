@@ -1,13 +1,12 @@
-// config.js — Firebase 초기화 및 App Check 설정
+// config.js — Firebase 초기화 (App Check OFF 테스트 버전)
 //
 // ⚠️ 이 파일은 GitHub 공개 저장소에 올려도 됩니다.
 //    API Key는 Firebase Console > Authorized Domains 으로 보호됩니다.
 //
 // 초기화 순서가 중요합니다:
 //   1. firebase.initializeApp()
-//   2. firebase.appCheck().activate()  ← db, functions 사용 전
-//   3. firebase.database()
-//   4. firebase.functions()
+//   2. firebase.database()
+//   3. firebase.functions()
 
 var firebaseConfig = {
   apiKey:            "AIzaSyAeinBE3TPhnqGjg0-PPOt3GLghed-5cz0",
@@ -22,14 +21,10 @@ var firebaseConfig = {
 // ── 1. Firebase 앱 초기화 ───────────────────────────────────────────────────
 firebase.initializeApp(firebaseConfig);
 
-// ── 2. App Check 초기화 (db/functions 사용 전에 반드시 먼저) ────────────────
-//
-// 배포 준비가 되면 아래 두 줄의 주석을 해제하고 사이트 키를 입력하세요.
-// DEPLOY_GUIDE STEP 1 ~ 3 완료 후 해제합니다.
-//
-var appCheck = firebase.appCheck();
-appCheck.activate("6Lf0djMtAAAAAJy2tfjp4xGdHNriTBEkWG_DI75M", true);
+// ── 2. App Check OFF 테스트 ───────────────────────────────────────────────
+// 현재 단계에서는 App Check SDK 로드를 실행하지 않습니다.
+// Functions/Rules는 건드리지 않고, 웹 배포에서 App Check 영향 여부만 확인합니다.
 
-// ── 3. Firebase 서비스 객체 (App Check 초기화 후 생성) ──────────────────────
+// ── 3. Firebase 서비스 객체 ────────────────────────────────────────────────
 var db       = firebase.database();
 var fnClient = firebase.functions();
