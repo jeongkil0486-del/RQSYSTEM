@@ -28,7 +28,7 @@ firebase.initializeApp(firebaseConfig);
 // DEPLOY_GUIDE STEP 1 ~ 3 완료 후 해제합니다.
 //
 var appCheck = firebase.appCheck();
-appCheck.activate("6Lf3lTMtAAAAAOioiDzqdblAO9do7l8HMQi1Zh5Z", true);
+appCheck.activate("6Lf0djMtAAAAAJy2tfjp4xGdHNriTBEkWG_DI75M", true);
 
 // ── 3. Firebase 서비스 객체 (App Check 초기화 후 생성) ──────────────────────
 var db       = firebase.database();
