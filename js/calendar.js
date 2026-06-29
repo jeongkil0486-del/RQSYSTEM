@@ -345,6 +345,17 @@ function editDate(date) {
     var existingPetition = getFirebaseItem(prefix + dayStr + "_petition", null);
     var existingAnnual   = getFirebaseItem(prefix + dayStr + "_annual", null);
 
+    // ── adminViewCache 폴백: 직원 본인 신청이 liveDBData에 없어도 캐시에서 확인 ──
+    if (existingNormal === null && existingPetition === null && existingAnnual === null) {
+        var myCache = (adminViewCache && adminViewCache[currentUid]) || {};
+        var cachedReq = myCache[dayStr] || myCache[String(parseInt(dayStr, 10))];
+        if (cachedReq && cachedReq.type) {
+            if (cachedReq.type === "normal")   existingNormal   = cachedReq.ts || 1;
+            if (cachedReq.type === "petition") existingPetition = cachedReq.ts || 1;
+            if (cachedReq.type === "annual")   existingAnnual   = cachedReq.ts || 1;
+        }
+    }
+
     var existingScCode = null;
     var scList = getScheduleCodeList();
     scList.forEach(function(c) {

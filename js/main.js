@@ -233,15 +233,16 @@ function resetUserPassword() {
   var passEl  = document.getElementById("targetEmpPassword") || document.getElementById("newAdminPassInput");
   var newPass = passEl ? passEl.value.trim() : "";
 
-  if (!empNo)   { alert("사번을 입력해주세요."); return; }
-  if (!newPass) { alert("새 비밀번호를 입력해주세요."); return; }
+  if (!empNo)            { alert("사번을 입력해주세요."); return; }
+  if (!newPass)          { alert("새 비밀번호를 입력해주세요."); return; }
+  if (newPass.length < 6){ alert("비밀번호는 6자 이상이어야 합니다."); return; }
 
   fn.resetEmployeePassword({ empNo: empNo, newPassword: newPass }).then(function() {
-    alert("비밀번호가 초기화되었습니다.");
+    alert("✅ [" + empNo + "] 비밀번호가 초기화되었습니다.");
     document.getElementById("targetEmpName").value = "";
     if (passEl) passEl.value = "";
   }).catch(function(e) {
-    alert(e.message || "초기화 실패");
+    alert("초기화 실패: " + (e.message || "알 수 없는 오류"));
   });
 }
 

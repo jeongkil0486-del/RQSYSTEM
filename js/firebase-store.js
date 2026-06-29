@@ -191,11 +191,15 @@ function _applyMyRequests(myData, yyyymm) {
         var req = myData[day];
         if (!req) return;
         var prefix = "rq_" + currentUser + "_" + yyyymm + "_";
-        if (req.type === "normal") liveDBData[prefix + day] = req.ts || 1;
-        if (req.type === "petition") liveDBData[prefix + day + "_petition"] = req.ts || 1;
-        if (req.type === "annual") liveDBData[prefix + day + "_annual"] = req.ts || 1;
-        if (req.type === "schedule" && req.scheduleCode) {
+        var t = req.type || "normal";
+        if (t === "normal")   liveDBData[prefix + day] = req.ts || 1;
+        else if (t === "petition") liveDBData[prefix + day + "_petition"] = req.ts || 1;
+        else if (t === "annual")   liveDBData[prefix + day + "_annual"]   = req.ts || 1;
+        else if (t === "schedule" && req.scheduleCode) {
             liveDBData["sc_" + req.scheduleCode + "_" + currentUser + "_" + yyyymm + "_" + day] = req.ts || 1;
+        } else {
+            // 알 수 없는 type: normal로 폴백하여 취소 가능하도록
+            liveDBData[prefix + day] = req.ts || 1;
         }
     });
 }

@@ -184,11 +184,11 @@
                     </div>
                     
                     <input type="text" id="manageIdInput" placeholder="사번" style="width: 80px; margin-left: 5px;">
-                    <button type="button" class="config-save-btn" onclick="addAllowedUser()">생성</button>
+                    <button type="button" class="config-save-btn" onclick="addAllowedUser()" title="사번 입력 후 클릭 → 이름/권한/비밀번호 입력 팝업">생성</button>
 
                     <label for="targetEmpName" style="margin-left: 20px;">🔒 비밀번호 초기화 :</label>
-                    <input type="text" id="targetEmpName" placeholder="사번" style="width: 80px;">
-                    <input type="password" id="targetEmpPassword" placeholder="새 비밀번호" style="width: 110px;">
+                    <input type="text" id="targetEmpName" placeholder="사번" style="width: 80px;" autocomplete="off">
+                    <input type="password" id="targetEmpPassword" placeholder="새 비밀번호 (6자↑)" style="width: 120px;" autocomplete="new-password">
                     <button type="button" class="limit-clear-btn" onclick="resetUserPassword()">초기화</button>
 
                     <label style="margin-left: 20px;">📊 스케줄 :</label>

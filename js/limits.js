@@ -32,10 +32,10 @@ function getTargetYearMonth() {
     }
 
     return {
-        year: parts[0],
-        month: String(parts[1]).padStart(2, "0"),
+        year:    parts[0],
+        month:   String(parts[1]).padStart(2, "0"),
         fullStr: parts[0] + String(parts[1]).padStart(2, "0"),
-        label: parts[0] + "." + parseInt(parts[1], 10)
+        label:   parts[0] + "." + parseInt(parts[1], 10)
     };
 }
 
@@ -49,7 +49,7 @@ function initYearMonthSelects(year, month) {
         for (var y = curY - 1; y <= curY + 2; y++) {
             var yOpt = document.createElement("option");
             yOpt.value = String(y);
-            yOpt.text = String(y);
+            yOpt.text  = String(y);
             selY.appendChild(yOpt);
         }
     }
@@ -57,7 +57,7 @@ function initYearMonthSelects(year, month) {
         for (var m = 1; m <= 12; m++) {
             var mOpt = document.createElement("option");
             mOpt.value = String(m).padStart(2, "0");
-            mOpt.text = String(m);
+            mOpt.text  = String(m);
             selM.appendChild(mOpt);
         }
     }
@@ -77,25 +77,48 @@ function _refreshAfterAdminConfigSave(options) {
     return Promise.resolve();
 }
 
+// ── 신청 년/월 저장 ────────────────────────────────────────────────────────────
+// 저장 형식: "YYYY-MM" (DB 저장) / 로드 형식: YYYYMM (fullStr) 양쪽 모두 파싱 가능
 function saveYearMonthConfig() {
     if (!isAdmin && !isSuperAdmin) return;
 
-    var y = document.getElementById("targetYear").value;
-    var m = document.getElementById("targetMonth").value;
-    if (!y || !m) return;
+    var selY = document.getElementById("targetYear");
+    var selM = document.getElementById("targetMonth");
+    if (!selY || !selM) return;
 
-    var ym = y + "-" + m;
+    var y = String(selY.value || "").trim();
+    var m = String(selM.value || "").trim().padStart(2, "0");
+    if (!y || !m || y.length !== 4) {
+        alert("년/월을 올바르게 선택해주세요.");
+        return;
+    }
+
+    var ymDash   = y + "-" + m;            // "2025-07"  — DB 저장값
+    var ymFull   = y + m;                  // "202507"   — fn.saveDeptConfig yyyymm
+    var ymPrev   = getTargetYearMonth().fullStr;  // 현재 달 (변경 전)
+
+    // 1) liveDBData 먼저 업데이트 → getTargetYearMonth()가 즉시 새 값 반환
+    liveDBData["rq_current_target_year_month"] = ymDash;
+
+    // 2) Cloud Function 저장 (현재 달 경로에도, 새 달 경로에도 저장)
+    //    yyyymm을 이전 달과 새 달 양쪽에 보내 현재 리스너가 변경을 감지하게 함
     fn.saveDeptConfig({
         deptId: currentDept,
-        yyyymm: y + m,
-        config: { targetYearMonth: ym }
+        yyyymm: ymPrev || ymFull,          // 현재 연결된 경로에 저장 → 리스너가 감지
+        config: { targetYearMonth: ymDash }
     }).then(function() {
-        liveDBData["rq_current_target_year_month"] = ym;
-        return _refreshAfterAdminConfigSave({ reconnect: true });
+        // 3) 새 달로 DB 재연결 (데이터 로드 + 리스너 전환)
+        if (typeof connectDeptDBSafe === "function" && currentDept) {
+            return connectDeptDBSafe(currentDept);
+        }
+        return Promise.resolve();
     }).then(function() {
-        alert("Target year/month saved.");
+        refreshData();
+        alert("신청 년/월이 " + y + "년 " + parseInt(m, 10) + "월로 설정되었습니다.");
     }).catch(function(e) {
-        alert((e && e.message) || "Save failed");
+        // 저장 실패 시 liveDBData 롤백
+        if (ymPrev) liveDBData["rq_current_target_year_month"] = ymPrev;
+        alert((e && e.message) || "저장 실패");
     });
 }
 
@@ -104,7 +127,7 @@ function saveDayMaxConstraint() {
 
     var val = parseInt((document.getElementById("dayMaxConfig") || {}).value || "", 10);
     if (isNaN(val) || val < 1) {
-        alert("Enter a number greater than or equal to 1.");
+        alert("1 이상의 숫자를 입력해주세요.");
         return;
     }
 
@@ -114,11 +137,10 @@ function saveDayMaxConstraint() {
         config: { dayMax: val }
     }).then(function() {
         liveDBData["rq_config_day_max"] = val;
-        return _refreshAfterAdminConfigSave();
-    }).then(function() {
-        alert("Daily request limit saved.");
+        refreshData();
+        alert("일별 신청 제한이 저장되었습니다.");
     }).catch(function(e) {
-        alert((e && e.message) || "Save failed");
+        alert((e && e.message) || "저장 실패");
     });
 }
 
@@ -127,7 +149,7 @@ function saveGlobalUserMaxConstraint() {
 
     var val = parseInt((document.getElementById("globalUserMaxConfig") || {}).value || "", 10);
     if (isNaN(val) || val < 1) {
-        alert("Enter a number greater than or equal to 1.");
+        alert("1 이상의 숫자를 입력해주세요.");
         return;
     }
 
@@ -137,11 +159,10 @@ function saveGlobalUserMaxConstraint() {
         config: { globalUserMax: val }
     }).then(function() {
         liveDBData["rq_config_global_user_max"] = val;
-        return _refreshAfterAdminConfigSave();
-    }).then(function() {
-        alert("User request limit saved.");
+        refreshData();
+        alert("휴무 개수 제한이 저장되었습니다.");
     }).catch(function(e) {
-        alert((e && e.message) || "Save failed");
+        alert((e && e.message) || "저장 실패");
     });
 }
 
@@ -150,7 +171,7 @@ function saveAnnualUserMaxConstraint() {
 
     var val = parseInt((document.getElementById("annualUserMaxConfig") || {}).value || "", 10);
     if (isNaN(val) || val < 0) {
-        alert("Enter a valid number.");
+        alert("0 이상의 숫자를 입력해주세요.");
         return;
     }
 
@@ -160,11 +181,10 @@ function saveAnnualUserMaxConstraint() {
         config: { annualUserMax: val }
     }).then(function() {
         liveDBData["rq_config_annual_user_max"] = val;
-        return _refreshAfterAdminConfigSave();
-    }).then(function() {
-        alert("Annual default quota saved.");
+        refreshData();
+        alert("연차 기본 한도가 저장되었습니다.");
     }).catch(function(e) {
-        alert((e && e.message) || "Save failed");
+        alert((e && e.message) || "저장 실패");
     });
 }
 
@@ -172,16 +192,16 @@ function saveGroupMaxConstraints() {
     if (!isAdmin && !isSuperAdmin) return;
 
     var cfg = {};
-    var ok = true;
+    var ok  = true;
     ["A", "B", "C", "D", "E"].forEach(function(group) {
         var el = document.getElementById("groupMaxConfig" + group);
-        var v = el ? parseInt(el.value, 10) : NaN;
+        var v  = el ? parseInt(el.value, 10) : NaN;
         if (isNaN(v) || v < 1) ok = false;
         cfg["groupMax" + group] = v;
     });
 
     if (!ok) {
-        alert("Each group limit must be 1 or more.");
+        alert("각 조 한도는 1 이상이어야 합니다.");
         return;
     }
 
@@ -193,24 +213,23 @@ function saveGroupMaxConstraints() {
         Object.keys(cfg).forEach(function(key) {
             liveDBData["rq_config_" + key.replace("groupMax", "group_max_")] = cfg[key];
         });
-        return _refreshAfterAdminConfigSave();
-    }).then(function() {
-        alert("Group limits saved.");
+        refreshData();
+        alert("조별 한도가 저장되었습니다.");
     }).catch(function(e) {
-        alert((e && e.message) || "Save failed");
+        alert((e && e.message) || "저장 실패");
     });
 }
 
 function setSpecialDayLimit(isSet) {
     if (!isAdmin && !isSuperAdmin) return;
 
-    var dayInput = (document.getElementById("specialDayInput") || {}).value || "";
+    var dayInput   = (document.getElementById("specialDayInput") || {}).value || "";
     var limitInput = (document.getElementById("specialDayLimit") || {}).value || "";
-    var tm = getTargetYearMonth();
-    var dayNum = parseInt(dayInput, 10);
+    var tm         = getTargetYearMonth();
+    var dayNum     = parseInt(dayInput, 10);
 
     if (!dayInput || isNaN(dayNum) || dayNum < 1 || dayNum > 31) {
-        alert("Enter a day between 1 and 31.");
+        alert("1~31 사이의 일자를 입력해주세요.");
         return;
     }
 
@@ -218,7 +237,7 @@ function setSpecialDayLimit(isSet) {
     if (isSet) {
         limitValue = parseInt(limitInput, 10);
         if (isNaN(limitValue) || limitValue < 0) {
-            alert("Enter a valid limit.");
+            alert("0 이상의 숫자를 입력해주세요.");
             return;
         }
     }
@@ -226,8 +245,8 @@ function setSpecialDayLimit(isSet) {
     fn.setSpecialDayLimit({
         deptId: currentDept,
         yyyymm: tm.fullStr,
-        day: dayNum,
-        limit: limitValue
+        day:    dayNum,
+        limit:  limitValue
     }).then(function() {
         var key = "rq_special_limit_" + tm.fullStr + "_" + dayNum;
         if (limitValue === null) delete liveDBData[key];
@@ -235,11 +254,10 @@ function setSpecialDayLimit(isSet) {
 
         document.getElementById("specialDayInput").value = "";
         document.getElementById("specialDayLimit").value = "";
-        return _refreshAfterAdminConfigSave();
-    }).then(function() {
-        alert(isSet ? "Special-day limit saved." : "Special-day limit removed.");
+        refreshData();
+        alert(isSet ? "특정일 제한이 저장되었습니다." : "특정일 제한이 삭제되었습니다.");
     }).catch(function(e) {
-        alert((e && e.message) || "Save failed");
+        alert((e && e.message) || "저장 실패");
     });
 }
 
@@ -269,7 +287,7 @@ function triggerAnnualUpload() {
 }
 
 function _syncAnnualQuotaLiveData(rows, errors) {
-    var failedEmpNos = {};
+    var failedEmpNos   = {};
     var nextUserLimits = {};
 
     (errors || []).forEach(function(item) {
@@ -285,10 +303,8 @@ function _syncAnnualQuotaLiveData(rows, errors) {
     (rows || []).forEach(function(row) {
         var empNoKey = String((row && row.empNo) || "").trim().toLowerCase();
         if (!empNoKey || failedEmpNos[empNoKey]) return;
-
         var emp = employeeByEmpNo[empNoKey];
         if (!emp || !emp.uid) return;
-
         var current = Object.assign({}, nextUserLimits[emp.uid] || {});
         current.annualQuota = parseInt(row.quota, 10);
         nextUserLimits[emp.uid] = current;
@@ -306,54 +322,52 @@ function uploadAnnualExcel() {
 
     var fi = document.getElementById("annualExcelUpload");
     if (!fi || !fi.files || !fi.files[0]) {
-        alert("Choose an Excel file first.");
+        alert("엑셀 파일을 선택해주세요.");
         return;
     }
 
     var reader = new FileReader();
     reader.onload = function(e) {
         try {
-            var wb = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
+            var wb   = XLSX.read(new Uint8Array(e.target.result), { type: "array" });
             var rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
             var toUpload = [];
-            var errors = [];
+            var errors   = [];
 
             for (var i = 1; i < rows.length; i++) {
                 var empNo = rows[i][0] !== undefined ? String(rows[i][0]).trim() : "";
                 var quota = rows[i][1] !== undefined ? parseInt(rows[i][1], 10) : NaN;
                 if (!empNo) continue;
                 if (isNaN(quota) || quota < 0) {
-                    errors.push("row " + (i + 1) + ": invalid quota");
+                    errors.push("row " + (i + 1) + ": 올바르지 않은 연차");
                     continue;
                 }
                 toUpload.push({ empNo: empNo, quota: quota });
             }
 
             if (toUpload.length === 0) {
-                alert("No valid rows found.\n" + errors.join("\n"));
+                alert("유효한 행이 없습니다.\n" + errors.join("\n"));
                 return;
             }
 
             fn.uploadAnnualQuotas({
                 deptId: currentDept,
                 yyyymm: getTargetYearMonth().fullStr,
-                rows: toUpload
+                rows:   toUpload
             }).then(function(result) {
                 var errs = (result.data && result.data.errors) || [];
                 _syncAnnualQuotaLiveData(toUpload, errs);
                 fi.value = "";
-                return _refreshAfterAdminConfigSave();
-            }).then(function() {
+                refreshData();
                 drawAnnualStatusBoard();
-                alert("Annual quota upload completed.");
+                alert("연차 업로드 완료.");
             }).catch(function(e) {
-                alert((e && e.message) || "Upload failed");
+                alert((e && e.message) || "업로드 실패");
             });
         } catch (err) {
-            alert("Excel parse failed: " + ((err && err.message) || err));
+            alert("엑셀 파싱 오류: " + ((err && err.message) || err));
         }
     };
-
     reader.readAsArrayBuffer(fi.files[0]);
 }
 
@@ -379,9 +393,9 @@ function drawAnnualStatusBoard() {
     if (!container) return;
 
     var userLimits = liveDBData["_userLimits"] || {};
-    var annualMax = parseInt(getFirebaseItem("rq_config_annual_user_max", "15"), 10);
-    var html = "<strong style='color:#fff;font-size:13px;'>Annual quotas</strong>"
-        + "<div style='font-size:11px;color:#bdc3c7;margin:4px 0 8px;'>quota / used / remaining</div>"
+    var annualMax  = parseInt(getFirebaseItem("rq_config_annual_user_max", "15"), 10);
+    var html = "<strong style='color:#fff;font-size:13px;'>연차 현황</strong>"
+        + "<div style='font-size:11px;color:#bdc3c7;margin:4px 0 8px;'>할당/사용/잔여</div>"
         + "<div style='display:flex;flex-wrap:wrap;gap:5px;'>";
 
     var uidSet = {};
@@ -391,22 +405,22 @@ function drawAnnualStatusBoard() {
 
     var hasAny = false;
     Object.keys(uidSet).forEach(function(uid) {
-        var ul = userLimits[uid] || {};
+        var ul    = userLimits[uid] || {};
         var quota = ul.annualQuota != null ? parseInt(ul.annualQuota, 10) : annualMax;
-        var days = (adminViewCache && adminViewCache[uid]) || {};
-        var used = 0;
+        var days  = (adminViewCache && adminViewCache[uid]) || {};
+        var used  = 0;
 
         Object.keys(days).forEach(function(day) {
             if (days[day] && days[day].type === "annual") used++;
         });
 
         hasAny = true;
-        var remain = quota - used;
-        var emp = employeeByUid[uid] || {};
-        var label = emp.name ? (emp.name + " (" + emp.empNo + ")") : ("uid:" + uid.slice(0, 6));
-        var bgColor = remain <= 0 ? "rgba(229,57,53,0.25)" : remain <= 2 ? "rgba(245,127,23,0.25)" : "rgba(46,125,50,0.25)";
-        var bdColor = remain <= 0 ? "#e53935" : remain <= 2 ? "#f57f17" : "#43a047";
-        var txColor = remain <= 0 ? "#ff8a80" : remain <= 2 ? "#ffcc02" : "#a5d6a7";
+        var remain   = quota - used;
+        var emp      = employeeByUid[uid] || {};
+        var label    = emp.name ? (emp.name + " (" + emp.empNo + ")") : ("uid:" + uid.slice(0, 6));
+        var bgColor  = remain <= 0 ? "rgba(229,57,53,0.25)"  : remain <= 2 ? "rgba(245,127,23,0.25)"  : "rgba(46,125,50,0.25)";
+        var bdColor  = remain <= 0 ? "#e53935"               : remain <= 2 ? "#f57f17"               : "#43a047";
+        var txColor  = remain <= 0 ? "#ff8a80"               : remain <= 2 ? "#ffcc02"               : "#a5d6a7";
 
         html += "<span style='background:" + bgColor + ";border:1px solid " + bdColor + ";border-radius:5px;"
             + "padding:4px 8px;font-size:12px;color:" + txColor + ";font-weight:bold;white-space:nowrap;'>"
@@ -414,7 +428,7 @@ function drawAnnualStatusBoard() {
     });
 
     if (!hasAny) {
-        html += "<span style='color:#aaa;font-style:italic;font-size:12px;'>No annual quota data</span>";
+        html += "<span style='color:#aaa;font-style:italic;font-size:12px;'>연차 데이터 없음</span>";
     }
 
     html += "</div>";
@@ -423,14 +437,14 @@ function drawAnnualStatusBoard() {
 
 function deleteAnnualQuotaFromBoard(event, empNo) {
     event.preventDefault();
-    if (!confirm("Remove annual quota for [" + empNo + "]?")) return;
+    if (!confirm("[" + empNo + "] 연차 할당을 삭제하시겠습니까?")) return;
 
     fn.setUserLimit({
-        deptId: currentDept,
-        yyyymm: getTargetYearMonth().fullStr,
+        deptId:      currentDept,
+        yyyymm:      getTargetYearMonth().fullStr,
         targetEmpNo: empNo,
-        limitType: "annualQuota",
-        count: null
+        limitType:   "annualQuota",
+        count:       null
     }).then(function() {
         var emp = employeeByEmpNo[String(empNo || "").trim().toLowerCase()];
         if (emp && liveDBData["_userLimits"] && liveDBData["_userLimits"][emp.uid]) {
@@ -443,20 +457,19 @@ function deleteAnnualQuotaFromBoard(event, empNo) {
                 liveDBData["_userLimits"] = next;
             }
         }
-        return _refreshAfterAdminConfigSave();
-    }).then(function() {
+        refreshData();
         drawAnnualStatusBoard();
     }).catch(function(e) {
-        alert((e && e.message) || "Delete failed");
+        alert((e && e.message) || "삭제 실패");
     });
 }
 
-window.saveYearMonthConfig = saveYearMonthConfig;
-window.saveDayMaxConstraint = saveDayMaxConstraint;
+window.saveYearMonthConfig        = saveYearMonthConfig;
+window.saveDayMaxConstraint       = saveDayMaxConstraint;
 window.saveGlobalUserMaxConstraint = saveGlobalUserMaxConstraint;
 window.saveAnnualUserMaxConstraint = saveAnnualUserMaxConstraint;
-window.saveGroupMaxConstraints = saveGroupMaxConstraints;
-window.setSpecialDayLimit = setSpecialDayLimit;
-window.triggerAnnualUpload = triggerAnnualUpload;
-window.downloadAnnualTemplate = downloadAnnualTemplate;
-window.toggleAnnualStatusBoard = toggleAnnualStatusBoard;
+window.saveGroupMaxConstraints    = saveGroupMaxConstraints;
+window.setSpecialDayLimit         = setSpecialDayLimit;
+window.triggerAnnualUpload        = triggerAnnualUpload;
+window.downloadAnnualTemplate     = downloadAnnualTemplate;
+window.toggleAnnualStatusBoard    = toggleAnnualStatusBoard;
