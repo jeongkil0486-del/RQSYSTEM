@@ -595,7 +595,7 @@ function saveSpecialDayLimit() {
 }
 
 // ── 연/월 설정 저장 ───────────────────────────────────────────────────────────
-function saveYearMonthConfig() {
+function legacySaveYearMonthConfig() {
     if (!isAdmin && !isSuperAdmin) return;
     var y = document.getElementById("targetYear").value;
     var m = document.getElementById("targetMonth").value;
