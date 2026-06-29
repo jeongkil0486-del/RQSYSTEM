@@ -490,15 +490,11 @@ function manageAdminSelection(date) {
     // 목록 표시 후 취소할 번호 입력
     var lines = applicants.map(function(a, i) {
         return (i + 1) + ". " + a.label;
-    }).join("
-");
+    }).join("\n");
 
     var numStr = window.prompt(
-        parseInt(tm.month) + "월 " + date + "일 신청 목록:
-" + lines +
-        "
-
-취소할 번호 입력 (취소 안 하려면 빈 값으로 닫기):"
+        parseInt(tm.month) + "월 " + date + "일 신청 목록:\n" + lines +
+        "\n취소할 번호 입력 (취소 안 하려면 빈 값으로 닫기):"
     );
     if (!numStr || !numStr.trim()) return;
 
@@ -509,9 +505,7 @@ function manageAdminSelection(date) {
     }
 
     var target = applicants[num - 1];
-    if (!confirm(target.label + "
-
-위 신청을 취소하시겠습니까?")) return;
+    if (!confirm(target.label + "\n\n위 신청을 취소하시겠습니까?")) return;
 
     fn.adminCancelRequest({
         deptId:    currentDept,
