@@ -309,6 +309,7 @@ function showSuperAdminPanel() {
   if (grid) grid.style.display = "none";
 
   drawSuperAdminPanel();
+  drawSuperResetPanel();
 }
 
 function drawSuperAdminPanel() {
