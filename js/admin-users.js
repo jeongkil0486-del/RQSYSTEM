@@ -162,59 +162,8 @@ function saveAllGroupsFromInputs() {
 // 이름/권한/비밀번호는 팝업 방식으로 입력
 function addAllowedUser() {
     if (!isAdmin && !isSuperAdmin) return;
-
-    var empNoInput = document.getElementById("manageIdInput");
-    var empNo = empNoInput ? empNoInput.value.trim() : "";
-
-    if (!empNo) {
-        alert("사번을 입력해주세요.");
-        return;
-    }
-
-    var name = window.prompt("직원 이름을 입력해주세요:");
-    if (!name || !name.trim()) { alert("이름을 입력해야 합니다."); return; }
-    name = name.trim();
-
-    var role = window.prompt("권한을 입력해주세요 (staff / admin):", "staff");
-    if (!role) role = "staff";
-    role = role.trim().toLowerCase();
-    if (role !== "staff" && role !== "admin") {
-        alert("권한은 'staff' 또는 'admin' 중 하나여야 합니다.");
-        return;
-    }
-
-    var tempPass = window.prompt("임시 비밀번호를 입력해주세요 (6자 이상):");
-    if (!tempPass || tempPass.length < 6) {
-        alert("비밀번호는 6자 이상이어야 합니다.");
-        return;
-    }
-
-    var deptId = currentDept;
-    if (!deptId) {
-        alert("지점 정보가 없습니다. 다시 로그인해주세요.");
-        return;
-    }
-
-    fn.createEmployee({
-        empNo:    empNo,
-        name:     name,
-        deptId:   deptId,
-        role:     role,
-        password: tempPass
-    }).then(function(result) {
-        if (empNoInput) empNoInput.value = "";
-        // 직원 목록 갱신
-        if (typeof loadDeptEmployees === "function") {
-            loadDeptEmployees(deptId).then(function() {
-                drawAllowedUsersBoard();
-            });
-        }
-        alert("✅ 계정 생성 완료!\n사번: " + empNo + "\n이름: " + name + "\n권한: " + role);
-    }).catch(function(e) {
-        alert("계정 생성 실패: " + ((e && e.message) || "알 수 없는 오류"));
-    });
+    alert("Use the employee registration menu with empNo, name, dept, role and temp password.");
 }
-
 function removeAllowedUser() {
     if (!isSuperAdmin) {
         alert("직원 삭제는 슈퍼관리자만 가능합니다.");

@@ -138,6 +138,15 @@ function connectDeptDB(dept, onFirstLoad, overrideYyyymm) {
 
     db.ref(cfgPath).once("value", function(snap) {
         var cfg = snap.val() || {};
+        // cfg에 targetYearMonth가 있고 현재 연결 달과 다르면 올바른 달로 보정
+        // 로그인/새로고침 시 기본달 경로를 읽어도 저장된 신청달로 전환
+        if (cfg.targetYearMonth && !overrideYyyymm) {
+            var savedFull = String(cfg.targetYearMonth).replace("-", "");
+            if (savedFull.length === 6 && savedFull !== yyyymm) {
+                yyyymm = savedFull;
+                liveDBData["rq_current_target_year_month"] = cfg.targetYearMonth;
+            }
+        }
         _applyCfgToLiveData(cfg, yyyymm);
         onLoaded();
     });

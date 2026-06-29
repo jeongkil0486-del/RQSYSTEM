@@ -97,10 +97,23 @@ function saveYearMonthConfig() {
     var ymDash = y + "-" + m;   // "2025-07" — liveDBData/DB 저장 형식
     var ymFull = y + m;         // "202507"  — DB 경로/fullStr 형식
 
+    var ymPrev = getTargetYearMonth().fullStr;  // 현재 연결 달 (로그인/새로고침 시 읽히는 경로)
+
     fn.saveDeptConfig({
         deptId: currentDept,
         yyyymm: ymFull,
         config: { targetYearMonth: ymDash }
+    }).then(function() {
+        // 현재 연결 달 config에도 targetYearMonth 저장
+        // → 다음 로그인 시 이 경로를 읽어서 올바른 달로 자동 보정됨
+        if (ymPrev && ymPrev !== ymFull) {
+            return fn.saveDeptConfig({
+                deptId: currentDept,
+                yyyymm: ymPrev,
+                config: { targetYearMonth: ymDash }
+            });
+        }
+        return Promise.resolve();
     }).then(function() {
         liveDBData["rq_current_target_year_month"] = ymDash;
         return connectDeptDBSafe(currentDept, ymFull);
