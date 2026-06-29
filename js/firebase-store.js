@@ -4,6 +4,7 @@
  */
 
 var _countersCache = {};
+var _deptConnectToken = 0;
 
 function _rebuildEmployeeMaps(rows) {
     deptEmployees = Array.isArray(rows) ? rows.slice() : [];
@@ -102,44 +103,39 @@ function _clearConfigLiveData(yyyymm) {
 }
 
 function connectDeptDB(dept, onFirstLoad, overrideYyyymm) {
+    var connectToken = ++_deptConnectToken;
     _deptListeners.forEach(function(item) {
         db.ref(item.path).off(item.event, item.fn);
     });
     _deptListeners = [];
     dbListener = dept;
     liveDBData = {};
-
-    // overrideYyyymm: saveYearMonthConfig 등 명시적 달 변경 시 사용
-    // liveDBData 초기화 이후 targetYearMonth를 즉시 복원해 getTargetYearMonth()가 올바른 달 반환하도록 함
     if (overrideYyyymm) {
-        // YYYYMM → YYYY-MM 형식으로 변환하여 저장
         var oy = overrideYyyymm.slice(0, 4);
         var om = overrideYyyymm.slice(4, 6);
         liveDBData["rq_current_target_year_month"] = oy + "-" + om;
     }
-
     var tm = getTargetYearMonth();
     var yyyymm = overrideYyyymm || tm.fullStr;
     var cfgPath = "departments/" + dept + "/configs/" + yyyymm;
     var counterPath = "departments/" + dept + "/publicCounters/" + yyyymm;
     var myReqPath = "userRequests/" + currentUid + "/" + yyyymm;
     var avPath = "departments/" + dept + "/adminView/" + yyyymm;
-
+    var initialState = {};
     var total = (isAdmin || isSuperAdmin) ? 5 : 3;
     var loaded = 0;
-
     function onLoaded() {
+        if (connectToken !== _deptConnectToken) return;
         loaded++;
         if (loaded >= total) {
-            _subscribeRealtimeKeys(dept, yyyymm);
+            _subscribeRealtimeKeys(dept, yyyymm, initialState, connectToken);
             if (onFirstLoad) onFirstLoad();
         }
     }
-
     db.ref(cfgPath).once("value", function(snap) {
+        if (connectToken !== _deptConnectToken) return;
         var cfg = snap.val() || {};
-        // cfg에 targetYearMonth가 있고 현재 연결 달과 다르면 올바른 달로 보정
-        // 로그인/새로고침 시 기본달 경로를 읽어도 저장된 신청달로 전환
+        initialState.cfg = JSON.stringify(cfg);
         if (cfg.targetYearMonth && !overrideYyyymm) {
             var savedFull = String(cfg.targetYearMonth).replace("-", "");
             if (savedFull.length === 6 && savedFull !== yyyymm) {
@@ -150,21 +146,30 @@ function connectDeptDB(dept, onFirstLoad, overrideYyyymm) {
         _applyCfgToLiveData(cfg, yyyymm);
         onLoaded();
     });
-
     db.ref(counterPath).once("value", function(snap) {
-        _countersCache = snap.val() || {};
+        if (connectToken !== _deptConnectToken) return;
+        var counterData = snap.val() || {};
+        initialState.counter = JSON.stringify(counterData);
+        _countersCache = counterData;
         onLoaded();
     });
-
     db.ref(myReqPath).once("value", function(snap) {
-        _applyMyRequests(snap.val() || {}, yyyymm);
+        if (connectToken !== _deptConnectToken) return;
+        var myData = snap.val() || {};
+        initialState.myReq = JSON.stringify(myData);
+        _applyMyRequests(myData, yyyymm);
         onLoaded();
     });
-
     if (isAdmin || isSuperAdmin) {
-        loadDeptEmployees(dept).then(function() { onLoaded(); });
+        loadDeptEmployees(dept).then(function() {
+            if (connectToken !== _deptConnectToken) return;
+            onLoaded();
+        });
         db.ref(avPath).once("value", function(snap) {
-            _applyAdminView(snap.val() || {}, yyyymm);
+            if (connectToken !== _deptConnectToken) return;
+            var adminData = snap.val() || {};
+            initialState.adminView = JSON.stringify(adminData);
+            _applyAdminView(adminData, yyyymm);
             onLoaded();
         });
     }
@@ -244,39 +249,54 @@ function _applyAdminView(avData, yyyymm) {
     });
 }
 
-function _subscribeRealtimeKeys(dept, yyyymm) {
+function _subscribeRealtimeKeys(dept, yyyymm, initialState, connectToken) {
+    function isDuplicateInitial(kind, value) {
+        if (connectToken !== _deptConnectToken) return true;
+        var serialized = JSON.stringify(value || {});
+        if (initialState[kind] === serialized) {
+            initialState[kind] = null;
+            return true;
+        }
+        initialState[kind] = null;
+        return false;
+    }
     var cfgPath = "departments/" + dept + "/configs/" + yyyymm;
     var onCfgValue = db.ref(cfgPath).on("value", function(snap) {
+        var cfg = snap.val() || {};
+        if (isDuplicateInitial("cfg", cfg)) return;
         _clearConfigLiveData(yyyymm);
-        _applyCfgToLiveData(snap.val() || {}, yyyymm);
+        _applyCfgToLiveData(cfg, yyyymm);
         if (currentUser) _throttledRefresh();
     });
     _deptListeners.push({ path: cfgPath, event: "value", fn: onCfgValue });
-
     var counterPath = "departments/" + dept + "/publicCounters/" + yyyymm;
     var onCounter = db.ref(counterPath).on("value", function(snap) {
-        _countersCache = snap.val() || {};
+        var counterData = snap.val() || {};
+        if (isDuplicateInitial("counter", counterData)) return;
+        _countersCache = counterData;
         if (currentUser && !isAdmin && !isSuperAdmin) _updateAllBadges();
         else if (currentUser && (isAdmin || isSuperAdmin)) _throttledRefresh();
     });
     _deptListeners.push({ path: counterPath, event: "value", fn: onCounter });
-
     var myReqPath = "userRequests/" + currentUid + "/" + yyyymm;
     var onMyValue = db.ref(myReqPath).on("value", function(snap) {
+        var myData = snap.val() || {};
+        if (isDuplicateInitial("myReq", myData)) return;
         Object.keys(liveDBData).forEach(function(k) {
             if (k.startsWith("rq_" + currentUser + "_" + yyyymm)) delete liveDBData[k];
             if (k.startsWith("sc_") && k.indexOf("_" + currentUser + "_" + yyyymm + "_") >= 0) delete liveDBData[k];
         });
-        _applyMyRequests(snap.val() || {}, yyyymm);
+        _applyMyRequests(myData, yyyymm);
         if (currentUser && !isAdmin) _updateMyUserCells();
     });
     _deptListeners.push({ path: myReqPath, event: "value", fn: onMyValue });
-
     if (isAdmin || isSuperAdmin) {
         var avPath = "departments/" + dept + "/adminView/" + yyyymm;
         var onAdminView = db.ref(avPath).on("value", function(snap) {
+            var adminData = snap.val() || {};
+            if (isDuplicateInitial("adminView", adminData)) return;
             _clearAdminRequestLiveData(yyyymm);
-            _applyAdminView(snap.val() || {}, yyyymm);
+            _applyAdminView(adminData, yyyymm);
             if (currentUser) _throttledRefresh();
         });
         _deptListeners.push({ path: avPath, event: "value", fn: onAdminView });
@@ -307,31 +327,30 @@ function _updateMyUserCells() {
     var tm = getTargetYearMonth();
     var totalDays = new Date(parseInt(tm.year, 10), parseInt(tm.month, 10), 0).getDate();
     var scList = getScheduleCodeList();
-
+    var prefix = "rq_" + currentUser + "_" + tm.fullStr + "_";
     for (var d = 1; d <= totalDays; d++) {
         var cell = document.getElementById("d-" + d);
         if (!cell) continue;
-
-        cell.querySelectorAll(".user-note").forEach(function(node) { node.remove(); });
-        var prefix = "rq_" + currentUser + "_" + tm.fullStr + "_";
-
+        var oldNotes = cell.querySelectorAll(".user-note:not(.processing)");
+        oldNotes.forEach(function(node) { node.remove(); });
+        var fragment = document.createDocumentFragment();
         if (liveDBData[prefix + d]) {
             var n1 = document.createElement("div");
             n1.className = "user-note";
-            n1.innerText = "휴무";
-            cell.appendChild(n1);
+            n1.innerText = "\uD734\uBB34";
+            fragment.appendChild(n1);
         }
         if (liveDBData[prefix + d + "_petition"]) {
             var n2 = document.createElement("div");
             n2.className = "user-note petition";
-            n2.innerText = "청원";
-            cell.appendChild(n2);
+            n2.innerText = "\uCCAD\uC6D0";
+            fragment.appendChild(n2);
         }
         if (liveDBData[prefix + d + "_annual"]) {
             var n3 = document.createElement("div");
             n3.className = "user-note annual";
-            n3.innerText = "연차";
-            cell.appendChild(n3);
+            n3.innerText = "\uC5F0\uCC28";
+            fragment.appendChild(n3);
         }
         scList.forEach(function(code) {
             var scKey = "sc_" + code.name + "_" + currentUser + "_" + tm.fullStr + "_" + d;
@@ -339,9 +358,10 @@ function _updateMyUserCells() {
                 var n4 = document.createElement("div");
                 n4.className = "user-note schedule";
                 n4.innerText = code.name;
-                cell.appendChild(n4);
+                fragment.appendChild(n4);
             }
         });
+        cell.appendChild(fragment);
     }
 }
 

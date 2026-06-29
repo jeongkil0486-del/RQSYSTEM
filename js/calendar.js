@@ -9,6 +9,7 @@ function generateCalendarGrid() {
     var gridContainer = document.getElementById("mainCalendarGrid");
     if (!gridContainer) return;
     gridContainer.innerHTML = "";
+    var fragment = document.createDocumentFragment();
 
     var daysHeader = [
         { txt: "일", cls: "days sun" }, { txt: "월", cls: "days" }, { txt: "화", cls: "days" },
@@ -18,7 +19,7 @@ function generateCalendarGrid() {
         var hDiv = document.createElement("div");
         hDiv.className = h.cls;
         hDiv.innerText = h.txt;
-        gridContainer.appendChild(hDiv);
+        fragment.appendChild(hDiv);
     });
 
     var tm = getTargetYearMonth();
@@ -31,7 +32,7 @@ function generateCalendarGrid() {
     for (var e = 0; e < startDow; e++) {
         var emptyDiv = document.createElement("div");
         emptyDiv.className = "empty";
-        gridContainer.appendChild(emptyDiv);
+        fragment.appendChild(emptyDiv);
     }
     for (var d = 1; d <= totalDays; d++) {
         var dateDiv = document.createElement("div");
@@ -44,8 +45,67 @@ function generateCalendarGrid() {
         (function(day) {
             dateDiv.onclick = function() { editDate(day); };
         })(d);
-        gridContainer.appendChild(dateDiv);
+        fragment.appendChild(dateDiv);
     }
+    gridContainer.appendChild(fragment);
+}
+
+var _pendingDayActions = {};
+var _resetInFlight = false;
+
+function _getDayActionKey(day) {
+    return getTargetYearMonth().fullStr + ":" + String(day);
+}
+
+function _isDayActionPending(day) {
+    return !!_pendingDayActions[_getDayActionKey(day)];
+}
+
+function _setDayActionPending(day, pending) {
+    var key = _getDayActionKey(day);
+    if (pending) _pendingDayActions[key] = true;
+    else delete _pendingDayActions[key];
+}
+
+function _setDayProcessingIndicator(day, pending) {
+    var cell = document.getElementById("d-" + day);
+    if (!cell) return;
+
+    var indicator = cell.querySelector(".user-note.processing");
+    if (pending) {
+        if (!indicator) {
+            indicator = document.createElement("div");
+            indicator.className = "user-note processing";
+            indicator.style.background = "#fff3cd";
+            indicator.style.color = "#8a6d3b";
+            indicator.style.border = "1px solid #ffe08a";
+            indicator.style.fontWeight = "bold";
+            cell.appendChild(indicator);
+        }
+        indicator.innerText = "처리중...";
+        cell.setAttribute("data-processing", "1");
+        return;
+    }
+
+    if (indicator) indicator.remove();
+    cell.removeAttribute("data-processing");
+}
+
+function _runDayRequest(day, requestFn, errorMessage) {
+    if (_isDayActionPending(day)) return Promise.resolve(false);
+
+    _setDayActionPending(day, true);
+    _setDayProcessingIndicator(day, true);
+
+    return requestFn().then(function() {
+        return true;
+    }).catch(function(e) {
+        alert((e && e.message) || errorMessage);
+        throw e;
+    }).finally(function() {
+        _setDayActionPending(day, false);
+        _setDayProcessingIndicator(day, false);
+    });
 }
 
 function toggleSpecialDayBoard(event) {
@@ -263,59 +323,63 @@ function closeResetChoiceModal() {
 }
 
 function executeResetChoice(mode) {
+    if (_resetInFlight) return;
     closeResetChoiceModal();
     var tm      = getTargetYearMonth();
     var yyyymm  = tm.fullStr;
     var daysToCancel = [];
-
-    // liveDBData 에서 내 신청 날짜 수집
+    // liveDBData ??? ????? ??? ???
     var prefix = "rq_" + currentUser + "_" + yyyymm + "_";
     Object.keys(liveDBData).forEach(function(key) {
         if (!key.startsWith(prefix)) return;
         var tail = key.replace(prefix, "");
-        // day 추출 (tail = "5" or "5_petition" or "5_annual")
+        // day ??? (tail = "5" or "5_petition" or "5_annual")
         var day = tail.split("_")[0];
         if (!day || isNaN(parseInt(day))) return;
-
         var type = "";
         if (tail.endsWith("_annual"))   type = "annual";
         else if (tail.endsWith("_petition")) type = "petition";
         else type = "normal";
-
         if (mode === "ALL"      && type !== "annual") daysToCancel.push({ day: day, type: type });
         if (mode === "HOLIDAY"  && (type === "normal" || type === "petition")) daysToCancel.push({ day: day, type: type });
-        if (mode === "SCHEDULE") { /* 아래 sc_ 처리 */ }
+        if (mode === "SCHEDULE") { /* ??? sc_ ??? */ }
     });
-
-    // 스케줄 코드
+    // ????????
     if (mode === "ALL" || mode === "SCHEDULE") {
         var scPattern = "_" + currentUser + "_" + yyyymm + "_";
         Object.keys(liveDBData).forEach(function(key) {
             if (key.startsWith("sc_") && !key.startsWith("sc_glimit_") && key.includes(scPattern)) {
                 var parts = key.split("_");
                 var day   = parts[parts.length - 1];
-                if (day && !isNaN(parseInt(day)))
+                if (day && !isNaN(parseInt(day))) {
                     daysToCancel.push({ day: day, type: "schedule" });
+                }
             }
         });
     }
-
     if (daysToCancel.length === 0) {
-        alert("ℹ️ 삭제할 내역이 없습니다.");
+        alert("\uCDE8\uC18C\uD560 \uB0B4\uC5ED\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.");
         return;
     }
-
-    var promises = daysToCancel.map(function(item) {
-        return fn.cancelRequest({ deptId: currentDept, yyyymm: yyyymm, day: item.day });
-    });
-
-    Promise.all(promises).then(function() {
-        alert("✨ 초기화 완료 (" + daysToCancel.length + "건)");
-        refreshData();
-    }).catch(function(e) {
-        alert(e.message || "일부 취소 실패, 새로고침 후 확인해주세요.");
-        refreshData();
-    });
+    _resetInFlight = true;
+    var processed = 0;
+    function runNext(index) {
+        if (index >= daysToCancel.length) {
+            _resetInFlight = false;
+            alert("\uC804\uCCB4 \uCD08\uAE30\uD654 \uC644\uB8CC (" + processed + "\uAC74)");
+            return;
+        }
+        var item = daysToCancel[index];
+        _runDayRequest(item.day, function() {
+            return fn.cancelRequest({ deptId: currentDept, yyyymm: yyyymm, day: item.day });
+        }, "\uC77C\uAD04 \uCDE8\uC18C \uC2E4\uD328, \uC624\uB958 \uB85C\uADF8\uB97C \uD655\uC778\uD574\uC8FC\uC138\uC694.").then(function(success) {
+            if (success) processed++;
+            runNext(index + 1);
+        }).catch(function() {
+            _resetInFlight = false;
+        });
+    }
+    runNext(0);
 }
 
 // ── 날짜 클릭 (신청/취소) ─────────────────────────────────────────────────────
@@ -323,120 +387,99 @@ function editDate(date) {
     var tm = getTargetYearMonth();
     if (isSuperAdmin) return;
     if (isAdmin) { manageAdminSelection(date); return; }
-
-    // 기간 검증 (클라이언트 사전 체크 — 서버에서도 재검증)
+    if (_isDayActionPending(date)) return;
+    // ??? ????(??????????? ??? ???????????????
     var openAt  = getFirebaseItem("rq_allowed_start_datetime", null);
     var closeAt = getFirebaseItem("rq_allowed_end_datetime", null);
     var now     = Date.now();
-
     if (openAt && now < new Date(openAt).getTime()) {
-        alert("❌ 신청 기간 전입니다.\n오픈: " + formatDateTimeString(openAt));
+        alert("\uC544\uC9C1 \uC2E0\uCCAD \uAE30\uAC04 \uC804\uC785\uB2C8\uB2E4.\\n\uC624\uD508: " + formatDateTimeString(openAt));
         return;
     }
     if (closeAt && now > new Date(closeAt).getTime()) {
-        alert("❌ 신청 기간이 마감되었습니다.\n마감: " + formatDateTimeString(closeAt));
+        alert("\uC2E0\uCCAD \uAE30\uAC04\uC774 \uB9C8\uAC10\uB418\uC5C8\uC2B5\uB2C8\uB2E4.\\n\uB9C8\uAC10: " + formatDateTimeString(closeAt));
         return;
     }
-
     var prefix  = "rq_" + currentUser + "_" + tm.fullStr + "_";
     var dayStr  = String(date);
-
     var existingNormal   = getFirebaseItem(prefix + dayStr, null);
     var existingPetition = getFirebaseItem(prefix + dayStr + "_petition", null);
     var existingAnnual   = getFirebaseItem(prefix + dayStr + "_annual", null);
-
-    // ── adminViewCache 폴백: 직원 본인 신청이 liveDBData에 없어도 캐시에서 확인 ──
     if (existingNormal === null && existingPetition === null && existingAnnual === null) {
         var myCache = (adminViewCache && adminViewCache[currentUid]) || {};
         var cachedReq = myCache[dayStr] || myCache[String(parseInt(dayStr, 10))];
         if (cachedReq && cachedReq.type) {
-            if (cachedReq.type === "normal")   existingNormal   = cachedReq.ts || 1;
+            if (cachedReq.type === "normal") existingNormal = cachedReq.ts || 1;
             if (cachedReq.type === "petition") existingPetition = cachedReq.ts || 1;
-            if (cachedReq.type === "annual")   existingAnnual   = cachedReq.ts || 1;
+            if (cachedReq.type === "annual") existingAnnual = cachedReq.ts || 1;
         }
     }
-
     var existingScCode = null;
     var scList = getScheduleCodeList();
     scList.forEach(function(c) {
         var scKey = "sc_" + c.name + "_" + currentUser + "_" + tm.fullStr + "_" + dayStr;
         if (liveDBData[scKey] !== undefined) existingScCode = c.name;
     });
-
-    // ── 취소 ────
     var cancelType = existingNormal !== null ? "normal"
                    : existingPetition !== null ? "petition"
                    : existingAnnual !== null ? "annual"
                    : existingScCode !== null ? "schedule"
                    : null;
-
     if (cancelType) {
-        var label = { normal: "일반 휴무", petition: "청원 휴가", annual: "연차", schedule: "스케줄 코드 [" + existingScCode + "]" }[cancelType];
-        if (!confirm(parseInt(tm.month) + "월 " + date + "일 " + label + "을(를) 취소하시겠습니까?")) return;
-
-        fn.cancelRequest({ deptId: currentDept, yyyymm: tm.fullStr, day: dayStr })
-          .then(function() { refreshData(); })
-          .catch(function(e) { alert(e.message || "취소 실패"); });
+        var label = { normal: "\uC77C\uBC18 \uD734\uBB34", petition: "\uCCAD\uC6D0 \uD734\uBB34", annual: "\uC5F0\uCC28", schedule: "\uC2A4\uCF00\uC904 \uCF54\uB4DC [" + existingScCode + "]" }[cancelType];
+        if (!confirm(parseInt(tm.month) + "\uC6D4 " + date + "\uC77C " + label + "\uB97C \uCDE8\uC18C\uD558\uC2DC\uACA0\uC2B5\uB2C8\uAE4C?")) return;
+        _runDayRequest(dayStr, function() {
+            return fn.cancelRequest({ deptId: currentDept, yyyymm: tm.fullStr, day: dayStr });
+        }, "\uC2E0\uCCAD \uC2E4\uD328").catch(function() {});
         return;
     }
-
-    // ── 신청 ────
     if (currentAppMode === "SCHEDULE_CODE") {
-        if (!currentScheduleCode) { alert("스케줄 코드가 선택되지 않았습니다."); return; }
+        if (!currentScheduleCode) { alert("\uC2A4\uCF00\uC904 \uCF54\uB4DC\uAC00 \uC120\uD0DD\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4."); return; }
         var codeObj = scList.find(function(c) { return c.name === currentScheduleCode; });
-        if (!codeObj) { alert("선택된 코드를 찾을 수 없습니다."); return; }
+        if (!codeObj) { alert("\uC120\uD0DD\uD55C \uCF54\uB4DC\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4."); return; }
         if (getMyScheduleCodeCount(currentScheduleCode) >= codeObj.limit) {
-            alert("❌ [" + currentScheduleCode + "] 코드 개인 제한(" + codeObj.limit + "개) 초과");
+            alert("[" + currentScheduleCode + "] \uCF54\uB4DC \uAC1C\uC778 \uD55C\uB3C4(" + codeObj.limit + "\uAC74) \uCD08\uACFC");
             return;
         }
-        fn.submitRequest({ deptId: currentDept, yyyymm: tm.fullStr, day: dayStr, type: "schedule", scheduleCode: currentScheduleCode })
-          .then(function() { refreshData(); })
-          .catch(function(e) { alert(e.message || "신청 실패"); });
+        _runDayRequest(dayStr, function() {
+            return fn.submitRequest({ deptId: currentDept, yyyymm: tm.fullStr, day: dayStr, type: "schedule", scheduleCode: currentScheduleCode });
+        }, "\uC2E0\uCCAD \uC2E4\uD328").catch(function() {});
         return;
     }
-
     if (currentAppMode === "PETITION") {
-        fn.submitRequest({ deptId: currentDept, yyyymm: tm.fullStr, day: dayStr, type: "petition" })
-          .then(function() { refreshData(); })
-          .catch(function(e) { alert(e.message || "청원 신청 실패"); });
+        _runDayRequest(dayStr, function() {
+            return fn.submitRequest({ deptId: currentDept, yyyymm: tm.fullStr, day: dayStr, type: "petition" });
+        }, "\uCCAD\uC6D0 \uC2E0\uCCAD \uC2E4\uD328").catch(function() {});
         return;
     }
-
     if (currentAppMode === "ANNUAL") {
         var myAnnualCount = getMyAnnualCount();
         var personalQuota = getAnnualQuota(currentUser);
         var annualMax     = personalQuota !== null ? personalQuota : parseInt(getFirebaseItem("rq_config_annual_user_max", "15"));
         if (myAnnualCount >= annualMax) {
-            alert("❌ 연차 한도(" + annualMax + "개) 초과");
+            alert("\uC5F0\uCC28 \uD55C\uB3C4(" + annualMax + "\uAC74) \uCD08\uACFC");
             return;
         }
-        fn.submitRequest({ deptId: currentDept, yyyymm: tm.fullStr, day: dayStr, type: "annual" })
-          .then(function() { refreshData(); })
-          .catch(function(e) { alert(e.message || "연차 신청 실패"); });
+        _runDayRequest(dayStr, function() {
+            return fn.submitRequest({ deptId: currentDept, yyyymm: tm.fullStr, day: dayStr, type: "annual" });
+        }, "\uC5F0\uCC28 \uC2E0\uCCAD \uC2E4\uD328").catch(function() {});
         return;
     }
-
-    // 일반 휴무 — 클라이언트 사전 검증 (서버에서 원자적 최종 검증)
     var specialLimit   = getFirebaseItem("rq_special_limit_" + tm.fullStr + "_" + dayStr, null);
     var configDayMax   = specialLimit !== null ? parseInt(specialLimit) : parseInt(getFirebaseItem("rq_config_day_max", "10"));
     var dayTotalCount  = getDayTotalCount(date);
-
     if (dayTotalCount >= configDayMax) {
-        alert("❌ " + parseInt(tm.month) + "월 " + date + "일은 마감되었습니다. (" + configDayMax + "명 한도)");
+        alert(parseInt(tm.month) + "\uC6D4 " + date + "\uC77C\uC740 \uB9C8\uAC10\uB418\uC5C8\uC2B5\uB2C8\uB2E4 (" + configDayMax + "\uBA85 \uD55C\uB3C4)");
         return;
     }
-
     var myTotalCount  = getMyTotalCount();
     var customLimit   = getFirebaseItem("rq_limit_uid_" + currentUid, null);
     var globalUserMax = parseInt(getFirebaseItem("rq_config_global_user_max", "4"));
     var myMax         = customLimit !== null ? parseInt(customLimit) : globalUserMax;
-
     if (myTotalCount >= myMax) {
-        alert("❌ 이번 달 신청 한도(" + myMax + "개)를 모두 소진하셨습니다.");
+        alert("\uC774\uBC88 \uB2EC \uC2E0\uCCAD \uD55C\uB3C4(" + myMax + "\uAC74)\uB97C \uBAA8\uB450 \uC0AC\uC6A9\uD588\uC2B5\uB2C8\uB2E4");
         return;
     }
-
-    // 조 제한 검증
     var groups = ["A","B","C","D","E"];
     for (var gi = 0; gi < groups.length; gi++) {
         var g    = groups[gi];
@@ -444,14 +487,13 @@ function editDate(date) {
         if (!groupContainsCurrentUser(grp)) continue;
         var gMax = parseInt(getFirebaseItem("rq_config_group_max_" + g, "2"));
         if (getGroupCountByDate(grp, date) >= gMax) {
-            alert("❌ " + g + "조 일자 제한(" + gMax + "명) 초과");
+            alert(g + "\uC870 \uC77C\uC790 \uD55C\uB3C4(" + gMax + "\uBA85) \uCD08\uACFC");
             return;
         }
     }
-
-    fn.submitRequest({ deptId: currentDept, yyyymm: tm.fullStr, day: dayStr, type: "normal" })
-      .then(function() { refreshData(); })
-      .catch(function(e) { alert(e.message || "신청 실패"); });
+    _runDayRequest(dayStr, function() {
+        return fn.submitRequest({ deptId: currentDept, yyyymm: tm.fullStr, day: dayStr, type: "normal" });
+    }, "\uC2E0\uCCAD \uC2E4\uD328").catch(function() {});
 }
 
 // ── 관리자: 날짜 클릭 → 신청 삭제 ───────────────────────────────────────────
@@ -459,44 +501,37 @@ function manageAdminSelection(date) {
     if (!isAdmin && !isSuperAdmin) return;
     var tm     = getTargetYearMonth();
     var dayStr = String(date);
+    if (_isDayActionPending(dayStr)) return;
     var applicants = getAdminApplicantsByDay(dayStr);
-
     if (applicants.length === 0) {
-        alert(parseInt(tm.month) + "월 " + date + "일 신청 내역이 없습니다.");
+        alert(parseInt(tm.month) + "\uC6D4 " + date + "\uC77C\uC5D0 \uC2E0\uCCAD \uB0B4\uC5ED\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.");
         return;
     }
-
-    // 목록 표시 후 취소할 번호 입력
     var lines = applicants.map(function(a, i) {
         return (i + 1) + ". " + a.label;
     }).join("\n");
-
     var numStr = window.prompt(
-        parseInt(tm.month) + "월 " + date + "일 신청 목록:\n" + lines +
-        "\n\n취소할 번호 입력 (취소 안 하려면 빈 값으로 닫기):"
+        parseInt(tm.month) + "\uC6D4 " + date + "\uC77C \uC2E0\uCCAD \uBAA9\uB85D:\n" + lines +
+        "\n\n\uCDE8\uC18C\uD560 \uBC88\uD638 \uC785\uB825 (\uCDE8\uC18C\uD558\uB824\uBA74 \uBE48\uAC12\uC73C\uB85C \uB2EB\uAE30):"
     );
     if (!numStr || !numStr.trim()) return;
-
     var num = parseInt(numStr.trim(), 10);
     if (isNaN(num) || num < 1 || num > applicants.length) {
-        alert("올바른 번호를 입력해주세요.");
+        alert("\uC62C\uBC14\uB978 \uBC88\uD638\uB97C \uC785\uB825\uD574\uC8FC\uC138\uC694.");
         return;
     }
-
     var target = applicants[num - 1];
-    if (!confirm(target.label + "\n\n위 신청을 취소하시겠습니까?")) return;
-
-    fn.adminCancelRequest({
-        deptId:    currentDept,
-        yyyymm:    tm.fullStr,
-        day:       dayStr,
-        targetUid: target.uid
-    }).then(function() {
-        alert("✅ 취소 완료: " + target.label);
-        refreshData();
-    }).catch(function(e) {
-        alert("취소 실패: " + ((e && e.message) || "알 수 없는 오류"));
-    });
+    if (!confirm(target.label + "\\n\\n\uD574\uB2F9 \uC2E0\uCCAD\uC744 \uCDE8\uC18C\uD558\uC2DC\uACA0\uC2B5\uB2C8\uAE4C?")) return;
+    _runDayRequest(dayStr, function() {
+        return fn.adminCancelRequest({
+            deptId:    currentDept,
+            yyyymm:    tm.fullStr,
+            day:       dayStr,
+            targetUid: target.uid
+        });
+    }, "\uCDE8\uC18C \uC2E4\uD328: \uC54C \uC218 \uC5C6\uB294 \uC624\uB958").then(function(success) {
+        if (success) alert("\uC9C1\uC811 \uCDE8\uC18C \uC644\uB8CC: " + target.label);
+    }).catch(function() {});
 }
 
 // ── 관리자: 신청 기간 저장 (Cloud Function) ───────────────────────────────────
@@ -686,44 +721,50 @@ function loadUserCalendarData() {
     var totalDays = new Date(parseInt(tm.year), parseInt(tm.month), 0).getDate();
     var configDayMax = parseInt(getFirebaseItem("rq_config_day_max", "10"));
     var scList    = getScheduleCodeList();
-
     for (var d = 1; d <= totalDays; d++) {
         var cell = document.getElementById("d-" + d);
         if (!cell) continue;
-
+        var fragment = document.createDocumentFragment();
         var specialLimit = getFirebaseItem("rq_special_limit_" + tm.fullStr + "_" + d, null);
         var dayMax = specialLimit !== null ? parseInt(specialLimit) : configDayMax;
         var count  = _countersCache[String(d)] || 0;
-
-        // 날짜 숫자
         var numDiv = document.createElement("div");
         numDiv.className = "date-num";
         numDiv.innerText = d;
-        cell.appendChild(numDiv);
-
-        // 카운터 배지
+        fragment.appendChild(numDiv);
         var badge = document.createElement("div");
         badge.className = "count-badge " + (count >= dayMax ? "badge-full" : "badge-safe");
-        badge.innerText = count + "/" + dayMax + "명";
-        cell.appendChild(badge);
-
-        // 내 신청 배지
+        badge.innerText = count + "/" + dayMax + "\uBA85";
+        fragment.appendChild(badge);
         var prefix = "rq_" + currentUser + "_" + tm.fullStr + "_";
         if (liveDBData[prefix + d]) {
-            var n = document.createElement("div"); n.className = "user-note"; n.innerText = "휴무"; cell.appendChild(n);
+            var n1 = document.createElement("div");
+            n1.className = "user-note";
+            n1.innerText = "\uD734\uBB34";
+            fragment.appendChild(n1);
         }
         if (liveDBData[prefix + d + "_petition"]) {
-            var n = document.createElement("div"); n.className = "user-note petition"; n.innerText = "청원"; cell.appendChild(n);
+            var n2 = document.createElement("div");
+            n2.className = "user-note petition";
+            n2.innerText = "\uCCAD\uC6D0";
+            fragment.appendChild(n2);
         }
         if (liveDBData[prefix + d + "_annual"]) {
-            var n = document.createElement("div"); n.className = "user-note annual"; n.innerText = "연차"; cell.appendChild(n);
+            var n3 = document.createElement("div");
+            n3.className = "user-note annual";
+            n3.innerText = "\uC5F0\uCC28";
+            fragment.appendChild(n3);
         }
         scList.forEach(function(c) {
             var scKey = "sc_" + c.name + "_" + currentUser + "_" + tm.fullStr + "_" + d;
             if (liveDBData[scKey]) {
-                var n = document.createElement("div"); n.className = "user-note schedule"; n.innerText = c.name; cell.appendChild(n);
+                var n4 = document.createElement("div");
+                n4.className = "user-note schedule";
+                n4.innerText = c.name;
+                fragment.appendChild(n4);
             }
         });
+        cell.appendChild(fragment);
     }
 }
 
@@ -731,32 +772,29 @@ function loadAdminCalendarData() {
     var tm        = getTargetYearMonth();
     var totalDays = new Date(parseInt(tm.year), parseInt(tm.month), 0).getDate();
     var configDayMax = parseInt(getFirebaseItem("rq_config_day_max", "10"));
-
     for (var d = 1; d <= totalDays; d++) {
         var cell = document.getElementById("d-" + d);
         if (!cell) continue;
-
+        var fragment = document.createDocumentFragment();
         var specialLimit = getFirebaseItem("rq_special_limit_" + tm.fullStr + "_" + d, null);
         var dayMax = specialLimit !== null ? parseInt(specialLimit) : configDayMax;
-
         var numDiv = document.createElement("div");
         numDiv.className = "date-num";
         numDiv.innerText = d;
-        cell.appendChild(numDiv);
-
+        fragment.appendChild(numDiv);
         var count  = _countersCache[String(d)] || 0;
         var badge  = document.createElement("div");
         badge.className = "count-badge " + (count >= dayMax ? "badge-full" : "badge-safe");
-        badge.innerText = count + "/" + dayMax + "명";
-        cell.appendChild(badge);
-
+        badge.innerText = count + "/" + dayMax + "\uBA85";
+        fragment.appendChild(badge);
         var applicants = getAdminApplicantsByDay(d);
         applicants.forEach(function(a) {
             var n = document.createElement("div");
             n.className = "user-note";
             n.innerText = a.label;
-            cell.appendChild(n);
+            fragment.appendChild(n);
         });
+        cell.appendChild(fragment);
     }
 }
 
