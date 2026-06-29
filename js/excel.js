@@ -104,7 +104,22 @@ function handleBulkExcelUpload() {
 
             if (!confirm(employeeRows.length + "명을 일괄 등록하시겠습니까?")) return;
 
-            fn.bulkCreateEmployees({ rows: employeeRows })
+            var authUser = auth && auth.currentUser ? auth.currentUser : null;
+            console.log("bulkCreateEmployees currentUser:", authUser ? {
+                uid: authUser.uid,
+                email: authUser.email || null
+            } : null);
+
+            if (!authUser) {
+                alert("로그인 세션이 없습니다. 다시 로그인 후 시도해주세요.");
+                return;
+            }
+
+            authUser.getIdToken()
+              .then(function(token) {
+                  console.log("bulkCreateEmployees idToken issued:", !!token, token ? token.length : 0);
+                  return fn.bulkCreateEmployees({ rows: employeeRows });
+              })
               .then(function(result) {
                   var results  = result.data.results || [];
                   var success  = results.filter(function(r) { return r.ok; }).length;
