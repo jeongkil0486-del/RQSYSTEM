@@ -363,6 +363,7 @@ function editDate(date) {
         var label = { normal: "일반 휴무", petition: "청원 휴가", annual: "연차", schedule: "스케줄 코드 [" + existingScCode + "]" }[cancelType];
         if (!confirm(parseInt(tm.month) + "월 " + date + "일 " + label + "을(를) 취소하시겠습니까?")) return;
 
+        console.log("cancelRequest day payload:", { rawDay: dayStr, normalizedDay: String(parseInt(dayStr, 10)) });
         fn.cancelRequest({ deptId: currentDept, yyyymm: tm.fullStr, day: dayStr })
           .then(function() { refreshData(); })
           .catch(function(e) { alert(e.message || "취소 실패"); });
