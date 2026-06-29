@@ -1,10 +1,10 @@
-/**
- * main.js — 세션 관리, 프로필 로드, UI 라우팅
- * 모든 RTDB 쓰기는 Cloud Functions 를 통합니다.
- * 브라우저에서 db.ref(...).set/update/remove 를 직접 호출하지 않습니다.
+﻿/**
+ * main.js ???몄뀡 愿由? ?꾨줈??濡쒕뱶, UI ?쇱슦??
+ * 紐⑤뱺 RTDB ?곌린??Cloud Functions 瑜??듯빀?덈떎.
+ * 釉뚮씪?곗??먯꽌 db.ref(...).set/update/remove 瑜?吏곸젒 ?몄텧?섏? ?딆뒿?덈떎.
  */
 
-// ── Cloud Function 래퍼 ───────────────────────────────────────────────────────
+// ?? Cloud Function ?섑띁 ???????????????????????????????????????????????????????
 var fn = {
   submitRequest:       fnClient.httpsCallable("submitRequest"),
   cancelRequest:       fnClient.httpsCallable("cancelRequest"),
@@ -26,12 +26,12 @@ var fn = {
   adminCancelRequest:   fnClient.httpsCallable("adminCancelRequest"),
 };
 
-// ── UI 헬퍼 ──────────────────────────────────────────────────────────────────
+// ?? UI ?ы띁 ??????????????????????????????????????????????????????????????????
 function setLoginButtonState(disabled, label) {
   var loginBtn = document.querySelector(".submit-btn");
   if (!loginBtn) return;
   loginBtn.disabled = !!disabled;
-  loginBtn.innerText = label || "로그인";
+  loginBtn.innerText = label || "Login";
 }
 
 function clearRealtimeListeners() {
@@ -89,6 +89,7 @@ function resetUiToLoggedOut() {
 
   var superAdminPanel = document.getElementById("superAdminPanel");
   if (superAdminPanel) superAdminPanel.style.display = "none";
+  setSuperDeleteSectionVisible(false);
   var superResetModal = document.getElementById("superResetChoiceModal");
   if (superResetModal) superResetModal.style.display = "none";
   var forcePasswordModal = document.getElementById("forcePasswordChangeModal");
@@ -96,21 +97,21 @@ function resetUiToLoggedOut() {
   var grid = document.getElementById("mainCalendarGrid");
   if (grid) grid.style.display = "";
   var modeBtn = document.getElementById("toggleModeBtn");
-  if (modeBtn) modeBtn.innerText = "휴무";
+  if (modeBtn) modeBtn.innerText = "?대Т";
   var scBtn = document.getElementById("scheduleCodeApplyBtn");
-  if (scBtn) { scBtn.innerText = "코드"; scBtn.style.display = "none"; }
+  if (scBtn) { scBtn.innerText = "肄붾뱶"; scBtn.style.display = "none"; }
 
   setModeButtonStyles();
-  setLoginButtonState(false, "로그인");
+  setLoginButtonState(false, "Login");
 }
 
-// ── 프로필 적용 ───────────────────────────────────────────────────────────────
+// ?? ?꾨줈???곸슜 ???????????????????????????????????????????????????????????????
 function applyProfile(user, profile) {
   var role = String(profile.role || "staff").toLowerCase();
   currentUid       = user.uid;
   currentProfile   = profile;
   currentUserRole  = role;
-  // ⚠️ 이메일은 저장하지 않음 — 가상 이메일을 UI 에 절대 표시하지 않음
+  // ?좑툘 ?대찓?쇱? ??ν븯吏 ?딆쓬 ??媛???대찓?쇱쓣 UI ???덈? ?쒖떆?섏? ?딆쓬
   currentUser  = profile.legacyName || profile.name || user.displayName || "";
   currentDept  = profile.deptId || "";
   isSuperAdmin = role === "super_admin";
@@ -119,10 +120,19 @@ function applyProfile(user, profile) {
   SUPER_ADMIN_ID = isSuperAdmin ? (currentUser || user.uid) : null;
 }
 
-// ── 지점 목록 ────────────────────────────────────────────────────────────────
+function setSuperDeleteSectionVisible(visible) {
+  var section = document.getElementById("superDeleteSection");
+  if (section) section.style.display = visible ? "block" : "none";
+}
+
+function shouldForcePasswordChange(profile) {
+  return !!(profile && (profile.mustChangePassword === true || profile.mustChangePassword === "true"));
+}
+
+// ?? 吏??紐⑸줉 ????????????????????????????????????????????????????????????????
 function loadDeptList() {
-  // super_admin: listDepartments Cloud Function 으로 수신 (직접 DB 읽기 없음)
-  // staff/admin: 자기 deptId 만 알면 되므로 전체 목록 불필요 — 호출 안 함
+  // super_admin: listDepartments Cloud Function ?쇰줈 ?섏떊 (吏곸젒 DB ?쎄린 ?놁쓬)
+  // staff/admin: ?먭린 deptId 留??뚮㈃ ?섎?濡??꾩껜 紐⑸줉 遺덊븘?????몄텧 ????
   if (!isSuperAdmin) {
     _adminAccountsLoaded = true;
     return Promise.resolve([]);
@@ -134,7 +144,7 @@ function loadDeptList() {
     populateDeptSelect();
     return ALL_DEPTS;
   }).catch(function(err) {
-    console.error("지점 목록 로드 실패:", err && err.message);
+    console.error("吏??紐⑸줉 濡쒕뱶 ?ㅽ뙣:", err && err.message);
     ALL_DEPTS = [];
     _adminAccountsLoaded = true;
     populateDeptSelect();
@@ -145,7 +155,7 @@ function loadDeptList() {
 function populateDeptSelect() {
   var sel = document.getElementById("superDeptSelect");
   if (!sel) return;
-  sel.innerHTML = '<option value="">-- 지점 선택 --</option>';
+  sel.innerHTML = '<option value="">-- 吏???좏깮 --</option>';
   ALL_DEPTS.forEach(function(dept) {
     var opt = document.createElement("option");
     opt.value = dept;
@@ -160,27 +170,31 @@ function loadUserProfile(uid) {
   }).catch(function() { return null; });
 }
 
-// ── 로그인 성공 후 ────────────────────────────────────────────────────────────
+// ?? 濡쒓렇???깃났 ??????????????????????????????????????????????????????????????
 function handleSignedInUser(user) {
-  setLoginButtonState(true, "사용자 확인 중...");
+  setLoginButtonState(true, "Checking...");
 
   loadUserProfile(user.uid).then(function(profile) {
-    if (!profile) throw new Error("사용자 프로필이 없습니다. (/users/{uid})");
+    if (!profile) throw new Error("User profile not found. (/users/{uid})");
 
     applyProfile(user, profile);
 
+    if (shouldForcePasswordChange(profile)) {
+      return { mustChangePassword: true };
+    }
+
     if (!isSuperAdmin && !currentDept)
-      throw new Error("프로필에 deptId 가 필요합니다.");
+      throw new Error("Profile is missing deptId.");
     if (!isSuperAdmin && !currentUser)
-      throw new Error("프로필에 name 또는 legacyName 이 필요합니다.");
+      throw new Error("Profile is missing name or legacyName.");
 
     return loadDeptList();
-  }).then(function() {
-    if (currentProfile && currentProfile.mustChangePassword) {
+  }).then(function(result) {
+    if (result && result.mustChangePassword) {
       document.getElementById("loginArea").style.display = "none";
       modal.style.display = "none";
       showForcePasswordChangeModal();
-      setLoginButtonState(false, "로그인");
+      setLoginButtonState(false, "Login");
       return;
     }
 
@@ -188,7 +202,7 @@ function handleSignedInUser(user) {
       document.getElementById("loginArea").style.display = "none";
       modal.style.display = "flex";
       showSuperAdminPanel();
-      setLoginButtonState(false, "로그인");
+      setLoginButtonState(false, "Login");
       return;
     }
 
@@ -198,11 +212,11 @@ function handleSignedInUser(user) {
       loginSuccess(currentUser);
     }).catch(function(err) {
       currentDeptAccessRestricted   = true;
-      currentDeptAccessErrorMessage = err && err.message ? err.message : "권한 설정 중";
+      currentDeptAccessErrorMessage = err && err.message ? err.message : "Access restricted";
       loginSuccess(currentUser);
     });
   }).catch(function(error) {
-    alert(error && error.message ? error.message : "사용자 정보를 불러오지 못했습니다.");
+    alert(error && error.message ? error.message : "Unable to load user profile.");
     auth.signOut();
   });
 }
@@ -224,15 +238,22 @@ function showForcePasswordChangeModal() {
   var modalEl = document.getElementById("forcePasswordChangeModal");
   if (!modalEl) return;
 
+  var superAdminPanel = document.getElementById("superAdminPanel");
+  var adminConsole = document.getElementById("adminConsole");
+  var grid = document.getElementById("mainCalendarGrid");
   var newPassEl = document.getElementById("forcePasswordNew");
   var confirmEl = document.getElementById("forcePasswordConfirm");
   if (newPassEl) newPassEl.value = "";
   if (confirmEl) confirmEl.value = "";
+  if (superAdminPanel) superAdminPanel.style.display = "none";
+  if (adminConsole) adminConsole.style.display = "none";
+  if (grid) grid.style.display = "none";
+  setSuperDeleteSectionVisible(false);
   modalEl.style.display = "flex";
 }
 
 function submitForcedPasswordChange() {
-  if (!auth.currentUser || !currentProfile || !currentProfile.mustChangePassword) return;
+  if (!auth.currentUser || !currentProfile || !shouldForcePasswordChange(currentProfile)) return;
 
   var newPassEl = document.getElementById("forcePasswordNew");
   var confirmEl = document.getElementById("forcePasswordConfirm");
@@ -240,96 +261,101 @@ function submitForcedPasswordChange() {
   var confirmPassword = confirmEl ? confirmEl.value.trim() : "";
 
   if (newPassword.length < 6) {
-    alert("새 비밀번호는 6자 이상이어야 합니다.");
+    alert("Password must be at least 6 characters.");
     return;
   }
   if (newPassword !== confirmPassword) {
-    alert("새 비밀번호와 확인 값이 일치하지 않습니다.");
+    alert("Passwords do not match.");
     return;
   }
 
   fn.completeInitialPasswordChange({ newPassword: newPassword }).then(function() {
     var modalEl = document.getElementById("forcePasswordChangeModal");
     if (modalEl) modalEl.style.display = "none";
-    alert("비밀번호가 변경되었습니다. 다시 로그인해주세요.");
+    alert("Password updated. Please sign in again.");
     auth.signOut();
   }).catch(function(e) {
-    alert((e && e.message) || "비밀번호 변경 실패");
-  });
-}
-
-// ── 비밀번호 변경 (본인 — Firebase Auth 직접 호출 허용) ─────────────────────
-function changeMyPassword() {
-  var newPassInput = document.getElementById("newAdminPassInput");
-  var newPass = newPassInput ? newPassInput.value.trim() : "";
-  if (newPass.length < 6) { alert("비밀번호는 6자 이상이어야 합니다."); return; }
-  if (!auth.currentUser)  { alert("로그인 세션이 없습니다."); return; }
-
-  auth.currentUser.updatePassword(newPass).then(function() {
-    alert("비밀번호가 변경되었습니다.");
-    if (newPassInput) newPassInput.value = "";
-  }).catch(function(error) {
-    if (error.code === "auth/requires-recent-login") {
-      alert("보안을 위해 다시 로그인 후 변경해주세요.");
+    if (e && e.code === "auth/requires-recent-login") {
+      alert("Please sign in again and retry the password change.");
       auth.signOut();
       return;
     }
-    alert(error.message || "비밀번호 변경 실패");
+    alert((e && e.message) || "Password change failed");
   });
 }
 
-// ── 관리자: 직원 비밀번호 초기화 (Cloud Function) ───────────────────────────
+// ?? 鍮꾨?踰덊샇 蹂寃?(蹂몄씤 ??Firebase Auth 吏곸젒 ?몄텧 ?덉슜) ?????????????????????
+function changeMyPassword() {
+  var newPassInput = document.getElementById("newAdminPassInput");
+  var newPass = newPassInput ? newPassInput.value.trim() : "";
+  if (newPass.length < 6) { alert("鍮꾨?踰덊샇??6???댁긽?댁뼱???⑸땲??"); return; }
+  if (!auth.currentUser)  { alert("濡쒓렇???몄뀡???놁뒿?덈떎."); return; }
+
+  auth.currentUser.updatePassword(newPass).then(function() {
+    alert("鍮꾨?踰덊샇媛 蹂寃쎈릺?덉뒿?덈떎.");
+    if (newPassInput) newPassInput.value = "";
+  }).catch(function(error) {
+    if (error.code === "auth/requires-recent-login") {
+      alert("蹂댁븞???꾪빐 ?ㅼ떆 濡쒓렇????蹂寃쏀빐二쇱꽭??");
+      auth.signOut();
+      return;
+    }
+    alert(error.message || "鍮꾨?踰덊샇 蹂寃??ㅽ뙣");
+  });
+}
+
+// ?? 愿由ъ옄: 吏곸썝 鍮꾨?踰덊샇 珥덇린??(Cloud Function) ???????????????????????????
 function resetUserPassword() {
   if (!isAdmin && !isSuperAdmin) return;
   var empNo   = document.getElementById("targetEmpName") ? document.getElementById("targetEmpName").value.trim() : "";
   var passEl  = document.getElementById("targetEmpPassword") || document.getElementById("newAdminPassInput");
   var newPass = passEl ? passEl.value.trim() : "";
 
-  if (!empNo)            { alert("사번을 입력해주세요."); return; }
-  if (!newPass)          { alert("새 비밀번호를 입력해주세요."); return; }
-  if (newPass.length < 6){ alert("비밀번호는 6자 이상이어야 합니다."); return; }
+  if (!empNo)            { alert("?щ쾲???낅젰?댁＜?몄슂."); return; }
+  if (!newPass)          { alert("??鍮꾨?踰덊샇瑜??낅젰?댁＜?몄슂."); return; }
+  if (newPass.length < 6){ alert("鍮꾨?踰덊샇??6???댁긽?댁뼱???⑸땲??"); return; }
 
   fn.resetEmployeePassword({ empNo: empNo, newPassword: newPass }).then(function() {
-    alert("✅ [" + empNo + "] 비밀번호가 초기화되었습니다.");
+    alert("??[" + empNo + "] 鍮꾨?踰덊샇媛 珥덇린?붾릺?덉뒿?덈떎.");
     document.getElementById("targetEmpName").value = "";
     if (passEl) passEl.value = "";
   }).catch(function(e) {
-    alert("초기화 실패: " + (e.message || "알 수 없는 오류"));
+    alert("珥덇린???ㅽ뙣: " + (e.message || "?????녿뒗 ?ㅻ쪟"));
   });
 }
 
-// ── 관리자: 전체 신청 초기화 (Cloud Function) ────────────────────────────────
+// ?? 愿由ъ옄: ?꾩껜 ?좎껌 珥덇린??(Cloud Function) ????????????????????????????????
 function resetAllRequests() {
   if (!isAdmin && !isSuperAdmin) return;
   var tm = getTargetYearMonth();
-  if (!confirm("⚠️ " + tm.fullStr + " 전체 신청을 초기화하시겠습니까?")) return;
+  if (!confirm("?좑툘 " + tm.fullStr + " ?꾩껜 ?좎껌??珥덇린?뷀븯?쒓쿋?듬땲源?")) return;
 
   fn.resetAllRequests({ deptId: currentDept, yyyymm: tm.fullStr }).then(function() {
-    alert("초기화 완료");
+    alert("珥덇린???꾨즺");
     refreshData();
   }).catch(function(e) {
-    alert(e.message || "초기화 실패");
+    alert(e.message || "珥덇린???ㅽ뙣");
   });
 }
 
-// ── 관리자: 설정 초기화 (Cloud Function 으로 저장) ───────────────────────────
+// ?? 愿由ъ옄: ?ㅼ젙 珥덇린??(Cloud Function ?쇰줈 ??? ???????????????????????????
 function resetAllConfigurations() {
   if (!isAdmin && !isSuperAdmin) return;
-  if (!confirm("설정을 초기화하시겠습니까?")) return;
+  if (!confirm("?ㅼ젙??珥덇린?뷀븯?쒓쿋?듬땲源?")) return;
 
   fn.saveDeptConfig({
     deptId: currentDept,
     yyyymm: getTargetYearMonth().fullStr,
     config: { openAt: null, closeAt: null, dayMax: null, globalUserMax: null, annualUserMax: null },
   }).then(function() {
-    alert("설정 초기화 완료");
+    alert("?ㅼ젙 珥덇린???꾨즺");
     refreshData();
   }).catch(function(e) {
-    alert(e.message || "설정 초기화 실패");
+    alert(e.message || "?ㅼ젙 珥덇린???ㅽ뙣");
   });
 }
 
-// ── 슈퍼관리자 패널 ───────────────────────────────────────────────────────────
+// ?? ?덊띁愿由ъ옄 ?⑤꼸 ???????????????????????????????????????????????????????????
 function renderRestrictedRoleView() {
   ["toggleModeBtn","userResetBtn","resetAllBtn","resetConfigBtn"].forEach(function(id) {
     var el = document.getElementById(id);
@@ -340,15 +366,15 @@ function renderRestrictedRoleView() {
   var grid = document.getElementById("mainCalendarGrid");
   if (grid) grid.innerHTML = "";
 
-  var msg = currentDeptAccessErrorMessage || "권한 설정 중입니다.";
+  var msg = currentDeptAccessErrorMessage || "沅뚰븳 ?ㅼ젙 以묒엯?덈떎.";
   var wm  = document.getElementById("welcomeMessage");
-  if (wm) wm.innerHTML = (isAdmin ? "관리자 모드" : "직원 모드") +
+  if (wm) wm.innerHTML = (isAdmin ? "愿由ъ옄 紐⑤뱶" : "吏곸썝 紐⑤뱶") +
     "<br><span style='font-size:13px; color:#d9534f; font-weight:bold;'>" + msg + "</span>";
 }
 
 function showSuperAdminPanel() {
   var wm = document.getElementById("welcomeMessage");
-  if (wm) wm.innerHTML = "슈퍼 관리자 모드<br><span style='font-size:13px; color:#e53935; font-weight:bold;'>Firebase Auth + Cloud Functions 기반</span>";
+  if (wm) wm.innerHTML = "?덊띁 愿由ъ옄 紐⑤뱶<br><span style='font-size:13px; color:#e53935; font-weight:bold;'>Firebase Auth + Cloud Functions 湲곕컲</span>";
 
   ["toggleModeBtn","userResetBtn","resetAllBtn","resetConfigBtn","scheduleCodeApplyBtn"].forEach(function(id) {
     var el = document.getElementById(id);
@@ -358,6 +384,7 @@ function showSuperAdminPanel() {
   if (adminConsole) adminConsole.style.display = "none";
   var panel = document.getElementById("superAdminPanel");
   if (panel) panel.style.display = "flex";
+  setSuperDeleteSectionVisible(true);
   var grid  = document.getElementById("mainCalendarGrid");
   if (grid) grid.style.display = "none";
 
@@ -377,55 +404,55 @@ function drawSuperAdminPanel() {
     var depts   = Object.keys(summary);
 
     if (depts.length === 0) {
-      container.innerHTML = "<div style='font-size:13px;color:#666;'>지점 데이터 없음</div>";
+      container.innerHTML = "<div style='font-size:13px;color:#666;'>吏???곗씠???놁쓬</div>";
       return;
     }
 
     var html = "<table style='width:100%;border-collapse:collapse;font-size:13px;'>";
-    html += "<tr style='background:#f0f0f0;'><th style='padding:8px;border:1px solid #ddd;'>지점</th><th style='padding:8px;border:1px solid #ddd;'>신청 현황 (" + tm.fullStr + ")</th></tr>";
+    html += "<tr style='background:#f0f0f0;'><th style='padding:8px;border:1px solid #ddd;'>吏??/th><th style='padding:8px;border:1px solid #ddd;'>?좎껌 ?꾪솴 (" + tm.fullStr + ")</th></tr>";
     depts.forEach(function(d) {
       var days   = summary[d];
-      var counts = Object.keys(days).map(function(day) { return day + "일:" + days[day]; }).join(", ") || "-";
+      var counts = Object.keys(days).map(function(day) { return day + "??" + days[day]; }).join(", ") || "-";
       html += "<tr><td style='padding:8px;border:1px solid #ddd;font-weight:bold;'>" + d + "</td><td style='padding:8px;border:1px solid #ddd;font-size:12px;color:#555;'>" + counts + "</td></tr>";
     });
     html += "</table>";
     container.innerHTML = html;
   }).catch(function() {
-    container.innerHTML = "<div style='font-size:13px;color:#d9534f;'>데이터 로드 실패</div>";
+    container.innerHTML = "<div style='font-size:13px;color:#d9534f;'>?곗씠??濡쒕뱶 ?ㅽ뙣</div>";
   });
 }
 
-// ── 로그인 화면 레이블 (사번으로 표시) ───────────────────────────────────────
+// ?? 濡쒓렇???붾㈃ ?덉씠釉?(?щ쾲?쇰줈 ?쒖떆) ???????????????????????????????????????
 function updateLoginCopy() {
   var usernameLabel = document.querySelector('label[for="username"]');
-  if (usernameLabel) usernameLabel.innerText = "사번";
+  if (usernameLabel) usernameLabel.innerText = "?щ쾲";
 
   var usernameInput = document.getElementById("username");
   if (usernameInput) {
-    usernameInput.placeholder = "사번을 입력하세요";
+    usernameInput.placeholder = "Employee ID";
     usernameInput.setAttribute("autocomplete", "username");
     usernameInput.setAttribute("inputmode", "text");
   }
 
   var passwordLabel = document.querySelector('label[for="password"]');
-  if (passwordLabel) passwordLabel.innerText = "비밀번호";
+  if (passwordLabel) passwordLabel.innerText = "鍮꾨?踰덊샇";
 
   var passwordInput = document.getElementById("password");
   if (passwordInput) {
-    passwordInput.placeholder = "비밀번호를 입력하세요";
+    passwordInput.placeholder = "Password";
     passwordInput.setAttribute("autocomplete", "current-password");
   }
 
-  // 레거시 비밀번호 컨트롤 숨김
+  // ?덇굅??鍮꾨?踰덊샇 而⑦듃濡??④?
   ["superResetAdminBtn","superResetStaffBtn"].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.style.display = "none";
   });
 
-  setLoginButtonState(false, "로그인");
+  setLoginButtonState(false, "Login");
 }
 
-// refreshData 래퍼 (접근 제한 상태 처리)
+// refreshData ?섑띁 (?묎렐 ?쒗븳 ?곹깭 泥섎━)
 var _legacyRefreshData = typeof refreshData === "function" ? refreshData : function() {};
 refreshData = function() {
   if (currentDeptAccessRestricted) {
