@@ -5,6 +5,8 @@
  */
 
 var allowedUsersSortMode = "empNo";
+var groupBoardState = { POOL: [], A: [], B: [], C: [], D: [], E: [] };
+var groupBoardStateLoaded = false;
 
 // ── 직원 목록 정렬 (정렬 버튼용 — 표시 순서만, 배열 원본 비변경) ───────────
 function _sortDeptEmployeesForBoard(rows) {
@@ -104,6 +106,7 @@ function toggleAllowedUsersBoard(event) {
 
 // ── 조 관련 ───────────────────────────────────────────────────────────────────
 function toggleGroupBoard(event) {
+    groupBoardStateLoaded = false;
     drawLiveGroupBoards();
     var board = document.getElementById("groupListTooltipBoard");
     if (board) board.classList.toggle("active");
@@ -132,107 +135,131 @@ function groupContainsCurrentUser(groupArray) {
     });
 }
 
-// ── 조별 배정 보드 — 드래그 + textarea 직접 입력 병행 ─────────────────────────
+function _normalizeGroupToken(token) {
+    var raw = String(token || "").trim();
+    if (!raw) return "";
+    var emp = employeeByUid[raw] || employeeByEmpNo[raw.toLowerCase()];
+    return emp ? (emp.uid || emp.empNo || raw) : raw;
+}
+
+function _getGroupBoardTokenLabel(token) {
+    var emp = employeeByUid[token] || employeeByEmpNo[String(token).toLowerCase()];
+    if (!emp) return String(token || "");
+    return emp.name + (emp.empNo ? " (" + emp.empNo + ")" : "");
+}
+
+function _buildGroupBoardState() {
+    var state = { POOL: [], A: [], B: [], C: [], D: [], E: [] };
+    var assigned = {};
+
+    ["A", "B", "C", "D", "E"].forEach(function(group) {
+        getLiveGroupList(group).forEach(function(member) {
+            var token = _normalizeGroupToken(member);
+            if (!token || assigned[token]) return;
+            assigned[token] = true;
+            state[group].push(token);
+        });
+    });
+
+    deptEmployees.forEach(function(emp) {
+        if (!emp) return;
+        var token = _normalizeGroupToken(emp.uid || emp.empNo);
+        if (!token || assigned[token]) return;
+        state.POOL.push(token);
+    });
+
+    groupBoardState = state;
+    groupBoardStateLoaded = true;
+}
+
+function _moveGroupToken(token, targetZone, targetIndex) {
+    if (!targetZone || !groupBoardState[targetZone]) return;
+    var normalized = _normalizeGroupToken(token);
+    if (!normalized) return;
+
+    Object.keys(groupBoardState).forEach(function(zone) {
+        groupBoardState[zone] = (groupBoardState[zone] || []).filter(function(item) {
+            return item !== normalized;
+        });
+    });
+
+    var list = groupBoardState[targetZone];
+    var nextIndex = typeof targetIndex === "number" ? targetIndex : list.length;
+    if (nextIndex < 0) nextIndex = 0;
+    if (nextIndex > list.length) nextIndex = list.length;
+    list.splice(nextIndex, 0, normalized);
+}
+
+function _bindGroupBoardDropTarget(target, zone, indexResolver) {
+    if (!target) return;
+    target.addEventListener("dragover", function(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        this.style.borderColor = "#fff";
+    });
+    target.addEventListener("dragleave", function() {
+        this.style.borderColor = "";
+    });
+    target.addEventListener("drop", function(e) {
+        e.preventDefault();
+        this.style.borderColor = "";
+        var token = e.dataTransfer.getData("text/plain");
+        if (!token) return;
+        var targetIndex = typeof indexResolver === "function" ? indexResolver(this) : undefined;
+        _moveGroupToken(token, zone, targetIndex);
+        drawLiveGroupBoards();
+    });
+}
+
+// ── 조별 배정 보드 — 드래그 전용 ─────────────────────────────────────────────
 function drawLiveGroupBoards() {
     var board = document.getElementById("groupListTooltipBoard");
     if (!board) return;
-
-    // 현재 각 조에 배정된 직원 id 집합
-    var assignedGroup = {};
-    ["A","B","C","D","E"].forEach(function(g) {
-        getLiveGroupList(g).forEach(function(id) { assignedGroup[id] = g; });
-    });
+    if (!groupBoardStateLoaded) _buildGroupBoardState();
 
     var html = "<strong style='color:#fff;font-size:13px;'>조별 배정</strong>"
-             + "<div style='font-size:10px;color:#bdc3c7;margin:3px 0 6px;'>직원 태그를 조 드롭존으로 드래그하거나 사번 직접 입력 후 저장.</div>";
+             + "<div style='font-size:10px;color:#bdc3c7;margin:3px 0 6px;'>직원 ID 목록을 드래그해서 POOL/A/B/C/D/E 사이로만 이동할 수 있습니다. 직접 입력은 비활성화되었습니다.</div>";
 
-    // 드래그 소스: 전체 직원 태그
-    html += "<div style='margin-bottom:6px;'>"
-          + "<span style='color:#bdc3c7;font-size:11px;'>전체 직원:</span>"
-          + "<div id='groupEmpPool' style='display:flex;flex-wrap:wrap;gap:4px;margin-top:3px;'>";
-    deptEmployees.forEach(function(emp) {
-        var token = emp.empNo || emp.uid;
-        var inGroup = assignedGroup[emp.uid] || assignedGroup[String(emp.empNo).toLowerCase()] || "";
-        var badge = emp.name + (inGroup ? " [" + inGroup + "]" : "");
-        html += "<span class='group-drag-emp' draggable='true' data-token='" + token + "'"
-              + " style='background:rgba(52,152,219,0.2);border:1px solid #3498db;border-radius:4px;"
-              + "padding:3px 7px;font-size:12px;color:#74b9ff;cursor:grab;user-select:none;white-space:nowrap;'"
-              + ">" + badge + "</span>";
-    });
+    html += "<div style='margin-bottom:8px;display:flex;gap:6px;align-items:flex-start;'>";
+    html += "<label style='color:#fff;font-weight:bold;width:38px;line-height:28px;flex-shrink:0;'>POOL</label>";
+    html += "<div id='groupDropZonePOOL' class='group-drop-zone' style='flex:1;min-height:38px;background:rgba(255,255,255,0.04);border:1px dashed #555;border-radius:4px;padding:4px;display:flex;flex-wrap:wrap;gap:4px;align-content:flex-start;'>";
+    html += groupBoardState.POOL.length ? groupBoardState.POOL.map(function(token, index) {
+        return "<span class='group-drag-emp group-member-chip' draggable='true' data-token='" + token + "' data-zone='POOL' data-index='" + index + "' style='background:rgba(52,152,219,0.2);border:1px solid #3498db;border-radius:4px;padding:3px 7px;font-size:12px;color:#74b9ff;cursor:grab;user-select:none;white-space:nowrap;'>" + _getGroupBoardTokenLabel(token) + "</span>";
+    }).join("") : "<span style='color:#666;font-size:11px;'>미배정 직원</span>";
     html += "</div></div>";
 
-    // A~E 조별 행
     ["A","B","C","D","E"].forEach(function(group) {
-        var list   = getLiveGroupList(group);
-        var tokens = list.map(function(id) {
-            var emp = employeeByUid[id] || employeeByEmpNo[String(id).toLowerCase()];
-            return emp ? emp.empNo : id;
-        });
-        var names = list.map(function(id) {
-            var emp = employeeByUid[id] || employeeByEmpNo[String(id).toLowerCase()];
-            return emp ? emp.name : id;
-        });
-
         html += "<div style='margin:5px 0;display:flex;gap:6px;align-items:flex-start;'>";
-        html += "<label style='color:#fff;font-weight:bold;width:26px;line-height:28px;flex-shrink:0;'>" + group + "</label>";
-        // textarea (직접 입력 유지)
-        html += "<textarea id='groupInput" + group + "' rows='2'"
-              + " style='width:180px;font-size:12px;border-radius:4px;border:1px solid #666;padding:4px;'"
-              + " placeholder='사번 또는 UID'>"
-              + tokens.join(", ") + "</textarea>";
-        // 드롭존
-        html += "<div id='groupDropZone" + group + "'"
-              + " style='flex:1;min-height:34px;background:rgba(255,255,255,0.04);border:1px dashed #555;"
-              + "border-radius:4px;padding:4px;display:flex;flex-wrap:wrap;gap:3px;align-content:flex-start;'>";
-        html += names.length
-            ? names.map(function(name) {
-                return "<span class='group-member' style='font-size:12px;'>" + name + "</span>";
-              }).join("")
-            : "<span style='color:#444;font-size:11px;'>여기로 드래그</span>";
+        html += "<label style='color:#fff;font-weight:bold;width:38px;line-height:28px;flex-shrink:0;'>" + group + "</label>";
+        html += "<div id='groupDropZone" + group + "' class='group-drop-zone' data-zone='" + group + "' style='flex:1;min-height:38px;background:rgba(255,255,255,0.04);border:1px dashed #555;border-radius:4px;padding:4px;display:flex;flex-wrap:wrap;gap:4px;align-content:flex-start;'>";
+        html += groupBoardState[group].length ? groupBoardState[group].map(function(token, index) {
+            return "<span class='group-drag-emp group-member-chip' draggable='true' data-token='" + token + "' data-zone='" + group + "' data-index='" + index + "' style='background:rgba(46,204,113,0.2);border:1px solid #2ecc71;border-radius:4px;padding:3px 7px;font-size:12px;color:#8af5b2;cursor:grab;user-select:none;white-space:nowrap;'>" + _getGroupBoardTokenLabel(token) + "</span>";
+        }).join("") : "<span style='color:#666;font-size:11px;'>여기로 드래그</span>";
         html += "</div></div>";
     });
 
     html += "<button type='button' class='config-save-btn' style='margin-top:6px;' onclick='saveAllGroupsFromInputs()'>저장</button>";
     board.innerHTML = html;
 
-    // 드래그앤드롭 이벤트 등록
-    // 소스: .group-drag-emp 태그
     board.querySelectorAll(".group-drag-emp").forEach(function(el) {
         el.addEventListener("dragstart", function(e) {
             e.dataTransfer.setData("text/plain", this.getAttribute("data-token"));
-            e.dataTransfer.effectAllowed = "copy";
+            e.dataTransfer.effectAllowed = "move";
             this.style.opacity = "0.5";
         });
-        el.addEventListener("dragend", function() { this.style.opacity = ""; });
+        el.addEventListener("dragend", function() {
+            this.style.opacity = "";
+        });
     });
 
-    // 드롭 타깃: 각 조의 textarea + 드롭존
+    _bindGroupBoardDropTarget(document.getElementById("groupDropZonePOOL"), "POOL");
     ["A","B","C","D","E"].forEach(function(group) {
-        var ta = document.getElementById("groupInput" + group);
-        var dz = document.getElementById("groupDropZone" + group);
-        [ta, dz].forEach(function(target) {
-            if (!target) return;
-            target.addEventListener("dragover", function(e) {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "copy";
-                this.style.borderColor = "#fff";
-            });
-            target.addEventListener("dragleave", function() {
-                this.style.borderColor = "";
-            });
-            target.addEventListener("drop", function(e) {
-                e.preventDefault();
-                this.style.borderColor = "";
-                var token = e.dataTransfer.getData("text/plain");
-                if (!token) return;
-                // textarea에 사번 추가 (중복 방지)
-                var cur   = ta.value.trim();
-                var parts = cur ? cur.split(",").map(function(s) { return s.trim(); }).filter(Boolean) : [];
-                if (parts.indexOf(token) < 0) {
-                    parts.push(token);
-                    ta.value = parts.join(", ");
-                }
-            });
+        _bindGroupBoardDropTarget(document.getElementById("groupDropZone" + group), group);
+    });
+
+    board.querySelectorAll(".group-member-chip").forEach(function(chip) {
+        _bindGroupBoardDropTarget(chip, chip.getAttribute("data-zone"), function(node) {
+            return parseInt(node.getAttribute("data-index"), 10);
         });
     });
 }
@@ -242,10 +269,7 @@ function saveAllGroupsFromInputs() {
 
     var groups = {};
     ["A","B","C","D","E"].forEach(function(group) {
-        var el = document.getElementById("groupInput" + group);
-        if (!el) return;
-        var raw = el.value.trim();
-        groups[group] = raw ? raw.split(",").map(function(s) { return s.trim(); }).filter(Boolean) : [];
+        groups[group] = (groupBoardState[group] || []).slice();
     });
 
     fn.saveGroupAssignment({ deptId: currentDept, groups: groups, yyyymm: getTargetYearMonth().fullStr })
@@ -254,6 +278,7 @@ function saveAllGroupsFromInputs() {
             Object.keys(saved).forEach(function(group) {
                 liveDBData["rq_live_group_" + group] = saved[group];
             });
+            groupBoardStateLoaded = false;
             drawLiveGroupBoards();
             alert("조 배정이 저장되었습니다.");
         }).catch(function(e) {

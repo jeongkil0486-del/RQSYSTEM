@@ -459,28 +459,7 @@ function manageAdminSelection(date) {
     if (!isAdmin && !isSuperAdmin) return;
     var tm     = getTargetYearMonth();
     var dayStr = String(date);
-
-    // adminViewCache[uid][day] = { type, name, ts, scheduleCode? }
-    // uid를 포함해야 adminCancelRequest 호출 가능
-    var applicants = [];
-
-    Object.keys(adminViewCache || {}).forEach(function(uid) {
-        var days = adminViewCache[uid] || {};
-        // day 키는 정수 문자열("5")로 저장됨
-        var req  = days[dayStr] || days[String(parseInt(dayStr, 10))];
-        if (!req) return;
-        var emp       = employeeByUid[uid] || {};
-        var empLabel  = emp.name || req.name || uid;
-        var typeLabel = req.type === "annual"   ? "연차"
-                      : req.type === "petition" ? "청원"
-                      : req.type === "schedule" ? "[" + (req.scheduleCode || "스케줄") + "]"
-                      : "휴무";
-        applicants.push({
-            uid:      uid,
-            empLabel: empLabel,
-            label:    empLabel + " (" + typeLabel + ")"
-        });
-    });
+    var applicants = getAdminApplicantsByDay(dayStr);
 
     if (applicants.length === 0) {
         alert(parseInt(tm.month) + "월 " + date + "일 신청 내역이 없습니다.");
@@ -493,8 +472,7 @@ function manageAdminSelection(date) {
     }).join("\n");
 
     var numStr = window.prompt(
-        parseInt(tm.month) + "월 " + date + "일 신청 목록:\n\n" +
-        lines +
+        parseInt(tm.month) + "월 " + date + "일 신청 목록:\n" + lines +
         "\n\n취소할 번호 입력 (취소 안 하려면 빈 값으로 닫기):"
     );
     if (!numStr || !numStr.trim()) return;
@@ -670,6 +648,39 @@ function getDayTotalCount(date) {
     return getDayTotalCountAll(date);
 }
 
+function getRequestTypeLabel(req) {
+    if (!req) return "";
+    if (req.type === "petition") return "청원";
+    if (req.type === "annual") return "연차";
+    if (req.type === "schedule") return "근무:" + (req.scheduleCode || "");
+    return "휴무";
+}
+
+function getAdminApplicantsByDay(day) {
+    var dayStr = String(day);
+    var applicants = [];
+
+    Object.keys(adminViewCache || {}).forEach(function(uid) {
+        var days = adminViewCache[uid] || {};
+        var req = days[dayStr] || days[String(parseInt(dayStr, 10))];
+        if (!req) return;
+
+        var emp = employeeByUid[uid] || {};
+        var name = emp.name || req.name || uid;
+        applicants.push({
+            uid: uid,
+            name: name,
+            req: req,
+            label: name + " (" + getRequestTypeLabel(req) + ")"
+        });
+    });
+
+    applicants.sort(function(a, b) {
+        return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
+    return applicants;
+}
+
 function loadUserCalendarData() {
     var tm        = getTargetYearMonth();
     var totalDays = new Date(parseInt(tm.year), parseInt(tm.month), 0).getDate();
@@ -720,7 +731,6 @@ function loadAdminCalendarData() {
     var tm        = getTargetYearMonth();
     var totalDays = new Date(parseInt(tm.year), parseInt(tm.month), 0).getDate();
     var configDayMax = parseInt(getFirebaseItem("rq_config_day_max", "10"));
-    var scList    = getScheduleCodeList();
 
     for (var d = 1; d <= totalDays; d++) {
         var cell = document.getElementById("d-" + d);
@@ -734,39 +744,17 @@ function loadAdminCalendarData() {
         numDiv.innerText = d;
         cell.appendChild(numDiv);
 
-        var applicants = [];
-        Object.keys(liveDBData).forEach(function(key) {
-            var suffix = "_" + tm.fullStr + "_" + d;
-            if (!key.includes(suffix)) return;
-            if (key.startsWith("rq_") && !key.startsWith("rq_config_") && !key.startsWith("rq_special_") && !key.startsWith("rq_limit_") && !key.startsWith("rq_allowed_") && !key.startsWith("rq_current_") && !key.startsWith("rq_live_")) {
-                var empName = key.replace("rq_", "").replace(suffix, "");
-                if (!empName) return;
-                var type = key.endsWith("_annual") ? "연차" : key.endsWith("_petition") ? "청원" : "휴무";
-                applicants.push({ name: empName, type: type });
-            }
-            if (key.startsWith("sc_") && !key.startsWith("sc_glimit_")) {
-                var parts   = key.split("_");
-                var empName = parts.slice(2, parts.length - 2).join("_");
-                applicants.push({ name: empName, type: parts[1] });
-            }
-        });
-
-        applicants = applicants.filter(function(item, index, arr) {
-            return arr.findIndex(function(other) {
-                return other.name === item.name && other.type === item.type;
-            }) === index;
-        });
-
         var count  = _countersCache[String(d)] || 0;
         var badge  = document.createElement("div");
         badge.className = "count-badge " + (count >= dayMax ? "badge-full" : "badge-safe");
         badge.innerText = count + "/" + dayMax + "명";
         cell.appendChild(badge);
 
+        var applicants = getAdminApplicantsByDay(d);
         applicants.forEach(function(a) {
             var n = document.createElement("div");
             n.className = "user-note";
-            n.innerText = a.name + "(" + a.type + ")";
+            n.innerText = a.label;
             cell.appendChild(n);
         });
     }
