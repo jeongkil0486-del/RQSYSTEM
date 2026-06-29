@@ -22,6 +22,7 @@ var fn = {
   listDeptEmployees:    fnClient.httpsCallable("listDeptEmployees"),
   uploadAnnualQuotas:   fnClient.httpsCallable("uploadAnnualQuotas"),
   resyncDerivedData:    fnClient.httpsCallable("resyncDerivedData"),
+  adminCancelRequest:   fnClient.httpsCallable("adminCancelRequest"),
 };
 
 // ── UI 헬퍼 ──────────────────────────────────────────────────────────────────

@@ -457,40 +457,73 @@ function editDate(date) {
 // ── 관리자: 날짜 클릭 → 신청 삭제 ───────────────────────────────────────────
 function manageAdminSelection(date) {
     if (!isAdmin && !isSuperAdmin) return;
-    var tm = getTargetYearMonth();
+    var tm     = getTargetYearMonth();
+    var dayStr = String(date);
+
+    // adminViewCache[uid][day] = { type, name, ts, scheduleCode? }
+    // uid를 포함해야 adminCancelRequest 호출 가능
     var applicants = [];
 
-    Object.keys(liveDBData).forEach(function(key) {
-        var suffix = "_" + tm.fullStr + "_" + date;
-        if (!key.includes(suffix)) return;
-
-        if (key.startsWith("rq_") && !key.startsWith("rq_config_") && !key.startsWith("rq_special_") && !key.startsWith("rq_limit_") && !key.startsWith("rq_allowed_") && !key.startsWith("rq_current_") && !key.startsWith("rq_live_")) {
-            var empName = key.replace("rq_", "").replace(suffix, "");
-            if (!empName) return;
-            var type = key.endsWith("_annual") ? "연차" : key.endsWith("_petition") ? "청원" : "휴무";
-            applicants.push({ key: key, name: empName + " (" + type + ")", empName: empName, day: String(date) });
-        }
-        if (key.startsWith("sc_") && !key.startsWith("sc_glimit_")) {
-            var parts = key.split("_");
-            var empName = parts.slice(2, parts.length - 2).join("_");
-            applicants.push({ key: key, name: empName + " (" + parts[1] + ")", empName: empName, day: String(date) });
-        }
+    Object.keys(adminViewCache || {}).forEach(function(uid) {
+        var days = adminViewCache[uid] || {};
+        // day 키는 정수 문자열("5")로 저장됨
+        var req  = days[dayStr] || days[String(parseInt(dayStr, 10))];
+        if (!req) return;
+        var emp       = employeeByUid[uid] || {};
+        var empLabel  = emp.name || req.name || uid;
+        var typeLabel = req.type === "annual"   ? "연차"
+                      : req.type === "petition" ? "청원"
+                      : req.type === "schedule" ? "[" + (req.scheduleCode || "스케줄") + "]"
+                      : "휴무";
+        applicants.push({
+            uid:      uid,
+            empLabel: empLabel,
+            label:    empLabel + " (" + typeLabel + ")"
+        });
     });
 
-    applicants = applicants.filter(function(item, index, arr) {
-        return arr.findIndex(function(other) {
-            return other.name === item.name && other.day === item.day;
-        }) === index;
-    });
+    if (applicants.length === 0) {
+        alert(parseInt(tm.month) + "월 " + date + "일 신청 내역이 없습니다.");
+        return;
+    }
 
-    if (applicants.length === 0) { alert(parseInt(tm.month) + "월 " + date + "일 신청 내역이 없습니다."); return; }
+    // 목록 표시 후 취소할 번호 입력
+    var lines = applicants.map(function(a, i) {
+        return (i + 1) + ". " + a.label;
+    }).join("
+");
 
-    var menuHtml = "<div style='font-size:14px;font-weight:bold;margin-bottom:8px;'>" + parseInt(tm.month) + "월 " + date + "일 신청 목록</div>";
-    applicants.forEach(function(a, i) {
-        menuHtml += "<div style='padding:6px 0;border-bottom:1px solid #eee;'>" + (i + 1) + ". " + a.name + "</div>";
+    var numStr = window.prompt(
+        parseInt(tm.month) + "월 " + date + "일 신청 목록:
+" + lines +
+        "
+
+취소할 번호 입력 (취소 안 하려면 빈 값으로 닫기):"
+    );
+    if (!numStr || !numStr.trim()) return;
+
+    var num = parseInt(numStr.trim(), 10);
+    if (isNaN(num) || num < 1 || num > applicants.length) {
+        alert("올바른 번호를 입력해주세요.");
+        return;
+    }
+
+    var target = applicants[num - 1];
+    if (!confirm(target.label + "
+
+위 신청을 취소하시겠습니까?")) return;
+
+    fn.adminCancelRequest({
+        deptId:    currentDept,
+        yyyymm:    tm.fullStr,
+        day:       dayStr,
+        targetUid: target.uid
+    }).then(function() {
+        alert("✅ 취소 완료: " + target.label);
+        refreshData();
+    }).catch(function(e) {
+        alert("취소 실패: " + ((e && e.message) || "알 수 없는 오류"));
     });
-    menuHtml += "<div style='margin-top:10px;font-size:12px;color:#888;'>콘솔에서 삭제할 사번을 입력하거나 직원에게 직접 취소 요청하세요.</div>";
-    alert(menuHtml);
 }
 
 // ── 관리자: 신청 기간 저장 (Cloud Function) ───────────────────────────────────

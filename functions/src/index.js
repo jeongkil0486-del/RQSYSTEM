@@ -1,0 +1,468 @@
+/**
+ * functions/src/index.js
+ * Firebase Cloud Functions — 1세대 callable, enforceAppCheck: false
+ * 프로젝트: taerq-67005
+ *
+ * 웹 클라이언트에서 fnClient.httpsCallable("함수명") 으로 호출.
+ * 모든 함수는 Firebase Auth 토큰이 있어야 호출 가능 (context.auth 검증).
+ */
+
+"use strict";
+
+const functions = require("firebase-functions");
+const admin     = require("firebase-admin");
+
+admin.initializeApp();
+
+const db   = admin.database();
+const auth = admin.auth();
+
+// ── 공통 헬퍼 ─────────────────────────────────────────────────────────────────
+
+/** 사번 정규화 — 소문자 + trim (웹 auth.js normalizeEmpNo 와 동일) */
+function normalizeEmpNo(raw) {
+    return String(raw || "").trim().toLowerCase();
+}
+
+/** 사번 → 가상이메일 (웹 auth.js empNoToEmail 와 동일) */
+function empNoToEmail(empNo) {
+    return normalizeEmpNo(empNo) + "@trinity-staff.internal";
+}
+
+/** 호출자 uid → users/{uid} 프로필 읽기 */
+async function getCallerProfile(uid) {
+    const snap = await db.ref("users/" + uid).once("value");
+    return snap.exists() ? snap.val() : null;
+}
+
+/** 관리자 권한 확인. admin은 deptId 일치 필요, super_admin은 무제한 */
+async function assertAdmin(callerUid, deptId) {
+    const profile = await getCallerProfile(callerUid);
+    if (!profile) throw new functions.https.HttpsError("permission-denied", "프로필 없음");
+    const role = String(profile.role || "").toLowerCase();
+    if (role !== "admin" && role !== "super_admin")
+        throw new functions.https.HttpsError("permission-denied", "관리자 권한 필요");
+    if (role === "admin" && deptId) {
+        if (String(profile.deptId || "").trim() !== deptId)
+            throw new functions.https.HttpsError("permission-denied", "다른 지점 접근 불가");
+    }
+    return profile;
+}
+
+/** publicCounters 재계산 — adminView/{yyyymm} 전체 집계 */
+async function recalcCounters(deptId, yyyymm, days) {
+    const avSnap = await db.ref("departments/" + deptId + "/adminView/" + yyyymm).once("value");
+    const avAll  = avSnap.val() || {};
+    const updates = {};
+    days.forEach(function(day) {
+        const dayStr = String(parseInt(day, 10));
+        let count = 0;
+        Object.values(avAll).forEach(function(dayMap) {
+            if (dayMap && dayMap[dayStr]) count++;
+        });
+        const path = "departments/" + deptId + "/publicCounters/" + yyyymm + "/" + dayStr;
+        updates[path] = count > 0 ? count : null;
+    });
+    if (Object.keys(updates).length > 0) await db.ref().update(updates);
+}
+
+const RUN_OPTS = { enforceAppCheck: false };
+
+// ── 1. submitRequest — 직원 신청 ──────────────────────────────────────────────
+exports.submitRequest = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const uid    = context.auth.uid;
+    const deptId = String(data.deptId || "").trim();
+    const yyyymm = String(data.yyyymm || "").trim();
+    const day    = String(parseInt(data.day || "0", 10));
+    const type   = String(data.type   || "normal");
+    const scheduleCode = data.scheduleCode ? String(data.scheduleCode).trim() : null;
+
+    if (!deptId || !yyyymm || !day) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
+
+    const profile = await getCallerProfile(uid);
+    if (!profile) throw new functions.https.HttpsError("not-found", "프로필 없음");
+    const name = profile.legacyName || profile.name || uid;
+    const ts   = Date.now();
+
+    const reqData = { type, ts, name };
+    if (type === "schedule" && scheduleCode) reqData.scheduleCode = scheduleCode;
+
+    const updates = {};
+    updates["userRequests/" + uid + "/" + yyyymm + "/" + day] = reqData;
+    updates["departments/" + deptId + "/adminView/" + yyyymm + "/" + uid + "/" + day] = reqData;
+
+    await db.ref().update(updates);
+
+    // publicCounters 증가
+    const counterRef = db.ref("departments/" + deptId + "/publicCounters/" + yyyymm + "/" + day);
+    await counterRef.transaction(function(cur) { return (cur || 0) + 1; });
+
+    // requestsLedger
+    await db.ref("requestsLedger/" + deptId + "/" + yyyymm + "/" + uid + "/" + day).set(reqData);
+
+    return { ok: true };
+});
+
+// ── 2. cancelRequest — 직원 본인 취소 ────────────────────────────────────────
+exports.cancelRequest = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const uid    = context.auth.uid;
+    const deptId = String(data.deptId || "").trim();
+    const yyyymm = String(data.yyyymm || "").trim();
+    const day    = String(parseInt(data.day || "0", 10));
+
+    if (!deptId || !yyyymm || !day) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
+
+    const avPath  = "departments/" + deptId + "/adminView/" + yyyymm + "/" + uid + "/" + day;
+    const avSnap  = await db.ref(avPath).once("value");
+    const hadEntry = avSnap.exists();
+
+    const updates = {};
+    updates["userRequests/" + uid + "/" + yyyymm + "/" + day] = null;
+    updates[avPath] = null;
+    updates["requestsLedger/" + deptId + "/" + yyyymm + "/" + uid + "/" + day] = null;
+    await db.ref().update(updates);
+
+    if (hadEntry) await recalcCounters(deptId, yyyymm, [day]);
+
+    return { ok: true };
+});
+
+// ── 3. adminCancelRequest — 관리자 타인 취소 ─────────────────────────────────
+const { adminCancelRequest } = require("./adminCancelRequest");
+exports.adminCancelRequest = adminCancelRequest;
+
+// ── 4. saveDeptConfig — 관리자 설정 저장 ─────────────────────────────────────
+exports.saveDeptConfig = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const deptId = String(data.deptId || "").trim();
+    const yyyymm = String(data.yyyymm || "").trim();
+    const config = data.config || {};
+
+    if (!deptId || !yyyymm) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
+    await assertAdmin(context.auth.uid, deptId);
+
+    const cfgRef  = db.ref("departments/" + deptId + "/configs/" + yyyymm);
+    const cfgSnap = await cfgRef.once("value");
+    const existing = cfgSnap.val() || {};
+
+    // null 값은 삭제, 나머지는 병합
+    const merged = Object.assign({}, existing);
+    Object.keys(config).forEach(function(k) {
+        if (config[k] === null) delete merged[k];
+        else merged[k] = config[k];
+    });
+
+    await cfgRef.set(merged);
+    return { ok: true };
+});
+
+// ── 5. setSpecialDayLimit — 특정일 한도 ──────────────────────────────────────
+exports.setSpecialDayLimit = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const deptId = String(data.deptId || "").trim();
+    const yyyymm = String(data.yyyymm || "").trim();
+    const day    = String(parseInt(data.day || "0", 10));
+    const limit  = data.limit === null ? null : parseInt(data.limit, 10);
+
+    if (!deptId || !yyyymm || !day) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
+    await assertAdmin(context.auth.uid, deptId);
+
+    const path = "departments/" + deptId + "/configs/" + yyyymm + "/specialDayLimits/" + day;
+    await db.ref(path).set(limit);
+    return { ok: true };
+});
+
+// ── 6. setUserLimit — 직원별 한도 ────────────────────────────────────────────
+exports.setUserLimit = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const deptId      = String(data.deptId || "").trim();
+    const yyyymm      = String(data.yyyymm || "").trim();
+    const targetEmpNo = normalizeEmpNo(data.targetEmpNo);
+    const limitType   = String(data.limitType || "globalUserMax");
+    const count       = data.count === null ? null : parseInt(data.count, 10);
+
+    if (!deptId || !yyyymm || !targetEmpNo) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
+    await assertAdmin(context.auth.uid, deptId);
+
+    // uid 조회
+    const email = empNoToEmail(targetEmpNo);
+    let targetUid;
+    try {
+        const userRecord = await auth.getUserByEmail(email);
+        targetUid = userRecord.uid;
+    } catch (e) {
+        throw new functions.https.HttpsError("not-found", "해당 사번의 계정 없음: " + targetEmpNo);
+    }
+
+    const path = "departments/" + deptId + "/configs/" + yyyymm + "/userLimits/" + targetUid + "/" + limitType;
+    await db.ref(path).set(count);
+    return { ok: true };
+});
+
+// ── 7. resetAllRequests — 전체 신청 초기화 ───────────────────────────────────
+exports.resetAllRequests = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const deptId = String(data.deptId || "").trim();
+    const yyyymm = String(data.yyyymm || "").trim();
+
+    if (!deptId || !yyyymm) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
+    await assertAdmin(context.auth.uid, deptId);
+
+    // adminView에서 모든 uid 목록 가져와서 userRequests도 삭제
+    const avSnap = await db.ref("departments/" + deptId + "/adminView/" + yyyymm).once("value");
+    const avAll  = avSnap.val() || {};
+    const updates = {};
+
+    Object.keys(avAll).forEach(function(uid) {
+        updates["userRequests/" + uid + "/" + yyyymm] = null;
+        updates["requestsLedger/" + deptId + "/" + yyyymm + "/" + uid] = null;
+    });
+    updates["departments/" + deptId + "/adminView/" + yyyymm] = null;
+    updates["departments/" + deptId + "/publicCounters/" + yyyymm] = null;
+
+    await db.ref().update(updates);
+    return { ok: true };
+});
+
+// ── 8. resetEmployeePassword — 직원 비밀번호 초기화 ──────────────────────────
+exports.resetEmployeePassword = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    await assertAdmin(context.auth.uid, null); // super_admin or admin
+
+    const empNo      = normalizeEmpNo(data.empNo);
+    const newPassword = String(data.newPassword || "").trim();
+    if (!empNo || newPassword.length < 6) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
+
+    const email = empNoToEmail(empNo);
+    let uid;
+    try {
+        const rec = await auth.getUserByEmail(email);
+        uid = rec.uid;
+    } catch (e) {
+        throw new functions.https.HttpsError("not-found", "해당 사번 없음: " + empNo);
+    }
+    await auth.updateUser(uid, { password: newPassword });
+    return { ok: true };
+});
+
+// ── 9. createEmployee — 직원 개별 생성 ───────────────────────────────────────
+exports.createEmployee = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const callerProfile = await assertAdmin(context.auth.uid, data.deptId ? String(data.deptId).trim() : null);
+
+    const empNo        = normalizeEmpNo(data.empNo);
+    const name         = String(data.name         || "").trim();
+    const deptId       = String(data.deptId       || "").trim();
+    const role         = String(data.role         || "staff").toLowerCase();
+    const tempPassword = String(data.tempPassword || "").trim();
+
+    if (!empNo || !name || !deptId || tempPassword.length < 6)
+        throw new functions.https.HttpsError("invalid-argument", "필수값 누락 (empNo, name, deptId, tempPassword 6자↑)");
+
+    const email = empNoToEmail(empNo);
+
+    let userRecord;
+    try {
+        userRecord = await auth.createUser({ email, password: tempPassword, displayName: name });
+    } catch (e) {
+        if (e.code === "auth/email-already-exists")
+            throw new functions.https.HttpsError("already-exists", "이미 존재하는 사번: " + empNo);
+        throw new functions.https.HttpsError("internal", e.message);
+    }
+
+    await db.ref("users/" + userRecord.uid).set({
+        empNo, name, deptId, role,
+        legacyName: name,
+        createdAt: Date.now()
+    });
+
+    return { ok: true, uid: userRecord.uid };
+});
+
+// ── 10. bulkCreateEmployees — 직원 일괄 생성 ─────────────────────────────────
+exports.bulkCreateEmployees = functions.runWith({ ...RUN_OPTS, timeoutSeconds: 300 }).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    await assertAdmin(context.auth.uid, null);
+
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+    if (rows.length === 0) throw new functions.https.HttpsError("invalid-argument", "rows가 비어있음");
+
+    const results = [];
+    for (const row of rows) {
+        const empNo        = normalizeEmpNo(row.empNo);
+        const name         = String(row.name         || "").trim();
+        const deptId       = String(row.deptId       || "").trim();
+        const role         = String(row.role         || "staff").toLowerCase();
+        const tempPassword = String(row.tempPassword || "").trim();
+        const recoveryEmail = row.recoveryEmail ? String(row.recoveryEmail).trim() : null;
+
+        if (!empNo || !name || !deptId || tempPassword.length < 6) {
+            results.push({ ok: false, empNo, error: "필수값 누락" });
+            continue;
+        }
+        const email = empNoToEmail(empNo);
+        try {
+            const rec = await auth.createUser({ email, password: tempPassword, displayName: name });
+            const profile = { empNo, name, deptId, role, legacyName: name, createdAt: Date.now() };
+            if (recoveryEmail) profile.recoveryEmail = recoveryEmail;
+            await db.ref("users/" + rec.uid).set(profile);
+            results.push({ ok: true, empNo, uid: rec.uid });
+        } catch (e) {
+            results.push({ ok: false, empNo, error: e.message });
+        }
+    }
+    return { results };
+});
+
+// ── 11. deleteEmployee — 직원 삭제 ───────────────────────────────────────────
+exports.deleteEmployee = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const callerProfile = await getCallerProfile(context.auth.uid);
+    if (!callerProfile || callerProfile.role !== "super_admin")
+        throw new functions.https.HttpsError("permission-denied", "슈퍼관리자 전용");
+
+    const empNo = normalizeEmpNo(data.empNo);
+    if (!empNo) throw new functions.https.HttpsError("invalid-argument", "empNo 필요");
+
+    const email = empNoToEmail(empNo);
+    let uid;
+    try {
+        const rec = await auth.getUserByEmail(email);
+        uid = rec.uid;
+    } catch (e) {
+        throw new functions.https.HttpsError("not-found", "해당 사번 없음: " + empNo);
+    }
+    await auth.deleteUser(uid);
+    await db.ref("users/" + uid).remove();
+    return { ok: true };
+});
+
+// ── 12. saveGroupAssignment — 조별 배정 저장 ─────────────────────────────────
+exports.saveGroupAssignment = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const deptId = String(data.deptId || "").trim();
+    const yyyymm = String(data.yyyymm || "").trim();
+    const groups = data.groups || {};
+
+    if (!deptId || !yyyymm) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
+    await assertAdmin(context.auth.uid, deptId);
+
+    await db.ref("departments/" + deptId + "/configs/" + yyyymm + "/groups").set(groups);
+    return { ok: true, groups };
+});
+
+// ── 13. getSuperAdminSummary — 슈퍼관리자 현황 ───────────────────────────────
+exports.getSuperAdminSummary = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const callerProfile = await getCallerProfile(context.auth.uid);
+    if (!callerProfile || callerProfile.role !== "super_admin")
+        throw new functions.https.HttpsError("permission-denied", "슈퍼관리자 전용");
+
+    const yyyymm = String(data.yyyymm || "").trim();
+    if (!yyyymm) throw new functions.https.HttpsError("invalid-argument", "yyyymm 필요");
+
+    const snap = await db.ref("departments").once("value");
+    const depts = snap.val() || {};
+    const summary = {};
+
+    Object.keys(depts).forEach(function(dept) {
+        const counters = (depts[dept].publicCounters || {})[yyyymm] || {};
+        if (Object.keys(counters).length > 0) summary[dept] = counters;
+    });
+
+    return { summary };
+});
+
+// ── 14. listDepartments — 지점 목록 ──────────────────────────────────────────
+exports.listDepartments = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const callerProfile = await getCallerProfile(context.auth.uid);
+    if (!callerProfile || callerProfile.role !== "super_admin")
+        throw new functions.https.HttpsError("permission-denied", "슈퍼관리자 전용");
+
+    const snap = await db.ref("departments").once("value");
+    const departments = snap.exists() ? Object.keys(snap.val()) : [];
+    return { departments };
+});
+
+// ── 15. listDeptEmployees — 지점 직원 목록 ───────────────────────────────────
+exports.listDeptEmployees = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const deptId = String(data.deptId || "").trim();
+    if (!deptId) throw new functions.https.HttpsError("invalid-argument", "deptId 필요");
+    await assertAdmin(context.auth.uid, deptId);
+
+    const snap = await db.ref("users").orderByChild("deptId").equalTo(deptId).once("value");
+    const employees = [];
+    snap.forEach(function(child) {
+        const p = child.val();
+        employees.push({
+            uid:   child.key,
+            empNo: p.empNo || "",
+            name:  p.legacyName || p.name || "",
+            role:  p.role  || "staff",
+            deptId: p.deptId || ""
+        });
+    });
+    return { employees };
+});
+
+// ── 16. uploadAnnualQuotas — 연차 일괄 업로드 ────────────────────────────────
+exports.uploadAnnualQuotas = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const deptId = String(data.deptId || "").trim();
+    const yyyymm = String(data.yyyymm || "").trim();
+    const rows   = Array.isArray(data.rows) ? data.rows : [];
+
+    if (!deptId || !yyyymm) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
+    await assertAdmin(context.auth.uid, deptId);
+
+    const errors = [];
+    const updates = {};
+
+    for (const row of rows) {
+        const empNo = normalizeEmpNo(row.empNo);
+        const quota = parseInt(row.quota, 10);
+        if (!empNo || isNaN(quota) || quota < 0) {
+            errors.push({ empNo, error: "올바르지 않은 값" });
+            continue;
+        }
+        const email = empNoToEmail(empNo);
+        try {
+            const rec = await auth.getUserByEmail(email);
+            updates["departments/" + deptId + "/configs/" + yyyymm + "/userLimits/" + rec.uid + "/annualQuota"] = quota;
+        } catch (e) {
+            errors.push({ empNo, error: "계정 없음" });
+        }
+    }
+
+    if (Object.keys(updates).length > 0) await db.ref().update(updates);
+    return { ok: true, errors };
+});
+
+// ── 17. resyncDerivedData — 파생 데이터 재동기화 ─────────────────────────────
+exports.resyncDerivedData = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const deptId = String(data.deptId || "").trim();
+    const yyyymm = String(data.yyyymm || "").trim();
+
+    if (!deptId || !yyyymm) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
+    await assertAdmin(context.auth.uid, deptId);
+
+    // adminView 전체를 읽어 publicCounters 재계산
+    const avSnap = await db.ref("departments/" + deptId + "/adminView/" + yyyymm).once("value");
+    const avAll  = avSnap.val() || {};
+    const dayCounts = {};
+
+    Object.values(avAll).forEach(function(dayMap) {
+        Object.keys(dayMap || {}).forEach(function(day) {
+            dayCounts[day] = (dayCounts[day] || 0) + 1;
+        });
+    });
+
+    const counterPath = "departments/" + deptId + "/publicCounters/" + yyyymm;
+    await db.ref(counterPath).set(Object.keys(dayCounts).length > 0 ? dayCounts : null);
+    return { ok: true };
+});
