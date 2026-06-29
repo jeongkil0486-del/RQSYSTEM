@@ -493,8 +493,9 @@ function manageAdminSelection(date) {
     }).join("\n");
 
     var numStr = window.prompt(
-        parseInt(tm.month) + "월 " + date + "일 신청 목록:\n" + lines +
-        "\n취소할 번호 입력 (취소 안 하려면 빈 값으로 닫기):"
+        parseInt(tm.month) + "월 " + date + "일 신청 목록:\n\n" +
+        lines +
+        "\n\n취소할 번호 입력 (취소 안 하려면 빈 값으로 닫기):"
     );
     if (!numStr || !numStr.trim()) return;
 
