@@ -1,0 +1,65 @@
+════════════════════════════════════════════════════════════════
+  functions/src/index.js  수정 안내
+════════════════════════════════════════════════════════════════
+
+■ 1. adminCancelRequest.js를 같은 폴더에 복사
+      functions/src/adminCancelRequest.js  (이 ZIP에 포함)
+
+■ 2. functions/src/index.js 맨 상단 require 블록에 1줄 추가
+
+      const { adminCancelRequest } = require("./adminCancelRequest");
+
+■ 3. functions/src/index.js 맨 하단 exports 블록에 1줄 추가
+
+      exports.adminCancelRequest = adminCancelRequest;
+
+════════════════════════════════════════════════════════════════
+  배포 순서 (Functions 먼저)
+════════════════════════════════════════════════════════════════
+
+[Step 1] 위 파일 준비 완료 확인
+         · functions/src/adminCancelRequest.js  존재 확인
+         · functions/src/index.js  require/exports 2줄 추가 확인
+
+[Step 2] Functions 배포
+         firebase deploy --only functions:adminCancelRequest
+
+[Step 3] allUsers invoker 권한 부여 (Firebase Console 또는 GCP Console)
+
+         방법 A — GCP Console (권장):
+         1. https://console.cloud.google.com/functions/list?project=taerq-67005
+         2. adminCancelRequest 클릭
+         3. 상단 [권한] 탭
+         4. [+ 주 구성원 추가]
+            · 새 주 구성원 : allUsers
+            · 역할          : Cloud Functions 호출자
+         5. 저장
+
+         방법 B — Firebase Console:
+         1. https://console.firebase.google.com/project/taerq-67005/functions
+         2. adminCancelRequest 옆 메뉴(⋮) → 세부정보 보기
+         3. [권한] 탭 → 위 방법 A 3~5번 동일
+
+[Step 4] 웹파일 GitHub 업로드 (루트에 덮어쓰기)
+         수정된 파일:
+         · js/main.js     (fn 객체에 adminCancelRequest 등록)
+         · js/calendar.js (관리자 달력 취소 UI)
+
+[Step 5] Vercel 자동 배포 확인 후 테스트
+         · 관리자 로그인
+         · 달력 날짜 클릭 → 신청 목록 팝업
+         · 취소할 번호 입력 → 확인
+         · 달력에서 즉시 제거, 카운트 재계산 확인
+
+════════════════════════════════════════════════════════════════
+  adminCancelRequest Function 동작 요약
+════════════════════════════════════════════════════════════════
+
+입력  : { deptId, yyyymm, day, targetUid }
+권한  : admin (자기 지점만) / super_admin (전체 지점)
+삭제  : userRequests / adminView / requestsLedger  원자적 삭제
+재계산: publicCounters (adminView 재집계)
+반환  : { ok: true }
+
+설정  : .runWith({ enforceAppCheck: false })
+방식  : 1세대 .https.onCall (기존 함수들과 동일)
