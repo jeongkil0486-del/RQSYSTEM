@@ -203,9 +203,9 @@ function toggleApplicationMode() {
     else currentAppMode = "NORMAL";
 
     if (btn) {
-        if (currentAppMode === "NORMAL") btn.innerText = "?대Т";
-        if (currentAppMode === "PETITION") btn.innerText = "泥?썝";
-        if (currentAppMode === "ANNUAL") btn.innerText = "?곗감";
+        if (currentAppMode === "NORMAL") btn.innerText = "휴무";
+        if (currentAppMode === "PETITION") btn.innerText = "청원";
+        if (currentAppMode === "ANNUAL") btn.innerText = "연차";
     }
     setModeButtonStyles();
 }

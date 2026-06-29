@@ -363,7 +363,6 @@ function editDate(date) {
         var label = { normal: "일반 휴무", petition: "청원 휴가", annual: "연차", schedule: "스케줄 코드 [" + existingScCode + "]" }[cancelType];
         if (!confirm(parseInt(tm.month) + "월 " + date + "일 " + label + "을(를) 취소하시겠습니까?")) return;
 
-        console.log("cancelRequest day payload:", { rawDay: dayStr, normalizedDay: String(parseInt(dayStr, 10)) });
         fn.cancelRequest({ deptId: currentDept, yyyymm: tm.fullStr, day: dayStr })
           .then(function() { refreshData(); })
           .catch(function(e) { alert(e.message || "취소 실패"); });
@@ -594,17 +593,6 @@ function saveSpecialDayLimit() {
       }).catch(function(e) { alert(e.message || "실패"); });
 }
 
-// ── 연/월 설정 저장 ───────────────────────────────────────────────────────────
-function legacySaveYearMonthConfig() {
-    if (!isAdmin && !isSuperAdmin) return;
-    var y = document.getElementById("targetYear").value;
-    var m = document.getElementById("targetMonth").value;
-    if (!y || !m) return;
-
-    fn.saveDeptConfig({ deptId: currentDept, yyyymm: y + (m.length === 1 ? "0" : "") + m, config: { targetYearMonth: y + m } })
-      .then(function() { alert("년/월 설정 저장 완료. 새로고침하세요."); })
-      .catch(function(e) { alert(e.message || "실패"); });
-}
 
 // ── 읽기 전용 카운터/집계 함수 ────────────────────────────────────────────────
 function getGroupCountByDate(groupArray, date) {

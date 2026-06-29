@@ -293,19 +293,19 @@ function _updateMyUserCells() {
         if (liveDBData[prefix + d]) {
             var n1 = document.createElement("div");
             n1.className = "user-note";
-            n1.innerText = "?¥Î¨¥";
+            n1.innerText = "Ìú¥Î¨¥";
             cell.appendChild(n1);
         }
         if (liveDBData[prefix + d + "_petition"]) {
             var n2 = document.createElement("div");
             n2.className = "user-note petition";
-            n2.innerText = "Ï≤?õê";
+            n2.innerText = "Ï≤≠Ïõê";
             cell.appendChild(n2);
         }
         if (liveDBData[prefix + d + "_annual"]) {
             var n3 = document.createElement("div");
             n3.className = "user-note annual";
-            n3.innerText = "?∞Ï∞®";
+            n3.innerText = "Ïó∞Ï∞®";
             cell.appendChild(n3);
         }
         scList.forEach(function(code) {
