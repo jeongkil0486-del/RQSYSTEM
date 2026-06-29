@@ -313,3 +313,13 @@ function drawAnnualStatusBoard() {
     html += "</div>";
     container.innerHTML = html;
 }
+
+window.saveYearMonthConfig = saveYearMonthConfig;
+window.saveDayMaxConstraint = saveDayMaxConstraint;
+window.saveGlobalUserMaxConstraint = saveGlobalUserMaxConstraint;
+window.saveAnnualUserMaxConstraint = saveAnnualUserMaxConstraint;
+window.saveGroupMaxConstraints = saveGroupMaxConstraints;
+window.setSpecialDayLimit = setSpecialDayLimit;
+window.triggerAnnualUpload = triggerAnnualUpload;
+window.downloadAnnualTemplate = downloadAnnualTemplate;
+window.toggleAnnualStatusBoard = toggleAnnualStatusBoard;

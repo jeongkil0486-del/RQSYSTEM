@@ -467,6 +467,12 @@ function manageAdminSelection(date) {
         }
     });
 
+    applicants = applicants.filter(function(item, index, arr) {
+        return arr.findIndex(function(other) {
+            return other.name === item.name && other.day === item.day;
+        }) === index;
+    });
+
     if (applicants.length === 0) { alert(parseInt(tm.month) + "월 " + date + "일 신청 내역이 없습니다."); return; }
 
     var menuHtml = "<div style='font-size:14px;font-weight:bold;margin-bottom:8px;'>" + parseInt(tm.month) + "월 " + date + "일 신청 목록</div>";
@@ -718,6 +724,12 @@ function loadAdminCalendarData() {
             }
         });
 
+        applicants = applicants.filter(function(item, index, arr) {
+            return arr.findIndex(function(other) {
+                return other.name === item.name && other.type === item.type;
+            }) === index;
+        });
+
         var count  = _countersCache[String(d)] || 0;
         var badge  = document.createElement("div");
         badge.className = "count-badge " + (count >= dayMax ? "badge-full" : "badge-safe");
@@ -732,3 +744,7 @@ function loadAdminCalendarData() {
         });
     }
 }
+
+window.saveDateTimeConfig = saveDateTimeConfig;
+window.saveEndDateTimeConfig = saveEndDateTimeConfig;
+window.setUserRequestLimit = setUserRequestLimit;

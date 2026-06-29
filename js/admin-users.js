@@ -133,6 +133,9 @@ function setModeButtonStyles() {
     }
 }
 
+window.toggleGroupBoard = toggleGroupBoard;
+window.toggleAllowedUsersBoard = toggleAllowedUsersBoard;
+
 function toggleApplicationMode() {
     var btn = document.getElementById("toggleModeBtn");
     if (currentAppMode === "SCHEDULE_CODE") currentAppMode = "NORMAL";

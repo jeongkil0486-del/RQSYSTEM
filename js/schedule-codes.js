@@ -192,6 +192,11 @@ function toggleScGroupLimitBoard(event) {
     if (event) event.stopPropagation();
 }
 
+window.saveScGroupLimit = saveScGroupLimit;
+window.toggleScGroupLimitBoard = toggleScGroupLimitBoard;
+window.toggleScheduleCodeBoard = toggleScheduleCodeBoard;
+window.createScheduleCode = createScheduleCode;
+
 function drawScGroupLimitBoard() {
     var container = document.getElementById("scGroupLimitTooltipBoard");
     if (!container) return;
