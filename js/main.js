@@ -13,6 +13,7 @@ var fn = {
   setUserLimit:        fnClient.httpsCallable("setUserLimit"),
   resetAllRequests:    fnClient.httpsCallable("resetAllRequests"),
   resetEmployeePassword: fnClient.httpsCallable("resetEmployeePassword"),
+  completeInitialPasswordChange: fnClient.httpsCallable("completeInitialPasswordChange"),
   createEmployee:      fnClient.httpsCallable("createEmployee"),
   bulkCreateEmployees: fnClient.httpsCallable("bulkCreateEmployees"),
   deleteEmployee:      fnClient.httpsCallable("deleteEmployee"),
@@ -78,6 +79,8 @@ function resetUiToLoggedOut() {
   var ids = [
     "targetEmpName","targetEmpPassword","newAdminPassInput","manageIdInput",
     "specialDayInput","specialDayLimit","annualExcelUpload",
+    "forcePasswordNew","forcePasswordConfirm","superResetEmpNo","superResetPassword",
+    "superDeleteEmpNo",
   ];
   ids.forEach(function(id) {
     var el = document.getElementById(id);
@@ -88,6 +91,8 @@ function resetUiToLoggedOut() {
   if (superAdminPanel) superAdminPanel.style.display = "none";
   var superResetModal = document.getElementById("superResetChoiceModal");
   if (superResetModal) superResetModal.style.display = "none";
+  var forcePasswordModal = document.getElementById("forcePasswordChangeModal");
+  if (forcePasswordModal) forcePasswordModal.style.display = "none";
   var grid = document.getElementById("mainCalendarGrid");
   if (grid) grid.style.display = "";
   var modeBtn = document.getElementById("toggleModeBtn");
@@ -171,6 +176,14 @@ function handleSignedInUser(user) {
 
     return loadDeptList();
   }).then(function() {
+    if (currentProfile && currentProfile.mustChangePassword) {
+      document.getElementById("loginArea").style.display = "none";
+      modal.style.display = "none";
+      showForcePasswordChangeModal();
+      setLoginButtonState(false, "로그인");
+      return;
+    }
+
     if (isSuperAdmin) {
       document.getElementById("loginArea").style.display = "none";
       modal.style.display = "flex";
@@ -205,6 +218,44 @@ auth.onAuthStateChanged(function(user) {
 function closeCalendar() {
   if (auth.currentUser) { auth.signOut(); return; }
   resetUiToLoggedOut();
+}
+
+function showForcePasswordChangeModal() {
+  var modalEl = document.getElementById("forcePasswordChangeModal");
+  if (!modalEl) return;
+
+  var newPassEl = document.getElementById("forcePasswordNew");
+  var confirmEl = document.getElementById("forcePasswordConfirm");
+  if (newPassEl) newPassEl.value = "";
+  if (confirmEl) confirmEl.value = "";
+  modalEl.style.display = "flex";
+}
+
+function submitForcedPasswordChange() {
+  if (!auth.currentUser || !currentProfile || !currentProfile.mustChangePassword) return;
+
+  var newPassEl = document.getElementById("forcePasswordNew");
+  var confirmEl = document.getElementById("forcePasswordConfirm");
+  var newPassword = newPassEl ? newPassEl.value.trim() : "";
+  var confirmPassword = confirmEl ? confirmEl.value.trim() : "";
+
+  if (newPassword.length < 6) {
+    alert("새 비밀번호는 6자 이상이어야 합니다.");
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    alert("새 비밀번호와 확인 값이 일치하지 않습니다.");
+    return;
+  }
+
+  fn.completeInitialPasswordChange({ newPassword: newPassword }).then(function() {
+    var modalEl = document.getElementById("forcePasswordChangeModal");
+    if (modalEl) modalEl.style.display = "none";
+    alert("비밀번호가 변경되었습니다. 다시 로그인해주세요.");
+    auth.signOut();
+  }).catch(function(e) {
+    alert((e && e.message) || "비밀번호 변경 실패");
+  });
 }
 
 // ── 비밀번호 변경 (본인 — Firebase Auth 직접 호출 허용) ─────────────────────
@@ -312,6 +363,7 @@ function showSuperAdminPanel() {
 
   drawSuperAdminPanel();
   drawSuperResetPanel();
+  drawSuperDeletePanel();
 }
 
 function drawSuperAdminPanel() {

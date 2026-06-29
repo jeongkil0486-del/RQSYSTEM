@@ -247,6 +247,23 @@ exports.resetEmployeePassword = functions.runWith(RUN_OPTS).https.onCall(async (
     return { ok: true };
 });
 
+exports.completeInitialPasswordChange = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+
+    const uid = context.auth.uid;
+    const newPassword = String(data.newPassword || "").trim();
+    if (newPassword.length < 6)
+        throw new functions.https.HttpsError("invalid-argument", "새 비밀번호는 6자 이상이어야 합니다.");
+
+    const profile = await getCallerProfile(uid);
+    if (!profile) throw new functions.https.HttpsError("not-found", "프로필 없음");
+    if (!profile.mustChangePassword) return { ok: true, alreadyCompleted: true };
+
+    await auth.updateUser(uid, { password: newPassword });
+    await db.ref("users/" + uid + "/mustChangePassword").set(false);
+    return { ok: true };
+});
+
 // ── 9. createEmployee — 직원 개별 생성 ───────────────────────────────────────
 exports.createEmployee = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
     if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
@@ -275,7 +292,8 @@ exports.createEmployee = functions.runWith(RUN_OPTS).https.onCall(async (data, c
     await db.ref("users/" + userRecord.uid).set({
         empNo, name, deptId, role,
         legacyName: name,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        mustChangePassword: true
     });
 
     return { ok: true, uid: userRecord.uid };
@@ -305,7 +323,15 @@ exports.bulkCreateEmployees = functions.runWith({ ...RUN_OPTS, timeoutSeconds: 3
         const email = empNoToEmail(empNo);
         try {
             const rec = await auth.createUser({ email, password: tempPassword, displayName: name });
-            const profile = { empNo, name, deptId, role, legacyName: name, createdAt: Date.now() };
+            const profile = {
+                empNo,
+                name,
+                deptId,
+                role,
+                legacyName: name,
+                createdAt: Date.now(),
+                mustChangePassword: true
+            };
             if (recoveryEmail) profile.recoveryEmail = recoveryEmail;
             await db.ref("users/" + rec.uid).set(profile);
             results.push({ ok: true, empNo, uid: rec.uid });
@@ -325,6 +351,8 @@ exports.deleteEmployee = functions.runWith(RUN_OPTS).https.onCall(async (data, c
 
     const empNo = normalizeEmpNo(data.empNo);
     if (!empNo) throw new functions.https.HttpsError("invalid-argument", "empNo 필요");
+    if (empNo === "sa001")
+        throw new functions.https.HttpsError("failed-precondition", "기본 슈퍼관리자 계정은 삭제할 수 없습니다.");
 
     const email = empNoToEmail(empNo);
     let uid;
@@ -334,6 +362,9 @@ exports.deleteEmployee = functions.runWith(RUN_OPTS).https.onCall(async (data, c
     } catch (e) {
         throw new functions.https.HttpsError("not-found", "해당 사번 없음: " + empNo);
     }
+    if (uid === context.auth.uid)
+        throw new functions.https.HttpsError("failed-precondition", "현재 로그인한 슈퍼관리자 본인은 삭제할 수 없습니다.");
+
     await auth.deleteUser(uid);
     await db.ref("users/" + uid).remove();
     return { ok: true };
