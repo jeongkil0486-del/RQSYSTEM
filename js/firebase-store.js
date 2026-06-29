@@ -84,8 +84,11 @@ function _applyUserLimitsToLiveData(userLimits) {
 }
 
 function _clearConfigLiveData(yyyymm) {
+    // rq_current_target_year_month는 여기서 삭제하지 않음
+    // → cfg에 targetYearMonth가 있으면 _applyCfgToLiveData에서 덮어씀
+    // → cfg에 없어도(새 달 등) 기존 값이 유지되어 달 이탈 방지
     Object.keys(liveDBData).forEach(function(k) {
-        if (k === "rq_allowed_start_datetime" || k === "rq_allowed_end_datetime" || k === "rq_current_target_year_month" || k === "schedule_codes_list" || k === "_userLimits") {
+        if (k === "rq_allowed_start_datetime" || k === "rq_allowed_end_datetime" || k === "schedule_codes_list" || k === "_userLimits") {
             delete liveDBData[k];
             return;
         }
@@ -98,7 +101,7 @@ function _clearConfigLiveData(yyyymm) {
     liveDBData["_userLimits"] = {};
 }
 
-function connectDeptDB(dept, onFirstLoad) {
+function connectDeptDB(dept, onFirstLoad, overrideYyyymm) {
     _deptListeners.forEach(function(item) {
         db.ref(item.path).off(item.event, item.fn);
     });
@@ -106,8 +109,17 @@ function connectDeptDB(dept, onFirstLoad) {
     dbListener = dept;
     liveDBData = {};
 
+    // overrideYyyymm: saveYearMonthConfig 등 명시적 달 변경 시 사용
+    // liveDBData 초기화 이후 targetYearMonth를 즉시 복원해 getTargetYearMonth()가 올바른 달 반환하도록 함
+    if (overrideYyyymm) {
+        // YYYYMM → YYYY-MM 형식으로 변환하여 저장
+        var oy = overrideYyyymm.slice(0, 4);
+        var om = overrideYyyymm.slice(4, 6);
+        liveDBData["rq_current_target_year_month"] = oy + "-" + om;
+    }
+
     var tm = getTargetYearMonth();
-    var yyyymm = tm.fullStr;
+    var yyyymm = overrideYyyymm || tm.fullStr;
     var cfgPath = "departments/" + dept + "/configs/" + yyyymm;
     var counterPath = "departments/" + dept + "/publicCounters/" + yyyymm;
     var myReqPath = "userRequests/" + currentUid + "/" + yyyymm;
@@ -338,13 +350,14 @@ function getFirebaseItem(key, defaultVal) {
     return (val !== undefined && val !== null) ? val : (defaultVal !== undefined ? defaultVal : null);
 }
 
-function connectDeptDBSafe(dept) {
+function connectDeptDBSafe(dept, overrideYyyymm) {
     return new Promise(function(resolve, reject) {
-        var tm = getTargetYearMonth();
-        var path = "departments/" + dept + "/configs/" + tm.fullStr;
+        // overrideYyyymm이 있으면 그 달 경로로, 없으면 현재 getTargetYearMonth() 사용
+        var yyyymm = overrideYyyymm || getTargetYearMonth().fullStr;
+        var path = "departments/" + dept + "/configs/" + yyyymm;
         db.ref(path).once("value", function() {
             try {
-                connectDeptDB(dept, function() { resolve(); });
+                connectDeptDB(dept, function() { resolve(); }, overrideYyyymm);
             } catch (e) {
                 reject(e);
             }

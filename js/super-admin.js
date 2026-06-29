@@ -15,3 +15,8 @@ function drawSuperResetPanel() {
     if (!container) return;
     container.innerHTML = "<div style='font-size:13px;color:#555;line-height:1.6;'>직원 비밀번호 초기화는 아래 [관리자 콘솔] 에서 사번 + 새 비밀번호를 입력해 처리하세요.<br>브라우저에서 직접 RTDB에 쓰지 않습니다.</div>";
 }
+
+function closeSuperResetModal() {
+    var modal = document.getElementById("superResetChoiceModal");
+    if (modal) modal.style.display = "none";
+}

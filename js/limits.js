@@ -78,7 +78,8 @@ function _refreshAfterAdminConfigSave(options) {
 }
 
 // ── 신청 년/월 저장 ────────────────────────────────────────────────────────────
-// 저장 형식: "YYYY-MM" (DB 저장) / 로드 형식: YYYYMM (fullStr) 양쪽 모두 파싱 가능
+// 저장 형식: "YYYY-MM" (DB/liveDBData)  fullStr: "YYYYMM"
+// 반복 변경이 가능하도록 connectDeptDB에 overrideYyyymm을 명시 전달
 function saveYearMonthConfig() {
     if (!isAdmin && !isSuperAdmin) return;
 
@@ -93,31 +94,26 @@ function saveYearMonthConfig() {
         return;
     }
 
-    var ymDash   = y + "-" + m;            // "2025-07"  — DB 저장값
-    var ymFull   = y + m;                  // "202507"   — fn.saveDeptConfig yyyymm
-    var ymPrev   = getTargetYearMonth().fullStr;  // 현재 달 (변경 전)
+    var ymDash = y + "-" + m;   // "2025-07" — liveDBData/DB 저장 형식
+    var ymFull = y + m;         // "202507"  — DB 경로/fullStr 형식
+    var ymPrev = getTargetYearMonth().fullStr;  // 현재 달 fullStr (변경 전)
 
-    // 1) liveDBData 먼저 업데이트 → getTargetYearMonth()가 즉시 새 값 반환
-    liveDBData["rq_current_target_year_month"] = ymDash;
-
-    // 2) Cloud Function 저장 (현재 달 경로에도, 새 달 경로에도 저장)
-    //    yyyymm을 이전 달과 새 달 양쪽에 보내 현재 리스너가 변경을 감지하게 함
+    // 1) Cloud Function으로 현재 달 config 경로에 targetYearMonth 저장
+    //    → 현재 리스너(ymPrev 경로)가 변경을 감지함
     fn.saveDeptConfig({
         deptId: currentDept,
-        yyyymm: ymPrev || ymFull,          // 현재 연결된 경로에 저장 → 리스너가 감지
+        yyyymm: ymPrev || ymFull,
         config: { targetYearMonth: ymDash }
     }).then(function() {
-        // 3) 새 달로 DB 재연결 (데이터 로드 + 리스너 전환)
-        if (typeof connectDeptDBSafe === "function" && currentDept) {
-            return connectDeptDBSafe(currentDept);
-        }
-        return Promise.resolve();
+        // 2) connectDeptDBSafe에 새 달(ymFull)을 명시 전달
+        //    → connectDeptDB 내부에서 liveDBData={} 초기화 직후
+        //      overrideYyyymm으로 rq_current_target_year_month를 즉시 복원
+        //    → getTargetYearMonth()가 올바른 달을 반환
+        return connectDeptDBSafe(currentDept, ymFull);
     }).then(function() {
         refreshData();
-        alert("신청 년/월이 " + y + "년 " + parseInt(m, 10) + "월로 설정되었습니다.");
+        alert("신청 년/월이 " + y + "년 " + parseInt(m, 10) + "월로 저장되었습니다.");
     }).catch(function(e) {
-        // 저장 실패 시 liveDBData 롤백
-        if (ymPrev) liveDBData["rq_current_target_year_month"] = ymPrev;
         alert((e && e.message) || "저장 실패");
     });
 }
