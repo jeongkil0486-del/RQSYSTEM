@@ -96,19 +96,13 @@ function saveYearMonthConfig() {
 
     var ymDash = y + "-" + m;   // "2025-07" — liveDBData/DB 저장 형식
     var ymFull = y + m;         // "202507"  — DB 경로/fullStr 형식
-    var ymPrev = getTargetYearMonth().fullStr;  // 현재 달 fullStr (변경 전)
 
-    // 1) Cloud Function으로 현재 달 config 경로에 targetYearMonth 저장
-    //    → 현재 리스너(ymPrev 경로)가 변경을 감지함
     fn.saveDeptConfig({
         deptId: currentDept,
-        yyyymm: ymPrev || ymFull,
+        yyyymm: ymFull,
         config: { targetYearMonth: ymDash }
     }).then(function() {
-        // 2) connectDeptDBSafe에 새 달(ymFull)을 명시 전달
-        //    → connectDeptDB 내부에서 liveDBData={} 초기화 직후
-        //      overrideYyyymm으로 rq_current_target_year_month를 즉시 복원
-        //    → getTargetYearMonth()가 올바른 달을 반환
+        liveDBData["rq_current_target_year_month"] = ymDash;
         return connectDeptDBSafe(currentDept, ymFull);
     }).then(function() {
         refreshData();
