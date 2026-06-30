@@ -73,9 +73,10 @@ body {
   min-width: 100%; min-height: 100%;
   transform: translate(-50%, -50%);
   object-fit: cover;   /* 모바일 포함 어떤 화면비에서도 영상이 잘리지 않고 채워짐 */
-  /* 새 영상으로 교체되어 구도가 달라짐 — 기본 중앙 크롭으로 초기화.
-     필요 시 실제 화면에서 확인 후 비율 미세조정 권장. */
-  object-position: center center;
+  /* 영상 내부 좌상단 문구(로고/타이틀)가 잘리지 않도록 크롭 기준점을
+     좌상단 쪽으로 이동. 별도 텍스트 레이어를 추가하지 않고 영상
+     자체의 문구가 보이도록 하는 목적. */
+  object-position: 30% 25%;
   z-index: 0;
   pointer-events: none;
 }
@@ -139,10 +140,32 @@ body {
   gap: 12px;
   flex-wrap: wrap;
 }
-/* 데스크탑에서는 카드 내부 로고(.login-logo-wrap)를 숨김 — 좌상단
+/* 데스크탑에서는 카드 내부 로고(.login-logo-wrap)를 숨김 — 우측 하단
    고정 로고(.login-brand-corner)가 그 역할을 대신한다. */
 .login-logo-wrap { display: none; }
-.login-sub { display: none; }
+
+/* ─── 좌측 하단 wrapper: 'Schedule Request System' + 로그인 바 ─────────── */
+.login-bottom-left {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+/* 'Schedule Request System' — 로그인 바 바로 위, 좌측 정렬,
+   데스크탑 전용 (모바일에서는 카드 내부 원래 스타일로 별도 표시) */
+.login-sub {
+  display: block;
+  font-size: 26px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 2px 10px rgba(0,0,0,.5);
+  letter-spacing: .3px;
+  text-transform: none;
+  text-align: left;
+  margin: 0 0 20px 0;
+  width: auto;
+}
 /* 라벨('사번', '비밀번호')은 SONO 스타일처럼 시각적으로 숨기되,
    DOM에서 완전히 제거하지 않아 접근성과 for/id 연결은 그대로 유지 */
 .input-group label {
@@ -1205,24 +1228,51 @@ body {
   /* 오버레이도 모바일에서는 기존 가독성 위주 톤으로 살짝 더 어둡게 */
   .login-bg-overlay { background: rgba(10, 16, 32, 0.30); }
 
-  /* ── 카드 디자인 복원 (가로형 → 세로형 복귀 포함) ── */
-  .login-card {
-    flex-direction: column;
+  /* 모바일에서는 카드 비주얼(흰배경/블러/테두리/그림자/둥근모서리)을
+     wrapper(.login-bottom-left)로 옮겨서 'Schedule Request System'
+     부제목이 로고/입력창과 함께 하나의 카드 안에 있는 것처럼 보이게
+     한다. .login-card 자체는 투명한 내부 컨테이너로 동작. */
+  .login-bottom-left {
     align-items: center;
-    flex-wrap: nowrap;
-    gap: 0;
+    width: 100%;
     background: rgba(255, 255, 255, 0.92);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.4);
     border-radius: 16px;
     padding: 36px 20px 28px;
-    width: 100%;
     max-width: 380px;
     box-shadow: 0 8px 28px rgba(10, 16, 32, 0.18);
+    box-sizing: border-box;
   }
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    .login-card { background: rgba(255, 255, 255, 0.96); }
+    .login-bottom-left { background: rgba(255, 255, 255, 0.96); }
+  }
+
+  /* ── 카드 디자인 복원 (가로형 → 세로형 복귀, 비주얼은 wrapper로 이동) ── */
+  .login-card {
+    flex-direction: column;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+    width: 100%;
+    max-width: none;
+    box-shadow: none;
+  }
+  /* .login-card 를 display:contents 로 만들어 그 자식들(로고wrap,
+     input-group ×2, 버튼)이 부모(.login-bottom-left)의 flex 흐름에
+     직접 합류하도록 한다. 이렇게 하면 .login-sub(부제목, 마크업상
+     .login-card 보다 앞에 위치)를 로고와 입력창 '사이'에 order 로
+     정확히 끼워넣을 수 있다 — 일반적인 형제간 order 트릭으로는
+     서로 다른 컨테이너에 속한 요소 사이에 끼워넣을 수 없기 때문. */
+  .login-card {
+    display: contents;
   }
   .login-logo-wrap {
     display: flex;
@@ -1232,6 +1282,7 @@ body {
     gap: 10px;
     margin-bottom: 4px;
     width: 100%;
+    order: 1;
   }
   .login-brand {
     font-family: 'Cinzel', serif;
@@ -1246,13 +1297,18 @@ body {
   .login-sub {
     display: block;
     font-size: 12px;
+    font-weight: 400;
     color: var(--text-sub);
+    text-shadow: none;
     letter-spacing: 2px;
     text-transform: uppercase;
     margin-bottom: 26px;
     text-align: center;
     width: 100%;
+    order: 2;
   }
+  .input-group { order: 3; }
+  .submit-btn { order: 4; }
   .input-group label {
     position: static;
     width: auto; height: auto;
