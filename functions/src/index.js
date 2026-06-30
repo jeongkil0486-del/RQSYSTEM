@@ -426,6 +426,10 @@ exports.resetEmployeePassword = functions.runWith(RUN_OPTS).https.onCall(async (
         throw new functions.https.HttpsError("not-found", "해당 사번 없음: " + empNo);
     }
     await auth.updateUser(uid, { password: newPassword });
+    // ⚠️ 비밀번호 초기화 후에는 반드시 "최초 로그인 비밀번호 변경" 팝업이
+    //    다시 나타나야 한다 (기존 의도된 동작). 이 플래그가 누락되어 있던
+    //    버그를 수정 — 초기화된 임시 비밀번호로 재로그인 시 강제 변경 필요.
+    await db.ref("users/" + uid + "/mustChangePassword").set(true);
     return { ok: true };
 });
 
