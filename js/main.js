@@ -31,7 +31,7 @@ function setLoginButtonState(disabled, label) {
   var loginBtn = document.querySelector(".submit-btn");
   if (!loginBtn) return;
   loginBtn.disabled = !!disabled;
-  loginBtn.innerText = label || "Login";
+  loginBtn.innerText = label || "로그인";
 }
 
 function clearRealtimeListeners() {
@@ -97,12 +97,12 @@ function resetUiToLoggedOut() {
   var grid = document.getElementById("mainCalendarGrid");
   if (grid) grid.style.display = "";
   var modeBtn = document.getElementById("toggleModeBtn");
-  if (modeBtn) modeBtn.innerText = "?대Т";
+  if (modeBtn) modeBtn.innerText = "휴무";
   var scBtn = document.getElementById("scheduleCodeApplyBtn");
-  if (scBtn) { scBtn.innerText = "肄붾뱶"; scBtn.style.display = "none"; }
+  if (scBtn) { scBtn.innerText = "코드"; scBtn.style.display = "none"; }
 
   setModeButtonStyles();
-  setLoginButtonState(false, "Login");
+  setLoginButtonState(false, "로그인");
 }
 
 // ?? ?꾨줈???곸슜 ???????????????????????????????????????????????????????????????
@@ -144,7 +144,7 @@ function loadDeptList() {
     populateDeptSelect();
     return ALL_DEPTS;
   }).catch(function(err) {
-    console.error("吏??紐⑸줉 濡쒕뱶 ?ㅽ뙣:", err && err.message);
+    console.error("지점 목록 로드 실패:", err && err.message);
     ALL_DEPTS = [];
     _adminAccountsLoaded = true;
     populateDeptSelect();
@@ -155,7 +155,7 @@ function loadDeptList() {
 function populateDeptSelect() {
   var sel = document.getElementById("superDeptSelect");
   if (!sel) return;
-  sel.innerHTML = '<option value="">-- 吏???좏깮 --</option>';
+  sel.innerHTML = '<option value="">-- 지점 선택 --</option>';
   ALL_DEPTS.forEach(function(dept) {
     var opt = document.createElement("option");
     opt.value = dept;
@@ -172,10 +172,10 @@ function loadUserProfile(uid) {
 
 // ?? 濡쒓렇???깃났 ??????????????????????????????????????????????????????????????
 function handleSignedInUser(user) {
-  setLoginButtonState(true, "Checking...");
+  setLoginButtonState(true, "사용자 확인 중...");
 
   loadUserProfile(user.uid).then(function(profile) {
-    if (!profile) throw new Error("User profile not found. (/users/{uid})");
+    if (!profile) throw new Error("사용자 프로필이 없습니다. (/users/{uid})");
 
     applyProfile(user, profile);
 
@@ -184,9 +184,9 @@ function handleSignedInUser(user) {
     }
 
     if (!isSuperAdmin && !currentDept)
-      throw new Error("Profile is missing deptId.");
+      throw new Error("프로필에 deptId 가 필요합니다.");
     if (!isSuperAdmin && !currentUser)
-      throw new Error("Profile is missing name or legacyName.");
+      throw new Error("프로필에 name 또는 legacyName 이 필요합니다.");
 
     return loadDeptList();
   }).then(function(result) {
@@ -194,7 +194,7 @@ function handleSignedInUser(user) {
       document.getElementById("loginArea").style.display = "none";
       modal.style.display = "none";
       showForcePasswordChangeModal();
-      setLoginButtonState(false, "Login");
+      setLoginButtonState(false, "로그인");
       return;
     }
 
@@ -202,7 +202,7 @@ function handleSignedInUser(user) {
       document.getElementById("loginArea").style.display = "none";
       modal.style.display = "flex";
       showSuperAdminPanel();
-      setLoginButtonState(false, "Login");
+      setLoginButtonState(false, "로그인");
       return;
     }
 
@@ -212,11 +212,11 @@ function handleSignedInUser(user) {
       loginSuccess(currentUser);
     }).catch(function(err) {
       currentDeptAccessRestricted   = true;
-      currentDeptAccessErrorMessage = err && err.message ? err.message : "Access restricted";
+      currentDeptAccessErrorMessage = err && err.message ? err.message : "권한 설정 중";
       loginSuccess(currentUser);
     });
   }).catch(function(error) {
-    alert(error && error.message ? error.message : "Unable to load user profile.");
+    alert(error && error.message ? error.message : "사용자 정보를 불러오지 못했습니다.");
     auth.signOut();
   });
 }
@@ -261,26 +261,26 @@ function submitForcedPasswordChange() {
   var confirmPassword = confirmEl ? confirmEl.value.trim() : "";
 
   if (newPassword.length < 6) {
-    alert("Password must be at least 6 characters.");
+    alert("비밀번호는 6자 이상이어야 합니다.");
     return;
   }
   if (newPassword !== confirmPassword) {
-    alert("Passwords do not match.");
+    alert("비밀번호 확인이 일치하지 않습니다.");
     return;
   }
 
   fn.completeInitialPasswordChange({ newPassword: newPassword }).then(function() {
     var modalEl = document.getElementById("forcePasswordChangeModal");
     if (modalEl) modalEl.style.display = "none";
-    alert("Password updated. Please sign in again.");
+    alert("비밀번호가 변경되었습니다. 다시 로그인해주세요.");
     auth.signOut();
   }).catch(function(e) {
     if (e && e.code === "auth/requires-recent-login") {
-      alert("Please sign in again and retry the password change.");
+      alert("보안을 위해 다시 로그인 후 변경해주세요.");
       auth.signOut();
       return;
     }
-    alert((e && e.message) || "Password change failed");
+    alert("비밀번호 변경에 실패했습니다.");
   });
 }
 
@@ -288,19 +288,19 @@ function submitForcedPasswordChange() {
 function changeMyPassword() {
   var newPassInput = document.getElementById("newAdminPassInput");
   var newPass = newPassInput ? newPassInput.value.trim() : "";
-  if (newPass.length < 6) { alert("鍮꾨?踰덊샇??6???댁긽?댁뼱???⑸땲??"); return; }
-  if (!auth.currentUser)  { alert("濡쒓렇???몄뀡???놁뒿?덈떎."); return; }
+  if (newPass.length < 6) { alert("비밀번호는 6자 이상이어야 합니다."); return; }
+  if (!auth.currentUser)  { alert("로그인 세션이 없습니다."); return; }
 
   auth.currentUser.updatePassword(newPass).then(function() {
-    alert("鍮꾨?踰덊샇媛 蹂寃쎈릺?덉뒿?덈떎.");
+    alert("비밀번호가 변경되었습니다. 다시 로그인해주세요.");
     if (newPassInput) newPassInput.value = "";
   }).catch(function(error) {
     if (error.code === "auth/requires-recent-login") {
-      alert("蹂댁븞???꾪빐 ?ㅼ떆 濡쒓렇????蹂寃쏀빐二쇱꽭??");
+      alert("보안을 위해 다시 로그인 후 변경해주세요.");
       auth.signOut();
       return;
     }
-    alert(error.message || "鍮꾨?踰덊샇 蹂寃??ㅽ뙣");
+    alert("비밀번호 변경에 실패했습니다.");
   });
 }
 
@@ -311,16 +311,16 @@ function resetUserPassword() {
   var passEl  = document.getElementById("targetEmpPassword") || document.getElementById("newAdminPassInput");
   var newPass = passEl ? passEl.value.trim() : "";
 
-  if (!empNo)            { alert("?щ쾲???낅젰?댁＜?몄슂."); return; }
-  if (!newPass)          { alert("??鍮꾨?踰덊샇瑜??낅젰?댁＜?몄슂."); return; }
-  if (newPass.length < 6){ alert("鍮꾨?踰덊샇??6???댁긽?댁뼱???⑸땲??"); return; }
+  if (!empNo)            { alert("사번을 입력해주세요."); return; }
+  if (!newPass)          { alert("새 비밀번호를 입력해주세요."); return; }
+  if (newPass.length < 6){ alert("비밀번호는 6자 이상이어야 합니다."); return; }
 
   fn.resetEmployeePassword({ empNo: empNo, newPassword: newPass }).then(function() {
-    alert("??[" + empNo + "] 鍮꾨?踰덊샇媛 珥덇린?붾릺?덉뒿?덈떎.");
+    alert("[" + empNo + "] 비밀번호가 초기화되었습니다.");
     document.getElementById("targetEmpName").value = "";
     if (passEl) passEl.value = "";
   }).catch(function(e) {
-    alert("珥덇린???ㅽ뙣: " + (e.message || "?????녿뒗 ?ㅻ쪟"));
+    alert("초기화 실패: " + (e.message || "알 수 없는 오류"));
   });
 }
 
@@ -328,30 +328,30 @@ function resetUserPassword() {
 function resetAllRequests() {
   if (!isAdmin && !isSuperAdmin) return;
   var tm = getTargetYearMonth();
-  if (!confirm("?좑툘 " + tm.fullStr + " ?꾩껜 ?좎껌??珥덇린?뷀븯?쒓쿋?듬땲源?")) return;
+  if (!confirm("⚠️ " + tm.fullStr + " 전체 신청을 초기화하시겠습니까?")) return;
 
   fn.resetAllRequests({ deptId: currentDept, yyyymm: tm.fullStr }).then(function() {
-    alert("珥덇린???꾨즺");
+    alert("초기화 완료");
     refreshData();
   }).catch(function(e) {
-    alert(e.message || "珥덇린???ㅽ뙣");
+    alert(e.message || "초기화 실패");
   });
 }
 
 // ?? 愿由ъ옄: ?ㅼ젙 珥덇린??(Cloud Function ?쇰줈 ??? ???????????????????????????
 function resetAllConfigurations() {
   if (!isAdmin && !isSuperAdmin) return;
-  if (!confirm("?ㅼ젙??珥덇린?뷀븯?쒓쿋?듬땲源?")) return;
+  if (!confirm("설정을 초기화하시겠습니까?")) return;
 
   fn.saveDeptConfig({
     deptId: currentDept,
     yyyymm: getTargetYearMonth().fullStr,
     config: { openAt: null, closeAt: null, dayMax: null, globalUserMax: null, annualUserMax: null },
   }).then(function() {
-    alert("?ㅼ젙 珥덇린???꾨즺");
+    alert("설정 초기화 완료");
     refreshData();
   }).catch(function(e) {
-    alert(e.message || "?ㅼ젙 珥덇린???ㅽ뙣");
+    alert(e.message || "설정 초기화 실패");
   });
 }
 
@@ -366,15 +366,15 @@ function renderRestrictedRoleView() {
   var grid = document.getElementById("mainCalendarGrid");
   if (grid) grid.innerHTML = "";
 
-  var msg = currentDeptAccessErrorMessage || "沅뚰븳 ?ㅼ젙 以묒엯?덈떎.";
+  var msg = currentDeptAccessErrorMessage || "권한 설정 중입니다.";
   var wm  = document.getElementById("welcomeMessage");
-  if (wm) wm.innerHTML = (isAdmin ? "愿由ъ옄 紐⑤뱶" : "吏곸썝 紐⑤뱶") +
+  if (wm) wm.innerHTML = (isAdmin ? "관리자 모드" : "직원 모드") +
     "<br><span style='font-size:13px; color:#d9534f; font-weight:bold;'>" + msg + "</span>";
 }
 
 function showSuperAdminPanel() {
   var wm = document.getElementById("welcomeMessage");
-  if (wm) wm.innerHTML = "?덊띁 愿由ъ옄 紐⑤뱶<br><span style='font-size:13px; color:#e53935; font-weight:bold;'>Firebase Auth + Cloud Functions 湲곕컲</span>";
+  if (wm) wm.innerHTML = "슈퍼 관리자 모드<br><span style='font-size:13px; color:#e53935; font-weight:bold;'>Firebase Auth + Cloud Functions 기반</span>";
 
   ["toggleModeBtn","userResetBtn","resetAllBtn","resetConfigBtn","scheduleCodeApplyBtn"].forEach(function(id) {
     var el = document.getElementById(id);
@@ -404,42 +404,42 @@ function drawSuperAdminPanel() {
     var depts   = Object.keys(summary);
 
     if (depts.length === 0) {
-      container.innerHTML = "<div style='font-size:13px;color:#666;'>吏???곗씠???놁쓬</div>";
+      container.innerHTML = "<div style='font-size:13px;color:#666;'>지점 데이터 없음</div>";
       return;
     }
 
     var html = "<table style='width:100%;border-collapse:collapse;font-size:13px;'>";
-    html += "<tr style='background:#f0f0f0;'><th style='padding:8px;border:1px solid #ddd;'>吏??/th><th style='padding:8px;border:1px solid #ddd;'>?좎껌 ?꾪솴 (" + tm.fullStr + ")</th></tr>";
+    html += "<tr style='background:#f0f0f0;'><th style='padding:8px;border:1px solid #ddd;'>지점</th><th style='padding:8px;border:1px solid #ddd;'>신청 현황 (" + tm.fullStr + ")</th></tr>";
     depts.forEach(function(d) {
       var days   = summary[d];
-      var counts = Object.keys(days).map(function(day) { return day + "??" + days[day]; }).join(", ") || "-";
+      var counts = Object.keys(days).map(function(day) { return day + "일:" + days[day]; }).join(", ") || "-";
       html += "<tr><td style='padding:8px;border:1px solid #ddd;font-weight:bold;'>" + d + "</td><td style='padding:8px;border:1px solid #ddd;font-size:12px;color:#555;'>" + counts + "</td></tr>";
     });
     html += "</table>";
     container.innerHTML = html;
   }).catch(function() {
-    container.innerHTML = "<div style='font-size:13px;color:#d9534f;'>?곗씠??濡쒕뱶 ?ㅽ뙣</div>";
+    container.innerHTML = "<div style='font-size:13px;color:#d9534f;'>데이터 로드 실패</div>";
   });
 }
 
 // ?? 濡쒓렇???붾㈃ ?덉씠釉?(?щ쾲?쇰줈 ?쒖떆) ???????????????????????????????????????
 function updateLoginCopy() {
   var usernameLabel = document.querySelector('label[for="username"]');
-  if (usernameLabel) usernameLabel.innerText = "?щ쾲";
+  if (usernameLabel) usernameLabel.innerText = "사번";
 
   var usernameInput = document.getElementById("username");
   if (usernameInput) {
-    usernameInput.placeholder = "Employee ID";
+    usernameInput.placeholder = "사번을 입력하세요";
     usernameInput.setAttribute("autocomplete", "username");
     usernameInput.setAttribute("inputmode", "text");
   }
 
   var passwordLabel = document.querySelector('label[for="password"]');
-  if (passwordLabel) passwordLabel.innerText = "鍮꾨?踰덊샇";
+  if (passwordLabel) passwordLabel.innerText = "비밀번호";
 
   var passwordInput = document.getElementById("password");
   if (passwordInput) {
-    passwordInput.placeholder = "Password";
+    passwordInput.placeholder = "비밀번호를 입력하세요";
     passwordInput.setAttribute("autocomplete", "current-password");
   }
 
@@ -449,7 +449,7 @@ function updateLoginCopy() {
     if (el) el.style.display = "none";
   });
 
-  setLoginButtonState(false, "Login");
+  setLoginButtonState(false, "로그인");
 }
 
 // refreshData ?섑띁 (?묎렐 ?쒗븳 ?곹깭 泥섎━)

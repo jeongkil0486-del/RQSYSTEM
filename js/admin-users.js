@@ -8,6 +8,12 @@ var allowedUsersSortMode = "empNo";
 var groupBoardState = { POOL: [], A: [], B: [], C: [], D: [], E: [] };
 var groupBoardStateLoaded = false;
 
+function _getVisibleDeptEmployees() {
+    return (Array.isArray(deptEmployees) ? deptEmployees : []).filter(function(emp) {
+        return !!(emp && emp.uid && String(emp.empNo || "").trim() && String(emp.name || "").trim());
+    });
+}
+
 // ── 직원 목록 정렬 (정렬 버튼용 — 표시 순서만, 배열 원본 비변경) ───────────
 function _sortDeptEmployeesForBoard(rows) {
     var list = Array.isArray(rows) ? rows.slice() : [];
@@ -33,16 +39,17 @@ function setAllowedUsersSortMode(mode) {
 function drawAllowedUsersBoard() {
     var board = document.getElementById("allowedUsersTooltipBoard");
     if (!board) return;
+    var visibleEmployees = _getVisibleDeptEmployees();
 
-    if (!deptEmployees || deptEmployees.length === 0) {
+    if (visibleEmployees.length === 0) {
         board.innerHTML = "<div style='color:#aaa;font-size:13px;'>등록된 직원이 없습니다.</div>";
         return;
     }
 
-    var html = "<strong style='color:#fff;font-size:13px;'>직원 목록 (" + deptEmployees.length + "명)</strong>";
+    var html = "<strong style='color:#fff;font-size:13px;'>직원 목록 (" + visibleEmployees.length + "명)</strong>";
     html += "<div style='font-size:10px;color:#bdc3c7;margin:3px 0 7px;'>드래그로 순서 변경 → 스케줄 다운로드 순서에 반영</div>";
     html += "<div id='empDragList' style='display:flex;flex-wrap:wrap;gap:5px;'>";
-    deptEmployees.forEach(function(emp, idx) {
+    visibleEmployees.forEach(function(emp, idx) {
         html += "<span draggable='true' data-empidx='" + idx + "'"
               + " style='background:rgba(46,204,113,0.2);border:1px solid #2ecc71;"
               + "border-radius:5px;padding:4px 8px;font-size:12px;color:#2ecc71;"
@@ -77,9 +84,13 @@ function drawAllowedUsersBoard() {
             this.style.outline = "";
             var destIdx = parseInt(this.getAttribute("data-empidx"), 10);
             if (dragSrcIdx === null || dragSrcIdx === destIdx) return;
-            // deptEmployees 배열 재정렬 (exportToExcel 순서에 직결)
-            var moved = deptEmployees.splice(dragSrcIdx, 1)[0];
-            deptEmployees.splice(destIdx, 0, moved);
+            var orderedVisible = _getVisibleDeptEmployees();
+            var moved = orderedVisible.splice(dragSrcIdx, 1)[0];
+            orderedVisible.splice(destIdx, 0, moved);
+            var hiddenEmployees = (Array.isArray(deptEmployees) ? deptEmployees : []).filter(function(emp) {
+                return !(emp && emp.uid && String(emp.empNo || "").trim() && String(emp.name || "").trim());
+            });
+            deptEmployees = orderedVisible.concat(hiddenEmployees);
             // 조회 맵 재구성
             employeeByUid   = {};
             employeeByEmpNo = {};
@@ -151,6 +162,7 @@ function _getGroupBoardTokenLabel(token) {
 function _buildGroupBoardState() {
     var state = { POOL: [], A: [], B: [], C: [], D: [], E: [] };
     var assigned = {};
+    var visibleEmployees = _getVisibleDeptEmployees();
 
     ["A", "B", "C", "D", "E"].forEach(function(group) {
         getLiveGroupList(group).forEach(function(member) {
@@ -161,7 +173,7 @@ function _buildGroupBoardState() {
         });
     });
 
-    deptEmployees.forEach(function(emp) {
+    visibleEmployees.forEach(function(emp) {
         if (!emp) return;
         var token = _normalizeGroupToken(emp.uid || emp.empNo);
         if (!token || assigned[token]) return;
