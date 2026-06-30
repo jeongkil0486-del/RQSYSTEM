@@ -59,11 +59,12 @@
         <a class="nav-brand" href="#">TRINITYAIRSERVICE</a>
 
         <div class="nav-menu" id="navMenu">
-            <button class="nav-item active" onclick="showPage('dashboard')">대시보드</button>
-            <button class="nav-item" onclick="showPage('requests')">신청관리</button>
-            <button class="nav-item" onclick="showPage('employees')">직원관리</button>
-            <button class="nav-item" onclick="showPage('settings')">설정</button>
-            <button class="nav-item" onclick="showPage('downloads')">다운로드</button>
+            <button class="nav-item active" id="navBtn-dashboard" onclick="showPage('dashboard')">대시보드</button>
+            <button class="nav-item" id="navBtn-requests" onclick="showPage('requests')">신청관리</button>
+            <button class="nav-item" id="navBtn-employees" onclick="showPage('employees')">직원관리</button>
+            <button class="nav-item" id="navBtn-settings" onclick="showPage('settings')">설정</button>
+            <button class="nav-item" id="navBtn-downloads" onclick="showPage('downloads')">다운로드</button>
+            <button class="nav-item" id="navBtn-orgadmin" onclick="showPage('orgadmin')" style="display:none;">지점관리</button>
         </div>
 
         <div class="nav-right">
@@ -78,11 +79,12 @@
 
     <!-- 모바일 드로어 -->
     <div class="nav-drawer" id="navDrawer">
-        <button class="nav-item" onclick="showPage('dashboard'); closeMobileNav()">대시보드</button>
-        <button class="nav-item" onclick="showPage('requests'); closeMobileNav()">신청관리</button>
-        <button class="nav-item" onclick="showPage('employees'); closeMobileNav()">직원관리</button>
-        <button class="nav-item" onclick="showPage('settings'); closeMobileNav()">설정</button>
-        <button class="nav-item" onclick="showPage('downloads'); closeMobileNav()">다운로드</button>
+        <button class="nav-item" id="drawerBtn-dashboard" onclick="showPage('dashboard'); closeMobileNav()">대시보드</button>
+        <button class="nav-item" id="drawerBtn-requests" onclick="showPage('requests'); closeMobileNav()">신청관리</button>
+        <button class="nav-item" id="drawerBtn-employees" onclick="showPage('employees'); closeMobileNav()">직원관리</button>
+        <button class="nav-item" id="drawerBtn-settings" onclick="showPage('settings'); closeMobileNav()">설정</button>
+        <button class="nav-item" id="drawerBtn-downloads" onclick="showPage('downloads'); closeMobileNav()">다운로드</button>
+        <button class="nav-item" id="drawerBtn-orgadmin" onclick="showPage('orgadmin'); closeMobileNav()" style="display:none;">지점관리</button>
         <button class="nav-item" onclick="closeCalendar(); closeMobileNav()">로그아웃</button>
     </div>
 
@@ -98,8 +100,8 @@
                 <div class="page-desc">휴무 및 연차 신청 현황을 한눈에 확인하세요.</div>
             </div>
 
-            <!-- Stat cards -->
-            <div class="stat-cards">
+            <!-- Stat cards (관리자 전용) -->
+            <div class="stat-cards" id="statCardsRow">
                 <div class="stat-card">
                     <div class="stat-icon blue">📅</div>
                     <div class="stat-info">
@@ -142,7 +144,7 @@
                 </div>
             </div>
 
-            <!-- 빠른 조회 -->
+            <!-- 빠른 조회 (관리자) -->
             <div class="filter-bar" id="adminFilterBar" style="display:none;">
                 <label>지점</label>
                 <select id="filterDept"><option value="">전체 지점</option></select>
@@ -158,30 +160,26 @@
                 <button class="btn-view" onclick="refreshData()">월간 보기</button>
             </div>
 
-            <!-- 직원용 빠른 조회 -->
+            <!-- 직원용 빠른 조회: 달력만, 새로고침 버튼만 -->
             <div class="filter-bar" id="staffFilterBar" style="display:none;">
-                <div class="nav-arrows">
-                    <button class="btn-today" onclick="goToToday()">오늘</button>
-                    <button class="btn-arrow" onclick="prevMonth()">&#8249;</button>
-                    <button class="btn-arrow" onclick="nextMonth()">&#8250;</button>
-                </div>
-                <!-- 직원 전용 버튼들 -->
+                <!-- 직원 전용 신청 버튼들 -->
                 <button id="toggleModeBtn" class="btn btn-primary-sm" onclick="toggleApplicationMode()" style="display:none;">휴무</button>
                 <button id="scheduleCodeApplyBtn" class="btn btn-secondary" onclick="toggleScheduleCodeMode()" style="display:none;">근무</button>
-                <div class="spacer"></div>
                 <button id="userResetBtn" class="btn btn-warning" onclick="resetMyRequests()" style="display:none;">내 신청 초기화</button>
+                <div class="spacer"></div>
+                <button class="btn btn-success" onclick="refreshData()">🔄 새로고침</button>
             </div>
 
-            <!-- 관리자용 추가 버튼 (숨김 상태로 유지, JS에서 show) -->
+            <!-- 관리자용 추가 버튼 -->
             <div id="adminActionBar" style="display:none; margin-bottom:12px;" class="flex gap-2 items-center">
                 <button id="resetAllBtn" class="btn btn-danger" onclick="resetAllRequests()" style="display:none;">스케줄 전체 초기화</button>
                 <button id="resetConfigBtn" class="btn btn-secondary" onclick="resetAllConfigurations()" style="display:none;">설정 전체 초기화</button>
                 <div class="spacer" style="flex:1;"></div>
-                <button class="btn btn-success" onclick="refreshData()">새로고침</button>
+                <button class="btn btn-success" onclick="refreshData()">🔄 새로고침</button>
             </div>
 
             <!-- Dashboard body: calendar + right panel -->
-            <div class="dashboard-body">
+            <div class="dashboard-body" id="dashboardBody">
 
                 <!-- Calendar card -->
                 <div class="calendar-card">
@@ -192,8 +190,8 @@
                     <div class="calendar-grid" id="mainCalendarGrid"></div>
                 </div>
 
-                <!-- Right panel -->
-                <div class="right-panel">
+                <!-- Right panel (관리자 전용) -->
+                <div class="right-panel" id="rightPanel">
                     <!-- 최근 신청 내역 -->
                     <div class="panel-card" id="recentRequestsCard">
                         <div class="panel-card-header">
@@ -311,8 +309,8 @@
                     </div>
                 </div>
 
-                <!-- 조별 신청 한도 -->
-                <div class="feature-card">
+                <!-- 조별 신청 한도 (전체 너비 — 5개 조 입력창 잘림 방지) -->
+                <div class="feature-card card-wide">
                     <div class="feature-card-header">
                         <div class="feature-icon green" style="background:#f0fdf4;">👥</div>
                         <div>
@@ -335,8 +333,6 @@
                             <input type="number" id="groupMaxConfigB" min="1" max="40" class="form-input small small-num-input" placeholder="2">
                             <span class="group-label gl-c">C조</span>
                             <input type="number" id="groupMaxConfigC" min="1" max="40" class="form-input small small-num-input" placeholder="2">
-                        </div>
-                        <div class="form-row group-inputs">
                             <span class="group-label gl-d">D조</span>
                             <input type="number" id="groupMaxConfigD" min="1" max="40" class="form-input small small-num-input" placeholder="2">
                             <span class="group-label gl-e">E조</span>
@@ -346,8 +342,8 @@
                     </div>
                 </div>
 
-                <!-- 조별 코드 제한 -->
-                <div class="feature-card">
+                <!-- 조별 코드 제한 (전체 너비 — 5개 조 입력창 잘림 방지) -->
+                <div class="feature-card card-wide">
                     <div class="feature-card-header">
                         <div class="feature-icon" style="background:#fef2f2;">🔢</div>
                         <div>
@@ -365,7 +361,7 @@
                         </div>
                         <div class="form-row">
                             <label class="form-label">코드</label>
-                            <select id="scGroupLimitCodeSelect" class="form-select" style="width:80px;">
+                            <select id="scGroupLimitCodeSelect" class="form-select" style="width:90px;">
                                 <option value="">코드</option>
                             </select>
                         </div>
@@ -457,50 +453,6 @@
                         <div class="form-row">
                             <input type="password" id="newAdminPassInput" placeholder="새 비밀번호 (6자 이상)" class="form-input">
                             <button class="btn btn-primary-sm" onclick="changeMyPassword()">변경</button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 직원 엑셀 등록 (슈퍼관리자) -->
-                <div class="feature-card" id="cardBulkUpload" style="display:none;">
-                    <div class="feature-card-header">
-                        <div class="feature-icon green" style="background:#f0fdf4;">📋</div>
-                        <div>
-                            <div class="feature-card-title">직원 엑셀 등록</div>
-                            <div class="feature-card-desc">엑셀 파일로 직원을 일괄 등록합니다. (슈퍼관리자)</div>
-                        </div>
-                    </div>
-                    <div class="feature-card-body">
-                        <div class="form-row">
-                            <label class="form-label">지점</label>
-                            <select id="superDeptSelect" class="form-select">
-                                <option value="">-- 지점 선택 --</option>
-                            </select>
-                        </div>
-                        <div class="form-row">
-                            <label class="form-label">파일</label>
-                            <input type="file" id="bulkEmpExcelUpload" accept=".xlsx,.xls" style="font-size:12px; flex:1;">
-                        </div>
-                        <div class="form-row">
-                            <button class="btn btn-navy" onclick="handleBulkExcelUpload()">📤 업로드</button>
-                            <button class="btn btn-success" onclick="downloadExcelTemplate()">📥 양식 다운로드</button>
-                        </div>
-                        <div id="uploadResultMsg"></div>
-                    </div>
-                </div>
-
-                <!-- 직원 삭제 (슈퍼관리자) -->
-                <div class="feature-card" id="cardDeleteEmp" style="display:none;">
-                    <div class="feature-card-header">
-                        <div class="feature-icon" style="background:#fef2f2;">🗑️</div>
-                        <div>
-                            <div class="feature-card-title">직원 삭제</div>
-                            <div class="feature-card-desc">직원 계정을 삭제합니다. (슈퍼관리자)</div>
-                        </div>
-                    </div>
-                    <div class="feature-card-body">
-                        <div id="superDeleteSection">
-                            <div id="superDeletePanelContent" style="overflow-x:auto; font-size:13px; color:var(--text-sub);">로딩중...</div>
                         </div>
                     </div>
                 </div>
@@ -640,34 +592,6 @@
                     </div>
                 </div>
 
-                <!-- 슈퍼관리자: 관리자 비밀번호 초기화 -->
-                <div class="feature-card" id="cardSuperAdminReset" style="display:none;">
-                    <div class="feature-card-header">
-                        <div class="feature-icon" style="background:#fef2f2;">🔑</div>
-                        <div>
-                            <div class="feature-card-title">관리자 비밀번호 초기화</div>
-                            <div class="feature-card-desc">지점 관리자 계정 비밀번호를 초기화합니다. (슈퍼관리자)</div>
-                        </div>
-                    </div>
-                    <div class="feature-card-body">
-                        <div id="superAdminPanelContent" style="overflow-x:auto; font-size:13px; color:var(--text-sub);">로딩중...</div>
-                    </div>
-                </div>
-
-                <!-- 슈퍼관리자: 지점별 비밀번호 초기화 -->
-                <div class="feature-card" id="cardSuperResetPanel" style="display:none;">
-                    <div class="feature-card-header">
-                        <div class="feature-icon" style="background:#fffbeb;">🔒</div>
-                        <div>
-                            <div class="feature-card-title">지점별 비밀번호 초기화</div>
-                            <div class="feature-card-desc">지점 전체 직원 비밀번호를 초기화합니다. (슈퍼관리자)</div>
-                        </div>
-                    </div>
-                    <div class="feature-card-body">
-                        <div id="superResetPanelContent" style="overflow-x:auto; font-size:13px; color:var(--text-sub);">로딩중...</div>
-                    </div>
-                </div>
-
             </div>
         </div>
 
@@ -709,17 +633,102 @@
                     </div>
                 </div>
 
-                <!-- 직원 엑셀 양식 -->
-                <div class="feature-card">
+                <!-- 직원 엑셀 양식 (슈퍼관리자 전용) -->
+                <div class="feature-card" id="cardDownloadEmpTemplate" style="display:none;">
                     <div class="feature-card-header">
                         <div class="feature-icon orange" style="background:#fff7ed;">📋</div>
                         <div>
                             <div class="feature-card-title">직원 엑셀 양식</div>
-                            <div class="feature-card-desc">직원 일괄 등록용 엑셀 양식을 다운로드합니다.</div>
+                            <div class="feature-card-desc">직원 일괄 등록용 엑셀 양식을 다운로드합니다. (슈퍼관리자)</div>
                         </div>
                     </div>
                     <div class="feature-card-body">
                         <button class="btn btn-warning btn-full" onclick="downloadExcelTemplate()">📥 직원 양식 다운로드</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ════════ 지점관리 페이지 (슈퍼관리자 전용) ════════ -->
+        <div id="page-orgadmin" class="section-page">
+            <div class="page-header">
+                <div class="breadcrumb">홈 &rsaquo; <span>지점관리</span></div>
+                <div class="page-title">지점관리</div>
+                <div class="page-desc">슈퍼관리자 전용 기능입니다. 지점 전체를 관리합니다.</div>
+            </div>
+
+            <div class="cards-grid">
+
+                <!-- 직원 엑셀 등록 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon green" style="background:#f0fdf4;">📋</div>
+                        <div>
+                            <div class="feature-card-title">직원 엑셀 등록</div>
+                            <div class="feature-card-desc">지점별 직원 ID를 엑셀로 일괄 등록합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div class="form-row">
+                            <label class="form-label">지점</label>
+                            <select id="superDeptSelect" class="form-select">
+                                <option value="">-- 지점 선택 --</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">파일</label>
+                            <input type="file" id="bulkEmpExcelUpload" accept=".xlsx,.xls" style="font-size:12px; flex:1;">
+                        </div>
+                        <div class="form-row">
+                            <button class="btn btn-navy" onclick="handleBulkExcelUpload()">📤 업로드</button>
+                            <button class="btn btn-success" onclick="downloadExcelTemplate()">📥 양식 다운로드</button>
+                        </div>
+                        <div id="uploadResultMsg"></div>
+                    </div>
+                </div>
+
+                <!-- 직원 삭제 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon" style="background:#fef2f2;">🗑️</div>
+                        <div>
+                            <div class="feature-card-title">직원 삭제</div>
+                            <div class="feature-card-desc">직원 계정을 삭제합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div id="superDeleteSection">
+                            <div id="superDeletePanelContent" style="overflow-x:auto; font-size:13px; color:var(--text-sub); max-height:260px; overflow-y:auto;">로딩중...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 관리자 비밀번호 초기화 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon" style="background:#fef2f2;">🔑</div>
+                        <div>
+                            <div class="feature-card-title">관리자 비밀번호 초기화</div>
+                            <div class="feature-card-desc">지점 관리자 계정 비밀번호를 초기화합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div id="superAdminPanelContent" style="overflow-x:auto; font-size:13px; color:var(--text-sub); max-height:260px; overflow-y:auto;">로딩중...</div>
+                    </div>
+                </div>
+
+                <!-- 지점별 비밀번호 초기화 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon" style="background:#fffbeb;">🔒</div>
+                        <div>
+                            <div class="feature-card-title">지점별 비밀번호 초기화</div>
+                            <div class="feature-card-desc">지점 전체 직원 비밀번호를 초기화합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div id="superResetPanelContent" style="overflow-x:auto; font-size:13px; color:var(--text-sub); max-height:260px; overflow-y:auto;">로딩중...</div>
                     </div>
                 </div>
 
@@ -822,16 +831,19 @@
    기존 함수명 / id / onclick 은 전혀 변경하지 않음
    ===================================================== */
 
+var PAGE_IDS = ['dashboard','requests','employees','settings','downloads','orgadmin'];
+
 // ── 페이지 전환 ──────────────────────────────────────
 function showPage(page) {
     document.querySelectorAll('.section-page').forEach(function(p){ p.classList.remove('active'); });
     var el = document.getElementById('page-' + page);
     if (el) el.classList.add('active');
 
-    document.querySelectorAll('.nav-item').forEach(function(b){ b.classList.remove('active'); });
-    var pageMap = { dashboard:0, requests:1, employees:2, settings:3, downloads:4 };
-    var btns = document.querySelectorAll('.nav-menu .nav-item');
-    if (btns[pageMap[page]]) btns[pageMap[page]].classList.add('active');
+    document.querySelectorAll('.nav-item, .nav-drawer .nav-item').forEach(function(b){ b.classList.remove('active'); });
+    var navBtn = document.getElementById('navBtn-' + page);
+    var drawerBtn = document.getElementById('drawerBtn-' + page);
+    if (navBtn) navBtn.classList.add('active');
+    if (drawerBtn) drawerBtn.classList.add('active');
 }
 
 // ── 모바일 햄버거 ──────────────────────────────────────
@@ -842,7 +854,7 @@ function closeMobileNav() {
     document.getElementById('navDrawer').classList.remove('open');
 }
 
-// ── 달력 이전/다음 월 ─────────────────────────────────
+// ── 달력 이전/다음 월 (관리자 전용 UI에서만 노출) ─────
 function prevMonth() {
     var ym = document.getElementById('targetYear');
     var mm = document.getElementById('targetMonth');
@@ -870,104 +882,197 @@ function goToToday() {
     if (typeof saveYearMonthConfig === 'function') saveYearMonthConfig();
 }
 
-// ── 기존 JS의 openCalendar / closeCalendar override ──
-// closeCalendar = 로그아웃 (기존 함수 유지)
+// ── 로그아웃 (기존 closeCalendar 함수 유지 + 새 UI 처리) ──
 var _origCloseCalendar = (typeof closeCalendar === 'function') ? closeCalendar : function(){};
 closeCalendar = function() {
-    // 기존 로그아웃 로직 실행
     _origCloseCalendar();
-    // 새 UI 처리
     document.getElementById('appShell').style.display = 'none';
     document.getElementById('loginArea').style.display = 'flex';
+    showPage('dashboard');
 };
 
-// ── 기존 JS의 modal 표시를 새 UI로 안전 연결 ─────────────
-// 기존 JS가 calendarModal 을 열면 appShell 을 보여주고, 실제 옛 모달은 계속 숨김 처리
-function showAppShellFromLegacyModal() {
-    var shell = document.getElementById('appShell');
-    var loginArea = document.getElementById('loginArea');
-    var legacyModal = document.getElementById('calendarModal');
-    if (shell) shell.style.display = 'flex';
-    if (loginArea) loginArea.style.display = 'none';
-    if (legacyModal) legacyModal.style.setProperty('display', 'none', 'important');
-    updateNavUI();
+// ── 기존 JS의 modal 변수(calendarModal) display 패치 ──
+// 기존 JS: modal.style.display = "flex" / "none" → appShell 을 대신 show/hide
+(function() {
+    var realModal = document.getElementById('calendarModal');
+    if (!realModal) return;
+    Object.defineProperty(realModal.style, 'display', {
+        get: function() { return this._display || 'none'; },
+        set: function(val) {
+            this._display = val;
+            var shell = document.getElementById('appShell');
+            var loginArea = document.getElementById('loginArea');
+            if (val === 'flex' || val === 'block') {
+                if (shell) shell.style.display = 'flex';
+                if (loginArea) loginArea.style.display = 'none';
+                applyRoleBasedUI();
+            }
+            // val === 'none' 인 경우는 로그아웃 시점에 closeCalendar 가 처리
+        }
+    });
+})();
+
+// ── datetime-local 값 채우기 버그 수정 ────────────────
+// 기존 코드: input.value = getFirebaseItem("rq_allowed_start_datetime", "")
+// 이 값은 저장 시 timestamp(숫자, ms) 로 DB에 들어가고 새로고침 후
+// liveDBData 에는 timestamp 그대로 채워지는데, <input type="datetime-local">
+// 은 "YYYY-MM-DDTHH:mm" 문자열만 인식하므로 빈칸으로 보이는 문제가 있었음.
+// → 여기서 값을 가져와 올바른 포맷으로 변환해 다시 넣어준다.
+function _tsToDatetimeLocalStr(v) {
+    if (v === null || v === undefined || v === "") return "";
+    // 이미 "YYYY-MM-DDTHH:mm" 형식 문자열이면 그대로 사용
+    if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v)) {
+        return v.slice(0, 16);
+    }
+    var num = (typeof v === "string") ? parseInt(v, 10) : v;
+    if (!num || isNaN(num)) return "";
+    var d = new Date(num);
+    if (isNaN(d.getTime())) return "";
+    var pad = function(n) { return (n < 10 ? "0" : "") + n; };
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate())
+        + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
 }
 
-var _origOpenCalendar = (typeof openCalendar === 'function') ? openCalendar : null;
-if (_origOpenCalendar) {
-    openCalendar = function() {
-        var result = _origOpenCalendar.apply(this, arguments);
-        showAppShellFromLegacyModal();
-        return result;
+function _fixDateTimeInputs() {
+    var startEl = document.getElementById("startDateTimeConfig");
+    var endEl   = document.getElementById("endDateTimeConfig");
+    if (startEl && typeof getFirebaseItem === 'function') {
+        startEl.value = _tsToDatetimeLocalStr(getFirebaseItem("rq_allowed_start_datetime", ""));
+    }
+    if (endEl && typeof getFirebaseItem === 'function') {
+        endEl.value = _tsToDatetimeLocalStr(getFirebaseItem("rq_allowed_end_datetime", ""));
+    }
+}
+
+// refreshData 가 호출된 후 datetime input 을 다시 보정
+var _origRefreshDataForDt = (typeof refreshData === 'function') ? refreshData : null;
+if (_origRefreshDataForDt) {
+    refreshData = function() {
+        var ret = _origRefreshDataForDt.apply(this, arguments);
+        setTimeout(_fixDateTimeInputs, 50);
+        return ret;
     };
 }
 
-(function() {
-    var legacyModal = document.getElementById('calendarModal');
-    if (!legacyModal || typeof MutationObserver === 'undefined') return;
-    var observer = new MutationObserver(function() {
-        var display = legacyModal.style.display;
-        if (display === 'flex' || display === 'block') showAppShellFromLegacyModal();
-    });
-    observer.observe(legacyModal, { attributes: true, attributeFilter: ['style', 'class'] });
-})();
-
-// ── 로그인 후 상단 사용자 정보 업데이트 ──────────────
-function updateNavUI() {
+// ── 권한별 화면 적용 (메뉴 + 페이지 + 대시보드 위젯) ──
+function applyRoleBasedUI() {
     setTimeout(function() {
         var nameEl = document.getElementById('navUserName');
         var deptEl = document.getElementById('navUserDept');
         if (nameEl && typeof currentUser !== 'undefined') nameEl.textContent = currentUser || '—';
-        if (deptEl && typeof currentDept !== 'undefined') deptEl.textContent = currentDept || '—';
+        if (deptEl) {
+            if (typeof isSuperAdmin !== 'undefined' && isSuperAdmin) {
+                deptEl.textContent = '슈퍼관리자';
+            } else if (typeof currentDept !== 'undefined') {
+                deptEl.textContent = currentDept || '—';
+            }
+        }
 
-        // 관리자/슈퍼관리자 여부에 따라 UI 조정
-        var isAdm = (typeof isAdmin !== 'undefined' && isAdmin) || (typeof isSuperAdmin !== 'undefined' && isSuperAdmin);
+        var isAdm = (typeof isAdmin !== 'undefined' && isAdmin);
         var isSup = (typeof isSuperAdmin !== 'undefined' && isSuperAdmin);
+        var isStaffOnly = !isAdm && !isSup;
 
-        // 필터바 표시
-        var adminBar = document.getElementById('adminFilterBar');
-        var staffBar = document.getElementById('staffFilterBar');
-        var actionBar = document.getElementById('adminActionBar');
-        if (adminBar) adminBar.style.display = isAdm ? 'flex' : 'none';
-        if (staffBar) staffBar.style.display = isAdm ? 'none' : 'flex';
-        if (actionBar) actionBar.style.display = isAdm ? 'flex' : 'none';
+        // ── 슈퍼관리자: 대시보드/지점관리만 노출, 나머지 메뉴 숨김 ──
+        if (isSup) {
+            ['requests','employees','settings','downloads'].forEach(function(p) {
+                var nb = document.getElementById('navBtn-' + p);
+                var db = document.getElementById('drawerBtn-' + p);
+                if (nb) nb.style.display = 'none';
+                if (db) db.style.display = 'none';
+            });
+            var orgNb = document.getElementById('navBtn-orgadmin');
+            var orgDb = document.getElementById('drawerBtn-orgadmin');
+            if (orgNb) orgNb.style.display = '';
+            if (orgDb) orgDb.style.display = '';
 
-        // 슈퍼관리자 전용 카드
-        ['cardBulkUpload','cardDeleteEmp','cardSuperAdminReset','cardSuperResetPanel'].forEach(function(id){
-            var c = document.getElementById(id);
-            if (c) c.style.display = isSup ? 'block' : 'none';
+            // 대시보드 위젯 전체 숨김 (슈퍼관리자는 지점관리 화면 사용)
+            var statRow = document.getElementById('statCardsRow');
+            var dashBody = document.getElementById('dashboardBody');
+            var adminBar = document.getElementById('adminFilterBar');
+            var staffBar = document.getElementById('staffFilterBar');
+            var actionBar = document.getElementById('adminActionBar');
+            if (statRow) statRow.style.display = 'none';
+            if (dashBody) dashBody.style.display = 'none';
+            if (adminBar) adminBar.style.display = 'none';
+            if (staffBar) staffBar.style.display = 'none';
+            if (actionBar) actionBar.style.display = 'none';
+
+            showPage('orgadmin');
+            return;
+        }
+
+        // ── 관리자/직원: 메뉴 모두 노출, 지점관리만 숨김 ──
+        ['requests','employees','settings','downloads'].forEach(function(p) {
+            var nb = document.getElementById('navBtn-' + p);
+            var db = document.getElementById('drawerBtn-' + p);
+            if (nb) nb.style.display = '';
+            if (db) db.style.display = '';
         });
-    }, 300);
+        var orgNb2 = document.getElementById('navBtn-orgadmin');
+        var orgDb2 = document.getElementById('drawerBtn-orgadmin');
+        if (orgNb2) orgNb2.style.display = 'none';
+        if (orgDb2) orgDb2.style.display = 'none';
+
+        // ── 관리자 전용 메뉴는 직원에게 숨김 ──
+        ['requests','employees','settings','downloads'].forEach(function(p) {
+            var nb = document.getElementById('navBtn-' + p);
+            var db = document.getElementById('drawerBtn-' + p);
+            if (nb) nb.style.display = isStaffOnly ? 'none' : '';
+            if (db) db.style.display = isStaffOnly ? 'none' : '';
+        });
+
+        // ── 대시보드 위젯: 직원은 달력만, 관리자는 전체 ──
+        var statRow2 = document.getElementById('statCardsRow');
+        var dashBody2 = document.getElementById('dashboardBody');
+        var adminBar2 = document.getElementById('adminFilterBar');
+        var staffBar2 = document.getElementById('staffFilterBar');
+        var actionBar2 = document.getElementById('adminActionBar');
+        var rightPanel = document.getElementById('rightPanel');
+
+        if (dashBody2) dashBody2.style.display = 'grid';
+
+        if (isStaffOnly) {
+            if (statRow2) statRow2.style.display = 'none';
+            if (adminBar2) adminBar2.style.display = 'none';
+            if (staffBar2) staffBar2.style.display = 'flex';
+            if (actionBar2) actionBar2.style.display = 'none';
+            if (rightPanel) rightPanel.style.display = 'none';
+            if (dashBody2) dashBody2.style.gridTemplateColumns = '1fr';
+        } else {
+            if (statRow2) statRow2.style.display = 'grid';
+            if (adminBar2) adminBar2.style.display = 'flex';
+            if (staffBar2) staffBar2.style.display = 'none';
+            if (actionBar2) actionBar2.style.display = 'flex';
+            if (rightPanel) rightPanel.style.display = 'flex';
+            if (dashBody2) dashBody2.style.gridTemplateColumns = '';
+        }
+
+        // ── 직원 엑셀 양식 다운로드는 슈퍼관리자만 (일반 관리자는 숨김) ──
+        var tmplCard = document.getElementById('cardDownloadEmpTemplate');
+        if (tmplCard) tmplCard.style.display = 'none'; // 관리자/직원 모두 비노출 (슈퍼관리자는 별도 페이지 사용)
+
+        showPage('dashboard');
+
+        // datetime input 보정 (관리자만 해당)
+        if (isAdm) setTimeout(_fixDateTimeInputs, 200);
+    }, 250);
 }
 
 // ── 기존 showSuperAdminPanel override ────────────────
 var _origShowSuperAdminPanel = (typeof showSuperAdminPanel === 'function') ? showSuperAdminPanel : function(){};
 showSuperAdminPanel = function() {
     _origShowSuperAdminPanel();
-    updateNavUI();
-    // 슈퍼관리자는 설정 페이지로 이동
-    showPage('settings');
-    // superAdminPanel 내용을 새 UI 카드로 이동
-    setTimeout(function(){
-        var oldPanel = document.getElementById('superAdminPanel');
-        // 슈퍼관리자 패널 내용들은 이미 cardSuperAdminReset / cardSuperResetPanel 에 있음
-        if (oldPanel) oldPanel.style.display = 'none';
-    }, 100);
+    applyRoleBasedUI();
 };
 
 // ── 기존 renderRestrictedRoleView override ───────────
 var _origRenderRestricted = (typeof renderRestrictedRoleView === 'function') ? renderRestrictedRoleView : function(){};
 renderRestrictedRoleView = function() {
     _origRenderRestricted();
-    updateNavUI();
+    applyRoleBasedUI();
 };
 
-// ── 직원 모드 버튼 초기 처리 ─────────────────────────
-// 기존 JS가 toggleModeBtn 을 display:none/flex 로 토글함
-// staffFilterBar 에 이미 배치했으므로 OK
-
-// ── 최근 신청 내역 더미 (실제 데이터는 DB에서) ────────
-// 실제 구현 시 firebase-store.js 의 리스너에서 call 가능
+// ── 최근 신청 내역 렌더 헬퍼 (관리자 대시보드 전용) ────
 function updateRecentFeed(items) {
     var feed = document.getElementById('recentFeed');
     if (!feed || !items || !items.length) return;
@@ -986,20 +1091,19 @@ function updateRecentFeed(items) {
     feed.innerHTML = html;
 }
 
-// ── loginArea 표시 보정 (block → flex) ───────────────
+// ── loginArea display 패치 (block → flex) ────────────
 (function() {
     var el = document.getElementById('loginArea');
-    if (!el || typeof MutationObserver === 'undefined') return;
-    var fixing = false;
-    var observer = new MutationObserver(function() {
-        if (fixing) return;
-        if (el.style.display === 'block') {
-            fixing = true;
-            el.style.display = 'flex';
-            fixing = false;
-        }
+    if (!el) return;
+    var _d = 'flex';
+    Object.defineProperty(el.style, 'display', {
+        get: function() { return _d; },
+        set: function(v) {
+            _d = (v === 'block') ? 'flex' : v;
+            el.setAttribute('style', 'display:' + _d);
+        },
+        configurable: true
     });
-    observer.observe(el, { attributes: true, attributeFilter: ['style'] });
 })();
 
 // ── 공지사항 기본 텍스트 ──────────────────────────────
