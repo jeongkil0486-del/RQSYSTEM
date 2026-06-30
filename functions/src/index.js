@@ -66,6 +66,196 @@ async function recalcCounters(deptId, yyyymm, days) {
     if (Object.keys(updates).length > 0) await db.ref().update(updates);
 }
 
+function hasOwn(obj, key) {
+    return Object.prototype.hasOwnProperty.call(obj || {}, key);
+}
+
+function toIntOr(defaultValue, rawValue) {
+    const num = parseInt(rawValue, 10);
+    return Number.isFinite(num) ? num : defaultValue;
+}
+
+function getRequestLimitMessage(kind) {
+    if (kind === "duplicate")
+        return new functions.https.HttpsError("already-exists", "이미 신청된 날짜입니다.");
+    if (kind === "closed")
+        return new functions.https.HttpsError("resource-exhausted", "해당 일자는 신청 마감되었습니다.");
+    return new functions.https.HttpsError("resource-exhausted", "신청 한도를 초과했습니다.");
+}
+
+function findMemberGroups(groups, uid, empNo) {
+    const matched = [];
+    const uidStr = String(uid || "").trim();
+    const empNoStr = normalizeEmpNo(empNo);
+
+    ["A", "B", "C", "D", "E"].forEach(function(group) {
+        const members = Array.isArray(groups[group]) ? groups[group] : [];
+        const exists = members.some(function(member) {
+            const raw = String(member || "").trim();
+            return raw === uidStr || normalizeEmpNo(raw) === empNoStr;
+        });
+        if (exists) matched.push(group);
+    });
+    return matched;
+}
+
+function getDayRequestCount(ledger, day) {
+    const dayStr = String(day);
+    let count = 0;
+    Object.keys(ledger || {}).forEach(function(uid) {
+        const userDays = ledger[uid] || {};
+        if (userDays && hasOwn(userDays, dayStr) && userDays[dayStr]) count++;
+    });
+    return count;
+}
+
+function getUserRequestCountByType(userDays, type, scheduleCode) {
+    let count = 0;
+    Object.keys(userDays || {}).forEach(function(day) {
+        const req = userDays[day];
+        if (!req) return;
+        if (req.type !== type) return;
+        if (type === "schedule" && scheduleCode && req.scheduleCode !== scheduleCode) return;
+        count++;
+    });
+    return count;
+}
+
+function getGroupDayCount(ledger, groups, targetGroup, day, filterFn) {
+    const members = Array.isArray(groups[targetGroup]) ? groups[targetGroup] : [];
+    const memberSet = {};
+    members.forEach(function(member) {
+        const raw = String(member || "").trim();
+        if (!raw) return;
+        memberSet[raw] = true;
+        memberSet[normalizeEmpNo(raw)] = true;
+    });
+
+    let count = 0;
+    Object.keys(ledger || {}).forEach(function(uid) {
+        const userDays = ledger[uid] || {};
+        const dayReq = userDays[String(day)];
+        if (!dayReq || !filterFn(dayReq)) return;
+
+        if (memberSet[uid]) {
+            count++;
+            return;
+        }
+        const reqEmpNo = normalizeEmpNo(dayReq.empNo);
+        if (reqEmpNo && memberSet[reqEmpNo]) count++;
+    });
+    return count;
+}
+
+async function validateAndStageRequest(deptId, yyyymm, day, uid, profile, type, scheduleCode) {
+    const cfgSnap = await db.ref("departments/" + deptId + "/configs/" + yyyymm).once("value");
+    const cfg = cfgSnap.val() || {};
+    const ledgerRef = db.ref("requestsLedger/" + deptId + "/" + yyyymm);
+    const dayStr = String(day);
+    const empNo = normalizeEmpNo(profile.empNo);
+    const name = profile.legacyName || profile.name || uid;
+    const ts = Date.now();
+    const reqData = { type, ts, name, empNo };
+    if (type === "schedule" && scheduleCode) reqData.scheduleCode = scheduleCode;
+
+    const userLimitCfg = (cfg.userLimits || {})[uid] || {};
+    const groups = cfg.groups || {};
+    const matchedGroups = findMemberGroups(groups, uid, empNo);
+    const dayMax = toIntOr(10, cfg.dayMax);
+    const specialLimitRaw = cfg.specialDayLimits && hasOwn(cfg.specialDayLimits, dayStr) ? cfg.specialDayLimits[dayStr] : null;
+    const effectiveDayLimit = specialLimitRaw != null ? toIntOr(dayMax, specialLimitRaw) : dayMax;
+
+    let rejectError = null;
+    const txResult = await ledgerRef.transaction(function(current) {
+        if (rejectError) return;
+        const ledger = current || {};
+        const userDays = ledger[uid] || {};
+        if (hasOwn(userDays, dayStr) && userDays[dayStr]) {
+            rejectError = getRequestLimitMessage("duplicate");
+            return;
+        }
+
+        if (type === "normal") {
+            const dayCount = getDayRequestCount(ledger, dayStr);
+            if (dayCount >= effectiveDayLimit) {
+                rejectError = getRequestLimitMessage("closed");
+                return;
+            }
+
+            const personalLimit = userLimitCfg.globalUserMax != null
+                ? toIntOr(0, userLimitCfg.globalUserMax)
+                : toIntOr(4, cfg.globalUserMax);
+            const normalCount = getUserRequestCountByType(userDays, "normal");
+            if (normalCount >= personalLimit) {
+                rejectError = getRequestLimitMessage("limit");
+                return;
+            }
+
+            const exceedsGroup = matchedGroups.some(function(group) {
+                const limit = toIntOr(2, cfg["groupMax" + group]);
+                const count = getGroupDayCount(ledger, groups, group, dayStr, function(req) {
+                    return req && req.type === "normal";
+                });
+                return count >= limit;
+            });
+            if (exceedsGroup) {
+                rejectError = getRequestLimitMessage("limit");
+                return;
+            }
+        } else if (type === "annual") {
+            const annualLimit = userLimitCfg.annualQuota != null
+                ? toIntOr(0, userLimitCfg.annualQuota)
+                : toIntOr(15, cfg.annualUserMax);
+            const annualCount = getUserRequestCountByType(userDays, "annual");
+            if (annualCount >= annualLimit) {
+                rejectError = getRequestLimitMessage("limit");
+                return;
+            }
+        } else if (type === "schedule") {
+            if (!scheduleCode) {
+                rejectError = new functions.https.HttpsError("invalid-argument", "scheduleCode 필요");
+                return;
+            }
+            const scheduleCodes = Array.isArray(cfg.scheduleCodes) ? cfg.scheduleCodes : [];
+            const scheduleItem = scheduleCodes.find(function(item) { return item && item.name === scheduleCode; });
+            if (!scheduleItem) {
+                rejectError = new functions.https.HttpsError("invalid-argument", "유효하지 않은 스케줄 코드입니다.");
+                return;
+            }
+            const scheduleLimit = toIntOr(999, scheduleItem.limit);
+            const myScheduleCount = getUserRequestCountByType(userDays, "schedule", scheduleCode);
+            if (myScheduleCount >= scheduleLimit) {
+                rejectError = getRequestLimitMessage("limit");
+                return;
+            }
+
+            const exceedsGroupCode = matchedGroups.some(function(group) {
+                const key = scheduleCode + "_" + group;
+                if (!cfg.scGroupLimits || !hasOwn(cfg.scGroupLimits, key)) return false;
+                const limit = toIntOr(0, cfg.scGroupLimits[key]);
+                const count = getGroupDayCount(ledger, groups, group, dayStr, function(req) {
+                    return req && req.type === "schedule" && req.scheduleCode === scheduleCode;
+                });
+                return count >= limit;
+            });
+            if (exceedsGroupCode) {
+                rejectError = getRequestLimitMessage("limit");
+                return;
+            }
+        } else if (type !== "petition") {
+            rejectError = new functions.https.HttpsError("invalid-argument", "지원하지 않는 신청 유형입니다.");
+            return;
+        }
+
+        const next = Object.assign({}, ledger);
+        next[uid] = Object.assign({}, userDays, { [dayStr]: reqData });
+        return next;
+    });
+
+    if (!txResult.committed) throw (rejectError || new functions.https.HttpsError("aborted", "신청 저장에 실패했습니다."));
+    return reqData;
+}
+
 const RUN_OPTS = { enforceAppCheck: false };
 
 // ── 1. submitRequest — 직원 신청 ──────────────────────────────────────────────
@@ -82,24 +272,16 @@ exports.submitRequest = functions.runWith(RUN_OPTS).https.onCall(async (data, co
 
     const profile = await getCallerProfile(uid);
     if (!profile) throw new functions.https.HttpsError("not-found", "프로필 없음");
-    const name = profile.legacyName || profile.name || uid;
-    const ts   = Date.now();
+    if (String(profile.deptId || "").trim() !== deptId)
+        throw new functions.https.HttpsError("permission-denied", "다른 지점 신청은 허용되지 않습니다.");
 
-    const reqData = { type, ts, name };
-    if (type === "schedule" && scheduleCode) reqData.scheduleCode = scheduleCode;
+    const reqData = await validateAndStageRequest(deptId, yyyymm, day, uid, profile, type, scheduleCode);
 
     const updates = {};
     updates["userRequests/" + uid + "/" + yyyymm + "/" + day] = reqData;
     updates["departments/" + deptId + "/adminView/" + yyyymm + "/" + uid + "/" + day] = reqData;
-
     await db.ref().update(updates);
-
-    // publicCounters 증가
-    const counterRef = db.ref("departments/" + deptId + "/publicCounters/" + yyyymm + "/" + day);
-    await counterRef.transaction(function(cur) { return (cur || 0) + 1; });
-
-    // requestsLedger
-    await db.ref("requestsLedger/" + deptId + "/" + yyyymm + "/" + uid + "/" + day).set(reqData);
+    await recalcCounters(deptId, yyyymm, [day]);
 
     return { ok: true };
 });

@@ -408,6 +408,10 @@ function drawAnnualStatusBoard() {
 
     var hasAny = false;
     Object.keys(uidSet).forEach(function(uid) {
+        var emp = employeeByUid[uid] || {};
+        var empNo = String(emp.empNo || "").trim();
+        if (!empNo) return;
+
         var ul    = userLimits[uid] || {};
         var quota = ul.annualQuota != null ? parseInt(ul.annualQuota, 10) : annualMax;
         var days  = (adminViewCache && adminViewCache[uid]) || {};
@@ -419,8 +423,7 @@ function drawAnnualStatusBoard() {
 
         hasAny = true;
         var remain   = quota - used;
-        var emp      = employeeByUid[uid] || {};
-        var label    = emp.name ? (emp.name + " (" + emp.empNo + ")") : ("uid:" + uid.slice(0, 6));
+        var label    = (emp.name || uid) + " (" + empNo + ")";
         var bgColor  = remain <= 0 ? "rgba(229,57,53,0.25)"  : remain <= 2 ? "rgba(245,127,23,0.25)"  : "rgba(46,125,50,0.25)";
         var bdColor  = remain <= 0 ? "#e53935"               : remain <= 2 ? "#f57f17"               : "#43a047";
         var txColor  = remain <= 0 ? "#ff8a80"               : remain <= 2 ? "#ffcc02"               : "#a5d6a7";

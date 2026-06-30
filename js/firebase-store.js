@@ -7,7 +7,9 @@ var _countersCache = {};
 var _deptConnectToken = 0;
 
 function _rebuildEmployeeMaps(rows) {
-    deptEmployees = Array.isArray(rows) ? rows.slice() : [];
+    deptEmployees = (Array.isArray(rows) ? rows : []).filter(function(emp) {
+        return !!(emp && emp.uid && String(emp.empNo || "").trim());
+    });
     employeeByUid = {};
     employeeByEmpNo = {};
     employeeByName = {};
