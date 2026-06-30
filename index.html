@@ -39,28 +39,34 @@
         <span class="login-brand-corner-text">TRINITY AIR SERVICE</span>
     </div>
 
-    <div class="login-card">
-        <div class="login-logo-wrap">
-            <svg viewBox="0 0 100 100" width="52" height="52">
-                <path d="M 8,14 L 92,14 L 58,26 C 54,28.5 46,28.5 42,26 Z" fill="#cfd0d2"/>
-                <path d="M 10,24 Q 22,31 35,33 C 43,33 46,50 48,90 Q 25,55 10,24" fill="#cf9388"/>
-                <path d="M 90,24 Q 78,31 65,33 C 57,33 54,50 52,90 Q 75,55 90,24" fill="#d4c297"/>
-            </svg>
-            <div class="login-brand">TRINITY AIR SERVICE</div>
-        </div>
+    <!-- 좌측 하단 로그인 영역 wrapper: 'Schedule Request System' 부제목
+         (.login-sub, 기존 요소를 그대로 재사용 — 새로 만들지 않음)이
+         가로형 로그인 바(.login-card) 바로 위에 오도록 세로로 묶는다. -->
+    <div class="login-bottom-left">
         <div class="login-sub">Schedule Request System</div>
 
-        <div class="input-group">
-            <label for="username">사번</label>
-            <input type="text" id="username" placeholder="사번을 입력하세요"
-                   onkeydown="if(event.key==='Enter'){document.getElementById('password').focus();}">
+        <div class="login-card">
+            <div class="login-logo-wrap">
+                <svg viewBox="0 0 100 100" width="52" height="52">
+                    <path d="M 8,14 L 92,14 L 58,26 C 54,28.5 46,28.5 42,26 Z" fill="#cfd0d2"/>
+                    <path d="M 10,24 Q 22,31 35,33 C 43,33 46,50 48,90 Q 25,55 10,24" fill="#cf9388"/>
+                    <path d="M 90,24 Q 78,31 65,33 C 57,33 54,50 52,90 Q 75,55 90,24" fill="#d4c297"/>
+                </svg>
+                <div class="login-brand">TRINITY AIR SERVICE</div>
+            </div>
+
+            <div class="input-group">
+                <label for="username">사번</label>
+                <input type="text" id="username" placeholder="사번을 입력하세요"
+                       onkeydown="if(event.key==='Enter'){document.getElementById('password').focus();}">
+            </div>
+            <div class="input-group">
+                <label for="password">비밀번호</label>
+                <input type="password" id="password" placeholder="비밀번호를 입력하세요"
+                       onkeydown="if(event.key==='Enter'){checkAuth();}">
+            </div>
+            <button type="button" class="submit-btn" onclick="checkAuth()">로그인</button>
         </div>
-        <div class="input-group">
-            <label for="password">비밀번호</label>
-            <input type="password" id="password" placeholder="비밀번호를 입력하세요"
-                   onkeydown="if(event.key==='Enter'){checkAuth();}">
-        </div>
-        <button type="button" class="submit-btn" onclick="checkAuth()">로그인</button>
     </div>
 </div>
 
