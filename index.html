@@ -144,30 +144,23 @@
                 </div>
             </div>
 
-            <!-- 빠른 조회 (관리자) -->
+            <!-- 빠른 조회 (관리자) — 지점/직원 선택 제거 (관리자는 이미 자기 지점으로 로그인) -->
             <div class="filter-bar" id="adminFilterBar" style="display:none;">
-                <label>지점</label>
-                <select id="filterDept"><option value="">전체 지점</option></select>
-                <label>직원</label>
-                <select id="filterEmp"><option value="">전체 직원</option></select>
-                <button class="btn-primary" onclick="refreshData()">조회</button>
-                <div class="spacer"></div>
                 <div class="nav-arrows">
                     <button class="btn-today" onclick="goToToday()">오늘</button>
                     <button class="btn-arrow" onclick="prevMonth()">&#8249;</button>
                     <button class="btn-arrow" onclick="nextMonth()">&#8250;</button>
                 </div>
-                <button class="btn-view" onclick="refreshData()">월간 보기</button>
+                <div class="spacer"></div>
             </div>
 
             <!-- 직원용 빠른 조회: 달력만, 새로고침 버튼만 -->
-            <div class="filter-bar" id="staffFilterBar" style="display:none;">
-                <!-- 직원 전용 신청 버튼들 -->
-                <button id="toggleModeBtn" class="btn btn-primary-sm" onclick="toggleApplicationMode()" style="display:none;">휴무</button>
-                <button id="scheduleCodeApplyBtn" class="btn btn-secondary" onclick="toggleScheduleCodeMode()" style="display:none;">근무</button>
-                <button id="userResetBtn" class="btn btn-warning" onclick="resetMyRequests()" style="display:none;">내 신청 초기화</button>
-                <div class="spacer"></div>
-                <button class="btn btn-success" onclick="refreshData()">🔄 새로고침</button>
+            <div class="filter-bar staff-action-bar" id="staffFilterBar" style="display:none;">
+                <!-- 직원 전용 신청 버튼들 (휴무/근무/초기화/새로고침 — 한 줄 고정) -->
+                <button id="toggleModeBtn" class="btn btn-primary-sm staff-btn" onclick="toggleApplicationMode()" style="display:none;">휴무</button>
+                <button id="scheduleCodeApplyBtn" class="btn btn-secondary staff-btn" onclick="toggleScheduleCodeMode()" style="display:none;">근무</button>
+                <button id="userResetBtn" class="btn btn-warning staff-btn" onclick="resetMyRequests()" style="display:none;">초기화</button>
+                <button class="btn btn-success staff-btn" onclick="refreshData()" style="margin-left:auto;">새로고침</button>
             </div>
 
             <!-- 관리자용 추가 버튼 -->
@@ -476,7 +469,7 @@
                         <div class="form-row">
                             <input type="file" id="annualExcelUpload" accept=".xlsx,.xls" style="display:none;">
                             <button class="btn btn-primary-sm" onclick="triggerAnnualUpload()">📤 업로드</button>
-                            <button class="btn btn-secondary" onclick="downloadAnnualTemplate()">양식 다운로드</button>
+                            <button class="btn btn-secondary" id="btnAnnualTemplateInEmpPage" onclick="downloadAnnualTemplate()" style="display:none;">양식 다운로드</button>
                         </div>
                     </div>
                 </div>
@@ -619,13 +612,13 @@
                     </div>
                 </div>
 
-                <!-- 연차 양식 다운로드 -->
-                <div class="feature-card">
+                <!-- 연차 양식 다운로드 (슈퍼관리자 전용) -->
+                <div class="feature-card" id="cardDownloadAnnualTemplate" style="display:none;">
                     <div class="feature-card-header">
                         <div class="feature-icon blue" style="background:#eff6ff;">📄</div>
                         <div>
                             <div class="feature-card-title">연차 양식 다운로드</div>
-                            <div class="feature-card-desc">연차 업로드용 엑셀 양식을 다운로드합니다.</div>
+                            <div class="feature-card-desc">연차 업로드용 엑셀 양식을 다운로드합니다. (슈퍼관리자)</div>
                         </div>
                     </div>
                     <div class="feature-card-body">
@@ -704,13 +697,13 @@
                     </div>
                 </div>
 
-                <!-- 관리자 비밀번호 초기화 -->
+                <!-- 지점별 신청 현황 (관리자 비밀번호 초기화 기능 아님 — 신청 현황 요약 테이블) -->
                 <div class="feature-card">
                     <div class="feature-card-header">
-                        <div class="feature-icon" style="background:#fef2f2;">🔑</div>
+                        <div class="feature-icon" style="background:#eff6ff;">📊</div>
                         <div>
-                            <div class="feature-card-title">관리자 비밀번호 초기화</div>
-                            <div class="feature-card-desc">지점 관리자 계정 비밀번호를 초기화합니다.</div>
+                            <div class="feature-card-title">지점별 신청 현황</div>
+                            <div class="feature-card-desc">이번 달 지점별 신청 현황을 요약해서 보여줍니다.</div>
                         </div>
                     </div>
                     <div class="feature-card-body">
@@ -718,17 +711,31 @@
                     </div>
                 </div>
 
-                <!-- 지점별 비밀번호 초기화 -->
+                <!-- 비밀번호 초기화 (직원/관리자 계정 모두 가능 — 유일한 초기화 기능) -->
                 <div class="feature-card">
                     <div class="feature-card-header">
                         <div class="feature-icon" style="background:#fffbeb;">🔒</div>
                         <div>
-                            <div class="feature-card-title">지점별 비밀번호 초기화</div>
-                            <div class="feature-card-desc">지점 전체 직원 비밀번호를 초기화합니다.</div>
+                            <div class="feature-card-title">비밀번호 초기화</div>
+                            <div class="feature-card-desc">사번 또는 관리자ID로 직원/관리자 비밀번호를 초기화합니다.</div>
                         </div>
                     </div>
                     <div class="feature-card-body">
                         <div id="superResetPanelContent" style="overflow-x:auto; font-size:13px; color:var(--text-sub); max-height:260px; overflow-y:auto;">로딩중...</div>
+                    </div>
+                </div>
+
+                <!-- 연차 양식 다운로드 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon blue" style="background:#eff6ff;">📄</div>
+                        <div>
+                            <div class="feature-card-title">연차 양식 다운로드</div>
+                            <div class="feature-card-desc">연차 업로드용 엑셀 양식을 다운로드합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <button class="btn btn-primary-sm btn-full" onclick="downloadAnnualTemplate()">📥 연차 양식 다운로드</button>
                     </div>
                 </div>
 
@@ -844,6 +851,13 @@ function showPage(page) {
     var drawerBtn = document.getElementById('drawerBtn-' + page);
     if (navBtn) navBtn.classList.add('active');
     if (drawerBtn) drawerBtn.classList.add('active');
+
+    // 설정 페이지를 열 때마다 신청 오픈/마감 input 값을 DB 기준으로 다시 보정
+    // (저장은 정상이었지만 화면 전환 타이밍에 따라 빈 값으로 보일 수 있었던
+    //  케이스를 방지하기 위한 방어적 재동기화)
+    if (page === 'settings' && typeof window._fixDateTimeInputs === 'function') {
+        setTimeout(window._fixDateTimeInputs, 30);
+    }
 }
 
 // ── 모바일 햄버거 ──────────────────────────────────────
@@ -855,30 +869,37 @@ function closeMobileNav() {
 }
 
 // ── 달력 이전/다음 월 (관리자 전용 UI에서만 노출) ─────
+// ⚠️ targetMonth select 의 <option value> 는 "01".."12" 형식의
+//    zero-padded 문자열이다. 패딩 없이 대입(예: "7")하면 일치하는
+//    옵션이 없어 선택이 풀리고 "0월"처럼 보이는 버그가 있었음 → 수정.
+function _pad2(n) { return (n < 10 ? "0" : "") + n; }
+
 function prevMonth() {
     var ym = document.getElementById('targetYear');
     var mm = document.getElementById('targetMonth');
     if (!ym || !mm) return;
-    var y = parseInt(ym.value), m = parseInt(mm.value);
+    var y = parseInt(ym.value, 10), m = parseInt(mm.value, 10);
     m--; if (m < 1) { m = 12; y--; }
-    ym.value = y; mm.value = m;
+    ym.value = String(y);
+    mm.value = _pad2(m);
     if (typeof saveYearMonthConfig === 'function') saveYearMonthConfig();
 }
 function nextMonth() {
     var ym = document.getElementById('targetYear');
     var mm = document.getElementById('targetMonth');
     if (!ym || !mm) return;
-    var y = parseInt(ym.value), m = parseInt(mm.value);
+    var y = parseInt(ym.value, 10), m = parseInt(mm.value, 10);
     m++; if (m > 12) { m = 1; y++; }
-    ym.value = y; mm.value = m;
+    ym.value = String(y);
+    mm.value = _pad2(m);
     if (typeof saveYearMonthConfig === 'function') saveYearMonthConfig();
 }
 function goToToday() {
     var ym = document.getElementById('targetYear');
     var mm = document.getElementById('targetMonth');
     var now = new Date();
-    if (ym) ym.value = now.getFullYear();
-    if (mm) mm.value = now.getMonth() + 1;
+    if (ym) ym.value = String(now.getFullYear());
+    if (mm) mm.value = _pad2(now.getMonth() + 1);
     if (typeof saveYearMonthConfig === 'function') saveYearMonthConfig();
 }
 
@@ -1047,9 +1068,13 @@ function applyRoleBasedUI() {
             if (dashBody2) dashBody2.style.gridTemplateColumns = '';
         }
 
-        // ── 직원 엑셀 양식 다운로드는 슈퍼관리자만 (일반 관리자는 숨김) ──
+        // ── 직원 엑셀 양식 다운로드 / 연차 양식 다운로드는 슈퍼관리자만 ──
         var tmplCard = document.getElementById('cardDownloadEmpTemplate');
+        var annualTmplCard = document.getElementById('cardDownloadAnnualTemplate');
+        var annualTmplBtnInEmpPage = document.getElementById('btnAnnualTemplateInEmpPage');
         if (tmplCard) tmplCard.style.display = 'none'; // 관리자/직원 모두 비노출 (슈퍼관리자는 별도 페이지 사용)
+        if (annualTmplCard) annualTmplCard.style.display = 'none';
+        if (annualTmplBtnInEmpPage) annualTmplBtnInEmpPage.style.display = 'none';
 
         showPage('dashboard');
 
