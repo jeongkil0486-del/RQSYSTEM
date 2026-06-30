@@ -250,7 +250,7 @@ function drawLiveGroupBoards() {
         html += "</div></div>";
     });
 
-    html += "<button type='button' class='config-save-btn' style='margin-top:6px;' onclick='saveAllGroupsFromInputs()'>저장</button>";
+    html += "<button type='button' class='btn btn-primary-sm' style='margin-top:10px; width:100%;' onclick='saveAllGroupsFromInputs()'>저장</button>";
     board.innerHTML = html;
 
     board.querySelectorAll(".group-drag-emp").forEach(function(el) {
