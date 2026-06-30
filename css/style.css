@@ -479,6 +479,13 @@ body {
   white-space: nowrap;
   min-width: auto !important;
 }
+/* 관리자 액션바 안에 자연스럽게 포함되는 달력 월 이동 그룹
+   (스케줄/설정 전체초기화 버튼들과 살짝 구분되도록 좌측에 여백+구분선) */
+.month-nav-inline {
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+}
 .filter-bar .btn-arrow {
   width: 30px; height: 30px;
   display: flex; align-items: center; justify-content: center;
@@ -861,6 +868,22 @@ body {
   box-shadow: 0 0 0 2px rgba(37,99,235,.1);
 }
 .form-input.small { flex: 0 0 64px; min-width: 64px; text-align: center; }
+/* 좁은 카드(예: 특정일 제한) 안에서 input 2개 + 버튼이 한 줄에
+   최대한 들어가도록 더 작게 압축한 변형 */
+.tiny-num-input {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  text-align: center;
+  padding: 6px 4px;
+  font-size: 12.5px;
+}
+.btn-compact {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-size: 12.5px;
+}
+.form-row-compact { gap: 5px; }
 .form-select {
   padding: 7px 10px;
   border: 1px solid var(--border);
@@ -1109,6 +1132,8 @@ body {
   .filter-bar input { font-size: 12px; }
   .filter-bar.staff-action-bar { flex-wrap: nowrap !important; gap: 6px; padding: 10px 12px; }
   .staff-btn { font-size: 11.5px; padding: 7px 10px; }
+  #adminActionBar { flex-wrap: wrap; gap: 8px; }
+  .month-nav-inline { margin-left: 0; padding-left: 0; border-left: none; }
   .calendar-month-title { font-size: 14px; }
   .wm-period { font-size: 14px; }
   .wm-nowrap { font-size: 10.5px; }
