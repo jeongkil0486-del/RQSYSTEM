@@ -892,50 +892,64 @@ function loadAdminCalendarData() {
 }
 
 // ── 대시보드 통계 카드 실데이터 연결 ──────────────────────────────────────────
-// 오늘 신청 건수 / 이번달 신청 건수 / 전체 직원 수는 이미 클라이언트에 로드된
-// adminViewCache, deptEmployees 로 정확히 계산 가능하므로 그대로 연결한다.
-// "승인대기"와 "알림"은 이 시스템에 승인 워크플로우/알림 기능 자체가 없으므로
-// 임의의 숫자를 채우지 않고 "—"로 둔다 (거짓 데이터를 보여주지 않기 위함).
+// 5개 카드: 전체 직원 / 월 휴무 제한 / 신청 기간 / 현재 지점 / 신청 상태
+// 모두 이미 존재하는 설정값·세션 정보로 정확히 계산하며, 의미 없는
+// 추측 수치(예: 이전의 "월 한도 약 N건 기준")는 전혀 사용하지 않는다.
+function _shortMonthDay(val) {
+    if (!val) return null;
+    var d = (typeof val === "number") ? new Date(val) : new Date(val);
+    if (isNaN(d.getTime())) return null;
+    var pad = function(n) { return (n < 10 ? "0" : "") + n; };
+    return pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+}
+
 function updateDashboardStatCards() {
-    var tm = getTargetYearMonth();
-    var todayDate = new Date();
-    var isCurrentMonth = (todayDate.getFullYear() === parseInt(tm.year, 10)) &&
-                          (todayDate.getMonth() + 1 === parseInt(tm.month, 10));
-    var todayDay = String(todayDate.getDate());
-
-    var monthCount = 0;
-    var todayCount = 0;
-    Object.keys(adminViewCache || {}).forEach(function(uid) {
-        var days = adminViewCache[uid] || {};
-        Object.keys(days).forEach(function(dayKey) {
-            if (!days[dayKey]) return;
-            monthCount++;
-            if (isCurrentMonth && String(parseInt(dayKey, 10)) === todayDay) todayCount++;
-        });
-    });
-
-    var configDayMax = parseInt(getFirebaseItem("rq_config_day_max", "10"), 10);
-    var totalDaysInMonth = new Date(parseInt(tm.year, 10), parseInt(tm.month, 10), 0).getDate();
-    var monthMax = configDayMax * totalDaysInMonth;
-
-    var elToday      = document.getElementById("statToday");
-    var elTodayMeta   = document.getElementById("statTodayMeta");
-    var elMonth       = document.getElementById("statMonth");
-    var elMonthMeta   = document.getElementById("statMonthMeta");
-    var elEmployees   = document.getElementById("statEmployees");
-    var elPending     = document.getElementById("statPending");
-    var elAlerts      = document.getElementById("statAlerts");
-
-    if (elToday) elToday.innerText = todayCount;
-    if (elTodayMeta) elTodayMeta.innerText = "일별 신청 한도 " + configDayMax + "명 기준";
-    if (elMonth) elMonth.innerText = monthCount;
-    if (elMonthMeta) elMonthMeta.innerText = "월 한도 약 " + monthMax + "건 기준";
+    // 1) 전체 직원
+    var elEmployees = document.getElementById("statEmployees");
     if (elEmployees) elEmployees.innerText = (deptEmployees || []).length;
 
-    // 승인대기 / 알림: 이 시스템에는 해당 기능(워크플로우)이 없어 실데이터가
-    // 존재하지 않는다. 추측치를 채우지 않고 명확히 "—"로 표시한다.
-    if (elPending) elPending.innerText = "—";
-    if (elAlerts)  elAlerts.innerText  = "—";
+    // 2) 월 휴무 제한 (직원 1인당 월 최대 휴무 신청 횟수 — 설정 페이지의 값과 동일)
+    var elMonthlyLimit = document.getElementById("statMonthlyLimit");
+    if (elMonthlyLimit) {
+        var globalUserMax = getFirebaseItem("rq_config_global_user_max", "4");
+        elMonthlyLimit.innerText = globalUserMax + "회";
+    }
+
+    // 3) 신청 기간 (오픈 ~ 마감, 설정되지 않은 쪽은 생략)
+    var elPeriod = document.getElementById("statPeriod");
+    var openAtRaw  = getFirebaseItem("rq_allowed_start_datetime", null);
+    var closeAtRaw = getFirebaseItem("rq_allowed_end_datetime", null);
+    var openShort  = _shortMonthDay(openAtRaw);
+    var closeShort = _shortMonthDay(closeAtRaw);
+    if (elPeriod) {
+        if (openShort && closeShort) elPeriod.innerText = openShort + " ~ " + closeShort;
+        else if (openShort) elPeriod.innerText = openShort + " ~";
+        else if (closeShort) elPeriod.innerText = "~ " + closeShort;
+        else elPeriod.innerText = "설정 안 됨";
+    }
+
+    // 4) 현재 지점
+    var elDept = document.getElementById("statDept");
+    if (elDept) elDept.innerText = currentDept || "—";
+
+    // 5) 신청 상태: 신청 가능 / 신청 마감 / 신청 예정 (색상으로만 구분)
+    var elStatus = document.getElementById("statApplyStatus");
+    if (elStatus) {
+        var now = Date.now();
+        var openTs  = openAtRaw  ? new Date(openAtRaw).getTime()  : null;
+        var closeTs = closeAtRaw ? new Date(closeAtRaw).getTime() : null;
+        var statusText, statusClass;
+
+        if (closeTs && now > closeTs) {
+            statusText = "신청 마감"; statusClass = "status-closed";
+        } else if (openTs && now < openTs) {
+            statusText = "신청 예정"; statusClass = "status-upcoming";
+        } else {
+            statusText = "신청 가능"; statusClass = "status-open";
+        }
+        elStatus.innerText = statusText;
+        elStatus.className = "stat-value stat-value-sm " + statusClass;
+    }
 }
 
 window.saveDateTimeConfig = saveDateTimeConfig;
