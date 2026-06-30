@@ -67,7 +67,7 @@ function drawAllowedUsersBoard() {
 
     var html = "<strong style='color:#fff;font-size:13px;'>직원 목록 (" + filteredEmployees.length + " / " + visibleEmployees.length + "명)</strong>";
     html += "<div style='font-size:10px;color:#bdc3c7;margin:3px 0 7px;'>드래그로 순서 변경 → 스케줄 다운로드 순서에 반영 (검색 중에는 순서 변경이 비활성화됩니다)</div>";
-    html += "<div id='empDragList' style='display:flex;flex-wrap:wrap;gap:5px;'>";
+    html += "<div id='empDragList' class='emp-list-grid'>";
     filteredEmployees.forEach(function(emp) {
         var idx = visibleEmployees.indexOf(emp);
         html += "<span" + (term ? "" : " draggable='true'") + " data-empidx='" + idx + "'"

@@ -385,15 +385,41 @@ function downloadAnnualTemplate() {
     XLSX.writeFile(wb, "annual_quota_template.xlsx");
 }
 
+var annualStatusSearchTerm = "";
+
+// ── 연차 현황 검색(사번/이름) — UI 필터링만, 기존 데이터/로직은 그대로 ─────────
+function filterAnnualStatusBoard(term) {
+    annualStatusSearchTerm = String(term || "").trim().toLowerCase();
+    drawAnnualStatusBoard();
+}
+
 function drawAnnualStatusBoard() {
     var container = document.getElementById("annualStatusTooltipBoard");
     if (!container) return;
 
+    // 검색 입력칸은 최초 1회만 생성하고, 이후에는 목록 부분만 다시 그린다.
+    // (매번 전체를 다시 그리면 입력 중 포커스/커서가 끊기므로 분리)
+    var listEl = document.getElementById("annualStatusTooltipBoardList");
+    if (!listEl) {
+        container.innerHTML =
+            "<div class='emp-search-row'><input type='text' id='annualStatusSearchInput' class='form-input' placeholder='사번 또는 이름 검색' style='background:#fff;color:#222;'></div>" +
+            "<div id='annualStatusTooltipBoardList'></div>";
+        listEl = document.getElementById("annualStatusTooltipBoardList");
+        var searchInput = document.getElementById("annualStatusSearchInput");
+        if (searchInput) {
+            searchInput.value = annualStatusSearchTerm;
+            searchInput.addEventListener("input", function() {
+                filterAnnualStatusBoard(this.value);
+            });
+        }
+    }
+
     var userLimits = liveDBData["_userLimits"] || {};
     var annualMax  = parseInt(getFirebaseItem("rq_config_annual_user_max", "15"), 10);
+    var term = annualStatusSearchTerm;
     var html = "<strong style='color:#fff;font-size:13px;'>연차 현황</strong>"
         + "<div style='font-size:11px;color:#bdc3c7;margin:4px 0 8px;'>할당/사용/잔여</div>"
-        + "<div style='display:flex;flex-wrap:wrap;gap:5px;'>";
+        + "<div class='annual-list-grid'>";
 
     var uidSet = {};
     deptEmployees.forEach(function(emp) { uidSet[emp.uid] = true; });
@@ -405,6 +431,12 @@ function drawAnnualStatusBoard() {
         var emp = employeeByUid[uid] || {};
         var empNo = String(emp.empNo || "").trim();
         if (!empNo) return;
+
+        if (term) {
+            var matches = empNo.toLowerCase().indexOf(term) !== -1 ||
+                          String(emp.name || "").toLowerCase().indexOf(term) !== -1;
+            if (!matches) return;
+        }
 
         var ul    = userLimits[uid] || {};
         var quota = ul.annualQuota != null ? parseInt(ul.annualQuota, 10) : annualMax;
@@ -428,11 +460,11 @@ function drawAnnualStatusBoard() {
     });
 
     if (!hasAny) {
-        html += "<span style='color:#aaa;font-style:italic;font-size:12px;'>연차 데이터 없음</span>";
+        html += "<span style='color:#aaa;font-style:italic;font-size:12px;'>" + (term ? "검색 결과가 없습니다." : "연차 데이터 없음") + "</span>";
     }
 
     html += "</div>";
-    container.innerHTML = html;
+    listEl.innerHTML = html;
 }
 
 function deleteAnnualQuotaFromBoard(event, empNo) {
