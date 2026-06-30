@@ -314,6 +314,54 @@ function refreshData() {
     }
 }
 
+// ── 상단 "나의 현황" 요약(휴무/연차/근무코드 카운터)만 다시 계산해서 갱신 ──────────
+// firebase-store.js 의 _updateMyUserCells() (userRequests/{uid}/{yyyymm} 실시간
+// 리스너) 에서 호출된다. 신청/취소 시 달력 셀은 즉시 갱신되지만, 상단 요약 카운터는
+// refreshData() 전체를 다시 돌리지 않으면 갱신되지 않아 "새로고침해야만 반영되는"
+// 문제가 있었음 — 이 함수가 그 누락된 갱신 경로를 담당한다. (refreshData() 의
+// 요약 계산 로직과 동일하게 유지)
+function _updateMyStatusSummary(tm) {
+    if (isAdmin || isSuperAdmin) return;
+    var welcomeEl = document.getElementById("welcomeMessage");
+    if (!welcomeEl) return;
+    if (!tm) tm = getTargetYearMonth();
+
+    var savedConfig    = getFirebaseItem("rq_allowed_start_datetime", null);
+    var savedEndConfig = getFirebaseItem("rq_allowed_end_datetime", null);
+    var noticeStr      = "언제나 신청 가능";
+    if (savedConfig && savedEndConfig) {
+        noticeStr = formatDateTimeString(savedConfig) + " ~ " + formatDateTimeString(savedEndConfig);
+    } else if (savedConfig) {
+        noticeStr = formatDateTimeString(savedConfig) + " 부터 신청 가능";
+    } else if (savedEndConfig) {
+        noticeStr = formatDateTimeString(savedEndConfig) + " 까지 신청 가능";
+    }
+
+    var myCurrentCount = getMyTotalCount();
+    var myAnnualCount  = getMyAnnualCount();
+    var customLimitStr = getFirebaseItem("rq_limit_uid_" + currentUid, null);
+    var globalUserMax  = parseInt(getFirebaseItem("rq_config_global_user_max", "4"));
+    var personalQuota  = getAnnualQuota(currentUser);
+    var annualMaxLimit = personalQuota !== null ? personalQuota : parseInt(getFirebaseItem("rq_config_annual_user_max", "15"));
+    var maxLimit       = customLimitStr !== null ? parseInt(customLimitStr) : globalUserMax;
+
+    var scList = getScheduleCodeList();
+    var scInfoStr = "";
+    if (scList.length > 0) {
+        scInfoStr = "<br><span class='wm-row'><span class='wm-label'>근무 코드</span> " + scList.map(function(c) {
+            return c.name + ": " + getMyScheduleCodeCount(c.name) + "/" + c.limit + "개";
+        }).join(" | ") + "</span>";
+    }
+
+    welcomeEl.innerHTML =
+        "<span class='wm-period'>" + tm.label + "</span><br>" +
+        "<span style='font-size:13px;color:#007bff;font-weight:bold;'>[" + currentUser + "]님 로그인함 (날짜 클릭 시 즉시 신청/취소)<br>" +
+        "<span class='wm-row'><span class='wm-label'>휴무</span> <mark style='background:#e6f2ff;color:#0056b3;font-weight:bold;padding:2px 4px;border-radius:3px;'>" + myCurrentCount + " / " + maxLimit + "</mark>" +
+        " | 연차 <mark style='background:#e6f4ea;color:#137333;font-weight:bold;padding:2px 4px;border-radius:3px;'>" + myAnnualCount + " / " + annualMaxLimit + "</mark>" +
+        " (※ 청원 무제한)</span>" + scInfoStr + "<br>" +
+        "<span class='wm-row wm-nowrap'><span class='wm-label'>기간</span> " + noticeStr + "</span></span>";
+}
+
 // ── 내 신청 전체 초기화 (직원용) ──────────────────────────────────────────────
 function resetMyRequests() {
     if (isAdmin || isSuperAdmin) return;
