@@ -120,8 +120,9 @@ function updateLimitTooltipBoard() {
     Object.keys(liveDBData).forEach(function(key) {
         if (key.startsWith("rq_limit_uid_")) {
             var uid = key.replace("rq_limit_uid_", "");
-            var emp = employeeByUid[uid] || {};
-            limitedUsers.push({ uid: uid, empNo: emp.empNo || uid, name: emp.name || "삭제된 직원", count: liveDBData[key] });
+            var emp = employeeByUid[uid];
+            if (!emp) return; // 매칭되지 않는(삭제된) 직원 — 화면에 표시하지 않고 무시 (다음 저장/삭제 시 자연히 정리됨)
+            limitedUsers.push({ uid: uid, empNo: emp.empNo || uid, name: emp.name, count: liveDBData[key] });
         } else if (key.startsWith("rq_special_limit_" + tm.fullStr + "_")) {
             specialDays.push({ day: key.replace("rq_special_limit_" + tm.fullStr + "_", ""), count: liveDBData[key] });
         }

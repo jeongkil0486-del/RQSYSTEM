@@ -455,7 +455,7 @@ function drawAnnualStatusBoard() {
         var txColor  = remain <= 0 ? "#ff8a80"               : remain <= 2 ? "#ffcc02"               : "#a5d6a7";
 
         html += "<span style='background:" + bgColor + ";border:1px solid " + bdColor + ";border-radius:5px;"
-            + "padding:4px 8px;font-size:12px;color:" + txColor + ";font-weight:bold;white-space:nowrap;'>"
+            + "padding:4px 8px;font-size:12px;color:" + txColor + ";font-weight:bold;white-space:normal;word-break:break-word;'>"
             + label + " " + quota + "/" + used + "/" + remain + "</span>";
     });
 

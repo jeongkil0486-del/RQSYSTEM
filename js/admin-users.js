@@ -73,7 +73,7 @@ function drawAllowedUsersBoard() {
         html += "<span" + (term ? "" : " draggable='true'") + " data-empidx='" + idx + "'"
               + " style='background:rgba(46,204,113,0.2);border:1px solid #2ecc71;"
               + "border-radius:5px;padding:4px 8px;font-size:12px;color:#2ecc71;"
-              + "cursor:" + (term ? "default" : "grab") + ";user-select:none;white-space:nowrap;'"
+              + "cursor:" + (term ? "default" : "grab") + ";user-select:none;white-space:normal;word-break:break-word;'"
               + ">"
               + emp.name + " (" + emp.empNo + ")</span>";
     });
