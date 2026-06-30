@@ -255,11 +255,9 @@
                     <div class="feature-card-body">
                         <div class="form-row">
                             <label class="form-label">현황</label>
-                            <div style="position:relative; flex:1;">
-                                <span id="specialDayTriggerBtn" style="font-size:12px; color:var(--accent); cursor:pointer; font-weight:600;" onclick="toggleSpecialDayBoard(event)">목록 보기 ▾</span>
-                                <div class="custom-floating-tooltip" id="specialDayTooltipBoard"></div>
-                            </div>
+                            <span id="specialDayTriggerBtn" style="font-size:12px; color:var(--accent); cursor:pointer; font-weight:600;" onclick="toggleSpecialDayBoard(event)">목록 보기 ▾</span>
                         </div>
+                        <div class="custom-floating-tooltip" id="specialDayTooltipBoard"></div>
                         <div class="form-row form-row-nowrap form-row-compact">
                             <input type="number" id="specialDayInput" min="1" max="31" class="form-input tiny-num-input" placeholder="일" title="날짜 (일)">
                             <input type="number" id="specialDayLimit" min="0" max="40" class="form-input tiny-num-input" placeholder="명" title="제한 인원">
@@ -298,11 +296,9 @@
                     <div class="feature-card-body">
                         <div class="form-row">
                             <label class="form-label">현황</label>
-                            <div style="position:relative; flex:1;">
-                                <span id="limitListTriggerBtn" style="font-size:12px; color:var(--accent); cursor:pointer; font-weight:600;" onclick="toggleLimitListBoard(event)">목록 보기 ▾</span>
-                                <div class="custom-floating-tooltip" id="limitListTooltipBoard"></div>
-                            </div>
+                            <span id="limitListTriggerBtn" style="font-size:12px; color:var(--accent); cursor:pointer; font-weight:600;" onclick="toggleLimitListBoard(event)">목록 보기 ▾</span>
                         </div>
+                        <div class="custom-floating-tooltip" id="limitListTooltipBoard"></div>
                         <div class="form-row">
                             <label class="form-label">사번</label>
                             <input type="text" id="limitEmpName" placeholder="사번" class="form-input" style="max-width:100px;">
@@ -325,11 +321,9 @@
                     <div class="feature-card-body">
                         <div class="form-row">
                             <label class="form-label">조 편성</label>
-                            <div style="position:relative; flex:1;">
-                                <span id="groupPopupTriggerBtn" style="font-size:12px; color:var(--accent); cursor:pointer; font-weight:600;" onclick="toggleGroupBoard(event)">조 편성 보기 ▾</span>
-                                <div class="custom-floating-tooltip" id="groupListTooltipBoard" style="min-width:380px;"></div>
-                            </div>
+                            <span id="groupPopupTriggerBtn" style="font-size:12px; color:var(--accent); cursor:pointer; font-weight:600;" onclick="toggleGroupBoard(event)">조 편성 보기 ▾</span>
                         </div>
+                        <div class="custom-floating-tooltip" id="groupListTooltipBoard"></div>
                         <div class="form-row group-inputs">
                             <span class="group-label gl-a">A조</span>
                             <input type="number" id="groupMaxConfigA" min="1" max="40" class="form-input small small-num-input" placeholder="2">
@@ -358,11 +352,9 @@
                     <div class="feature-card-body">
                         <div class="form-row">
                             <label class="form-label">현황</label>
-                            <div style="position:relative; flex:1;">
-                                <span id="scGroupLimitListTrigger" style="font-size:12px; color:var(--accent); cursor:pointer; font-weight:600;" onclick="toggleScGroupLimitBoard(event)">목록 보기 ▾</span>
-                                <div class="custom-floating-tooltip" id="scGroupLimitTooltipBoard" style="min-width:360px;"></div>
-                            </div>
+                            <span id="scGroupLimitListTrigger" style="font-size:12px; color:var(--accent); cursor:pointer; font-weight:600;" onclick="toggleScGroupLimitBoard(event)">목록 보기 ▾</span>
                         </div>
+                        <div class="custom-floating-tooltip" id="scGroupLimitTooltipBoard"></div>
                         <div class="form-row">
                             <label class="form-label">코드</label>
                             <select id="scGroupLimitCodeSelect" class="form-select" style="width:90px;">
@@ -398,7 +390,7 @@
 
             <div class="cards-grid">
 
-                <!-- 직원 생성 -->
+                <!-- 직원 생성 (항상 펼쳐진 상태 — 목록과 분리) -->
                 <div class="feature-card">
                     <div class="feature-card-header">
                         <div class="feature-icon blue" style="background:#eff6ff;">➕</div>
@@ -409,15 +401,30 @@
                     </div>
                     <div class="feature-card-body">
                         <div class="form-row">
-                            <label class="form-label">사번</label>
-                            <div style="position:relative; flex:1;">
-                                <span id="idPopupTriggerBtn" style="font-size:12px; color:var(--accent); cursor:pointer; font-weight:600;" onclick="toggleAllowedUsersBoard(event)">기존 직원 목록 ▾</span>
-                                <div class="custom-floating-tooltip" id="allowedUsersTooltipBoard" style="min-width:320px;"></div>
-                            </div>
-                        </div>
-                        <div class="form-row">
                             <input type="text" id="manageIdInput" placeholder="사번을 입력하세요" class="form-input">
                             <button class="btn btn-primary-sm" onclick="addAllowedUser()" title="사번 입력 후 클릭 → 이름/권한/비밀번호 입력 팝업">생성</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 기존 직원 관리 (Expand Card — 목록만 펼쳐짐, 사번/이름 검색 지원) -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon blue" style="background:#eff6ff;">📋</div>
+                        <div>
+                            <div class="feature-card-title">기존 직원 관리</div>
+                            <div class="feature-card-desc">등록된 직원 목록을 확인하고 순서를 변경합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div class="form-row">
+                            <span id="idPopupTriggerBtn" style="font-size:12px; color:var(--accent); cursor:pointer; font-weight:600;" onclick="toggleAllowedUsersBoard(event)">기존 직원 목록 ▾</span>
+                        </div>
+                        <div class="custom-floating-tooltip" id="allowedUsersTooltipBoard">
+                            <div class="emp-search-row">
+                                <input type="text" id="empSearchInput" class="form-input" placeholder="사번 또는 이름 검색" oninput="filterAllowedUsersBoard(this.value)" style="background:#fff;color:#222;">
+                            </div>
+                            <div id="allowedUsersTooltipBoardList"></div>
                         </div>
                     </div>
                 </div>
@@ -472,11 +479,9 @@
                     </div>
                     <div class="feature-card-body">
                         <div class="form-row">
-                            <div style="position:relative; flex:1;">
-                                <span id="annualStatusTrigger" style="font-size:12px; color:var(--success); cursor:pointer; font-weight:600;" onclick="toggleAnnualStatusBoard(event)">연차 현황 보기 ▾</span>
-                                <div class="custom-floating-tooltip" id="annualStatusTooltipBoard" style="min-width:380px;"></div>
-                            </div>
+                            <span id="annualStatusTrigger" style="font-size:12px; color:var(--success); cursor:pointer; font-weight:600;" onclick="toggleAnnualStatusBoard(event)">연차 현황 보기 ▾</span>
                         </div>
+                        <div class="custom-floating-tooltip" id="annualStatusTooltipBoard"></div>
                         <div class="form-row">
                             <input type="file" id="annualExcelUpload" accept=".xlsx,.xls" style="display:none;">
                             <button class="btn btn-primary-sm" onclick="triggerAnnualUpload()">📤 업로드</button>
@@ -581,11 +586,9 @@
                     </div>
                     <div class="feature-card-body">
                         <div class="form-row">
-                            <div style="position:relative; flex:1;">
-                                <span id="scheduleCodeListTrigger" style="font-size:12px; color:var(--purple); cursor:pointer; font-weight:600;" onclick="toggleScheduleCodeBoard(event)">코드 목록 보기 ▾</span>
-                                <div class="custom-floating-tooltip" id="scheduleCodeTooltipBoard" style="min-width:320px;"></div>
-                            </div>
+                            <span id="scheduleCodeListTrigger" style="font-size:12px; color:var(--purple); cursor:pointer; font-weight:600;" onclick="toggleScheduleCodeBoard(event)">코드 목록 보기 ▾</span>
                         </div>
+                        <div class="custom-floating-tooltip" id="scheduleCodeTooltipBoard"></div>
                         <div class="form-row">
                             <label class="form-label">코드</label>
                             <input type="text" id="scheduleCodeInput" placeholder="코드" class="form-input" style="max-width:100px;">
