@@ -35,6 +35,18 @@ async function getCallerProfile(uid) {
     return snap.exists() ? snap.val() : null;
 }
 
+function isPasswordChangeRequired(profile) {
+    return !!(
+        profile &&
+        (
+            profile.mustChangePassword === true ||
+            profile.mustChangePassword === "true" ||
+            profile.passwordResetRequired === true ||
+            profile.passwordResetRequired === "true"
+        )
+    );
+}
+
 /** 관리자 권한 확인. admin은 deptId 일치 필요, super_admin은 무제한 */
 async function assertAdmin(callerUid, deptId) {
     const profile = await getCallerProfile(callerUid);
@@ -426,18 +438,9 @@ exports.resetEmployeePassword = functions.runWith(RUN_OPTS).https.onCall(async (
         throw new functions.https.HttpsError("not-found", "해당 사번 없음: " + empNo);
     }
     await auth.updateUser(uid, { password: newPassword });
-    // ⚠️ 비밀번호 초기화 후에는 반드시 "최초 로그인 비밀번호 변경" 팝업이
-    //    다시 나타나야 한다 (기존 의도된 동작).
-    //    필드명 통일: 이 시스템의 정식 필드는 mustChangePassword 이며
-    //    createEmployee/bulkCreateEmployees 와 동일한 이름을 사용한다.
-    //    실제 운영 DB에서 과거 버전이 사용했던 passwordResetRequired 라는
-    //    다른 필드명이 일부 계정에 남아있는 것이 확인되어, 새로 초기화하는
-    //    시점에 레거시 필드를 false 로 정리해 두 필드가 더 이상 혼란을
-    //    주지 않도록 한다. (로그인 판단부는 호환을 위해 당분간 두 필드
-    //    모두 확인하지만, 신규/갱신 데이터는 mustChangePassword 로 수렴)
     await db.ref("users/" + uid).update({
         mustChangePassword: true,
-        passwordResetRequired: false
+        passwordResetRequired: true
     });
     return { ok: true };
 });
@@ -452,19 +455,9 @@ exports.completeInitialPasswordChange = functions.runWith(RUN_OPTS).https.onCall
 
     const profile = await getCallerProfile(uid);
     if (!profile) throw new functions.https.HttpsError("not-found", "프로필 없음");
-
-    // ⚠️ 레거시 필드 호환: passwordResetRequired=true 인 과거 데이터를 가진
-    // 계정도 정상적으로 비밀번호 변경이 진행되도록 두 필드 모두 확인한다.
-    // mustChangePassword 만 보던 기존 코드는 passwordResetRequired 만 있는
-    // 계정에서 조용히 "이미 완료됨"으로 처리해 실제로는 비밀번호가
-    // 바뀌지 않는 버그가 있었음 — 이번에 함께 수정.
-    const needsChange = profile.mustChangePassword === true || profile.mustChangePassword === "true" ||
-                        profile.passwordResetRequired === true || profile.passwordResetRequired === "true";
-    if (!needsChange) return { ok: true, alreadyCompleted: true };
+    if (!isPasswordChangeRequired(profile)) return { ok: true, alreadyCompleted: true };
 
     await auth.updateUser(uid, { password: newPassword });
-    // 두 필드 모두 false 로 정리 — 레거시 필드를 남겨두면 다음 로그인 때
-    // shouldForcePasswordChange() 가 다시 true 로 판단해 팝업이 또 뜨게 됨.
     await db.ref("users/" + uid).update({
         mustChangePassword: false,
         passwordResetRequired: false
@@ -502,7 +495,7 @@ exports.createEmployee = functions.runWith(RUN_OPTS).https.onCall(async (data, c
         legacyName: name,
         createdAt: Date.now(),
         mustChangePassword: true,
-        passwordResetRequired: false  // 레거시 필드 — 신규 계정은 처음부터 명확히 false로 시작
+        passwordResetRequired: true
     });
 
     return { ok: true, uid: userRecord.uid };
@@ -540,7 +533,7 @@ exports.bulkCreateEmployees = functions.runWith({ ...RUN_OPTS, timeoutSeconds: 3
                 legacyName: name,
                 createdAt: Date.now(),
                 mustChangePassword: true,
-                passwordResetRequired: false  // 레거시 필드 — 신규 계정은 처음부터 명확히 false로 시작
+                passwordResetRequired: true
             };
             if (recoveryEmail) profile.recoveryEmail = recoveryEmail;
             await db.ref("users/" + rec.uid).set(profile);

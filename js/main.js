@@ -134,10 +134,14 @@ function setSuperDeleteSectionVisible(visible) {
 // 가진 계정도 정상적으로 강제 변경 팝업이 뜨도록, 두 필드 중 하나라도
 // true 이면 강제 변경으로 판단한다 (마이그레이션 기간 동안의 호환 처리).
 function shouldForcePasswordChange(profile) {
-  if (!profile) return false;
-  var must = profile.mustChangePassword === true || profile.mustChangePassword === "true";
-  var legacy = profile.passwordResetRequired === true || profile.passwordResetRequired === "true";
-  return !!(must || legacy);
+  return !!(
+    profile && (
+      profile.mustChangePassword === true ||
+      profile.mustChangePassword === "true" ||
+      profile.passwordResetRequired === true ||
+      profile.passwordResetRequired === "true"
+    )
+  );
 }
 
 // ?? 吏??紐⑸줉 ????????????????????????????????????????????????????????????????
