@@ -100,34 +100,38 @@ body {
 .login-topleft-mask {
   position: absolute;
   top: 0; left: 0;
-  width: 460px;
-  height: 170px;
-  background: linear-gradient(135deg, rgba(10,16,32,0.55) 0%, rgba(10,16,32,0.40) 45%, rgba(10,16,32,0) 80%);
+  width: 560px;
+  height: 220px;
+  background:
+    radial-gradient(ellipse 420px 200px at 0% 0%, rgba(20,24,30,0.68) 0%, rgba(20,24,30,0.62) 35%, rgba(20,24,30,0.35) 65%, rgba(20,24,30,0) 100%);
   z-index: 2;
   pointer-events: none;
 }
 .login-topleft-text {
   position: absolute;
-  top: 56px; left: 64px;
+  top: 28px; left: 56px;
   z-index: 3;
   pointer-events: none;
 }
 .login-topleft-title {
-  font-family: 'Cinzel', serif;
-  font-size: 19px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 38px;
   font-weight: 700;
-  letter-spacing: 1px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
   color: #fff;
-  text-shadow: 0 1px 6px rgba(0,0,0,.5), 0 0 2px rgba(0,0,0,.4);
+  text-shadow: 0 2px 10px rgba(0,0,0,.55), 0 0 3px rgba(0,0,0,.5);
   white-space: nowrap;
+  line-height: 1.15;
 }
 .login-topleft-sub {
-  margin-top: 4px;
-  font-size: 12px;
+  margin-top: 6px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 19px;
   font-weight: 500;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
   color: #fff;
-  text-shadow: 0 1px 5px rgba(0,0,0,.5);
+  text-shadow: 0 1px 7px rgba(0,0,0,.55);
   white-space: nowrap;
 }
 
