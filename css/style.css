@@ -59,7 +59,7 @@ body {
      아래 미디어쿼리가 기존 중앙 카드 레이아웃으로 되돌린다. */
   align-items: flex-end;
   justify-content: flex-start;
-  padding: 100px 20px 100px 80px;
+  padding: 85px 20px 85px 70px;
   box-sizing: border-box;
 }
 
@@ -73,9 +73,9 @@ body {
   min-width: 100%; min-height: 100%;
   transform: translate(-50%, -50%);
   object-fit: cover;   /* 모바일 포함 어떤 화면비에서도 영상이 잘리지 않고 채워짐 */
-  /* 영상 좌상단의 'TRINITY AIR SERVICE' 문구가 잘리지 않도록 크롭
-     기준점을 좌상단 쪽으로 이동. */
-  object-position: 25% 20%;
+  /* 새 영상으로 교체되어 구도가 달라짐 — 기본 중앙 크롭으로 초기화.
+     필요 시 실제 화면에서 확인 후 비율 미세조정 권장. */
+  object-position: center center;
   z-index: 0;
   pointer-events: none;
 }
@@ -84,26 +84,31 @@ body {
 .login-bg-overlay {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0, 0, 0, 0.10);
+  background: rgba(0, 0, 0, 0.12);
   z-index: 1;
   pointer-events: none;
 }
 
-/* ─── 좌상단 고정 로고 (SONO TRINITY 스타일) ───────────────────────────────
+/* ─── 우측 하단 고정 로고 (SONO TRINITY 시안 참고) ─────────────────────────
    데스크탑에서만 표시. 모바일에서는 숨기고 카드 내부 로고
-   (.login-logo-wrap)만 보이도록 처리 (아래 모바일 미디어쿼리 참고) */
+   (.login-logo-wrap)만 보이도록 처리 (아래 모바일 미디어쿼리 참고).
+   로그인 입력 영역(좌측 하단)과 겹치지 않도록 우측 하단에 배치. */
 .login-brand-corner {
   position: absolute;
-  top: 32px; left: 40px;
+  right: 70px; bottom: 70px;
   z-index: 3;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   pointer-events: none;
+}
+.login-brand-corner svg {
+  width: 44px;
+  height: 44px;
 }
 .login-brand-corner-text {
   font-family: 'Cinzel', serif;
-  font-size: 17px;
+  font-size: 19px;
   font-weight: 700;
   letter-spacing: 1px;
   color: #fff;
@@ -111,9 +116,10 @@ body {
   white-space: nowrap;
 }
 
-/* ─── 로그인 영역 (데스크탑: 투명 레이아웃 / 모바일: 기존 카드) ───────────
+/* ─── 로그인 영역 (데스크탑: 가로형 투명 바 / 모바일: 기존 카드) ─────────
    .login-card 라는 클래스명은 유지하지만(HTML 변경 없음), 데스크탑
-   디자인은 더 이상 '카드'가 아니라 투명 레이아웃이다. */
+   디자인은 더 이상 '카드'가 아니라 [사번][비밀번호][로그인] 한 줄로
+   배치되는 투명한 가로형 바 형태이다. */
 .login-card {
   position: relative;
   z-index: 2;
@@ -124,12 +130,14 @@ body {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   padding: 0;
-  width: 320px;
+  width: auto;
   max-width: 100%;
   box-sizing: border-box;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 /* 데스크탑에서는 카드 내부 로고(.login-logo-wrap)를 숨김 — 좌상단
    고정 로고(.login-brand-corner)가 그 역할을 대신한다. */
@@ -145,10 +153,10 @@ body {
   white-space: nowrap;
 }
 .input-group {
-  margin-bottom: 14px;
-  text-align: left;
-  width: 100%;
-  max-width: none;
+  margin-bottom: 0;
+  text-align: center;
+  width: 220px;
+  max-width: 45vw;
 }
 .input-group input {
   width: 100%;
@@ -159,24 +167,24 @@ body {
   font-size: 14px;
   color: var(--text-main);
   background: rgba(255, 255, 255, 0.92);
-  text-align: left;
+  text-align: center;
   box-shadow: 0 2px 10px rgba(0,0,0,.12);
   transition: background .2s, box-shadow .2s;
   box-sizing: border-box;
 }
-/* placeholder 좌측 정렬 (SONO 스타일은 입력창 텍스트가 좌측 정렬) */
-.input-group input::placeholder { text-align: left; color: #94a3b8; }
-.input-group input::-webkit-input-placeholder { text-align: left; color: #94a3b8; }
-.input-group input::-moz-placeholder { text-align: left; color: #94a3b8; }
-.input-group input:-ms-input-placeholder { text-align: left; color: #94a3b8; }
+/* placeholder/입력값 모두 중앙 정렬 */
+.input-group input::placeholder { text-align: center; color: #94a3b8; }
+.input-group input::-webkit-input-placeholder { text-align: center; color: #94a3b8; }
+.input-group input::-moz-placeholder { text-align: center; color: #94a3b8; }
+.input-group input:-ms-input-placeholder { text-align: center; color: #94a3b8; }
 .input-group input:focus {
   outline: none;
   background: #fff;
   box-shadow: 0 0 0 3px rgba(255,255,255,.35), 0 2px 10px rgba(0,0,0,.16);
 }
 .submit-btn {
-  width: 100%;
-  max-width: none;
+  width: 130px;
+  max-width: 35vw;
   height: 48px;
   padding: 0;
   /* 영상과 잘 어울리는 짙은 네이비/차콜 단색 버튼 */
@@ -187,7 +195,8 @@ body {
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
-  margin-top: 6px;
+  margin-top: 0;
+  flex-shrink: 0;
   transition: background .2s, transform .1s;
   letter-spacing: .3px;
   box-shadow: 0 2px 10px rgba(0,0,0,.18);
@@ -1196,8 +1205,12 @@ body {
   /* 오버레이도 모바일에서는 기존 가독성 위주 톤으로 살짝 더 어둡게 */
   .login-bg-overlay { background: rgba(10, 16, 32, 0.30); }
 
-  /* ── 카드 디자인 복원 ── */
+  /* ── 카드 디자인 복원 (가로형 → 세로형 복귀 포함) ── */
   .login-card {
+    flex-direction: column;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0;
     background: rgba(255, 255, 255, 0.92);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
@@ -1207,7 +1220,6 @@ body {
     width: 100%;
     max-width: 380px;
     box-shadow: 0 8px 28px rgba(10, 16, 32, 0.18);
-    align-items: center;
   }
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     .login-card { background: rgba(255, 255, 255, 0.96); }
@@ -1284,6 +1296,7 @@ body {
     box-shadow: 0 0 0 3px rgba(37,99,235,.12);
   }
   .submit-btn {
+    width: 100%;
     height: auto;
     padding: 13px;
     background: var(--accent);
