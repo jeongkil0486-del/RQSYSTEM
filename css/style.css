@@ -1131,8 +1131,26 @@ body {
 /* 직원 검색 */
 .emp-search-row { margin-bottom: 10px; }
 
+/* 기존 직원 목록 — PC 3열 / 모바일 1열 */
+.emp-list-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.emp-list-grid > span { text-align: center; }
+
+/* 연차 현황 — PC 2열 / 모바일 1열 */
+.annual-list-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+.annual-list-grid > span { text-align: center; }
+
 @media (max-width: 640px) {
   .group-grid { grid-template-columns: repeat(2, 1fr); }
+  .emp-list-grid { grid-template-columns: 1fr; }
+  .annual-list-grid { grid-template-columns: 1fr; }
 }
 
 /* Drag badges */
