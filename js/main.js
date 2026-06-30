@@ -125,8 +125,19 @@ function setSuperDeleteSectionVisible(visible) {
   if (section) section.style.display = visible ? "block" : "none";
 }
 
+// ⚠️ 필드명 통일 작업 (2024 후속 수정):
+// 이 시스템의 정식 필드명은 mustChangePassword 이며, createEmployee /
+// bulkCreateEmployees 등 모든 생성 경로가 이 이름으로 작성한다.
+// 다만 실제 운영 DB를 확인한 결과 과거 버전(현재 코드베이스에는 더 이상
+// 존재하지 않는 이전 Cloud Functions 배포분)이 passwordResetRequired 라는
+// 다른 필드명으로 작성해 놓은 직원 레코드가 남아있었다. 이 레거시 데이터를
+// 가진 계정도 정상적으로 강제 변경 팝업이 뜨도록, 두 필드 중 하나라도
+// true 이면 강제 변경으로 판단한다 (마이그레이션 기간 동안의 호환 처리).
 function shouldForcePasswordChange(profile) {
-  return !!(profile && (profile.mustChangePassword === true || profile.mustChangePassword === "true"));
+  if (!profile) return false;
+  var must = profile.mustChangePassword === true || profile.mustChangePassword === "true";
+  var legacy = profile.passwordResetRequired === true || profile.passwordResetRequired === "true";
+  return !!(must || legacy);
 }
 
 // ?? 吏??紐⑸줉 ????????????????????????????????????????????????????????????????
