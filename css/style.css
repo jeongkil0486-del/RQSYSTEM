@@ -70,14 +70,20 @@ body {
   min-width: 100%; min-height: 100%;
   transform: translate(-50%, -50%);
   object-fit: cover;   /* 모바일 포함 어떤 화면비에서도 영상이 잘리지 않고 채워짐 */
+  /* 영상 좌상단의 'TRINITY AIR SERVICE' 문구가 잘리지 않도록 크롭
+     기준점을 살짝 좌상단 쪽으로 이동. 화면 중앙에 있는 로그인
+     카드와 겹쳐 어색해지지 않도록 너무 극단적이지 않은 값으로 조정. */
+  object-position: 35% 30%;
   z-index: 0;
   pointer-events: none;
 }
-/* 영상 위 어두운 오버레이 — 로그인 카드의 가독성을 보장 */
+/* 영상 위 어두운 오버레이 — 로그인 카드 가독성은 카드 자체의
+   반투명 배경+blur 로 보장하므로, 오버레이는 최소한으로만 어둡게
+   해서 배경 영상이 선명하게 보이도록 함. */
 .login-bg-overlay {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(10, 16, 32, 0.55);
+  background: rgba(10, 16, 32, 0.16);
   z-index: 1;
   pointer-events: none;
 }
@@ -85,16 +91,27 @@ body {
 .login-card {
   position: relative;
   z-index: 2;
-  background: var(--white);
+  /* 완전 흰색 → 살짝 반투명 + blur 로 배경 영상과 자연스럽게 어우러지도록 */
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 16px;
   padding: 44px 32px 36px;
   width: 380px;
   max-width: 100%;
-  box-shadow: var(--shadow-lg);
+  /* 카드 전용 그림자 — 공용 --shadow-lg 보다 부드럽게 (다른 곳의
+     모달 등에 쓰이는 --shadow-lg 변수는 그대로 두고 카드에만 적용) */
+  box-shadow: 0 8px 28px rgba(10, 16, 32, 0.18);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
+}
+/* backdrop-filter 미지원 브라우저: blur 없이도 톤은 유지되도록
+   배경을 살짝 더 진하게 보정 (가독성 유지를 위한 fallback) */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .login-card { background: rgba(255, 255, 255, 0.94); }
 }
 .login-logo-wrap {
   display: flex;
