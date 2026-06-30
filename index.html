@@ -2,264 +2,807 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-select=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Trinity AirService</title>
-    
+
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-functions.js"></script>
-    
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
-    <div class="login-card" id="loginArea">
-        <div class="brand-wrapper">
-            <svg viewBox="0 0 100 100" width="60" height="60">
-                <path d="M 8,14 L 92,14 L 58,26 C 54,28.5 46,28.5 42,26 Z" fill="#cfd0d2" />
-                <path d="M 10,24 Q 22,31 35,33 C 43,33 46,50 48,90 Q 25,55 10,24" fill="#cf9388" />
-                <path d="M 90,24 Q 78,31 65,33 C 57,33 54,50 52,90 Q 75,55 90,24" fill="#d4c297" />
+<!-- ═══════════════════════════════════════════════
+     LOGIN PAGE
+═══════════════════════════════════════════════ -->
+<div class="login-page" id="loginArea">
+    <div class="login-card">
+        <div class="login-logo-wrap">
+            <svg viewBox="0 0 100 100" width="52" height="52">
+                <path d="M 8,14 L 92,14 L 58,26 C 54,28.5 46,28.5 42,26 Z" fill="#cfd0d2"/>
+                <path d="M 10,24 Q 22,31 35,33 C 43,33 46,50 48,90 Q 25,55 10,24" fill="#cf9388"/>
+                <path d="M 90,24 Q 78,31 65,33 C 57,33 54,50 52,90 Q 75,55 90,24" fill="#d4c297"/>
             </svg>
-            <h2 class="brand-title">
-                <span class="main-text">TRINITY AIR SERVICE</span>
-            </h2>
+            <div class="login-brand">TRINITY AIR SERVICE</div>
         </div>
+        <div class="login-sub">Schedule Request System</div>
 
-        <p style="color:#555; font-size: 14px; font-weight: bold; margin-top: 15px;">Schedule Request System</p>
-        <hr style="border: 0; height: 1px; background: #ccc; margin: 15px 0;">
-        
         <div class="input-group">
             <label for="username">사번</label>
-            <input type="text" id="username" placeholder="사번을 입력하세요" onkeydown="if(event.key==='Enter'){document.getElementById('password').focus();}">
+            <input type="text" id="username" placeholder="사번을 입력하세요"
+                   onkeydown="if(event.key==='Enter'){document.getElementById('password').focus();}">
         </div>
-        
         <div class="input-group">
-            <label for="password">비밀번호 입력</label>
-            <input type="password" id="password" placeholder="비밀번호를 입력하세요" onkeydown="if(event.key==='Enter'){checkAuth();}">
+            <label for="password">비밀번호</label>
+            <input type="password" id="password" placeholder="비밀번호를 입력하세요"
+                   onkeydown="if(event.key==='Enter'){checkAuth();}">
         </div>
-        
         <button type="button" class="submit-btn" onclick="checkAuth()">로그인</button>
     </div>
+</div>
 
-    <div id="calendarModal" class="modal-overlay">
-        <div class="calendar-box">
-            
-            <div class="calendar-header">
-                <div class="calendar-title" id="welcomeMessage">연월 로딩중...</div>
-                <div class="header-buttons">
-                    <button type="button" id="toggleModeBtn" class="toggle-mode-btn" onclick="toggleApplicationMode()">휴무</button>
-                    <button type="button" id="scheduleCodeApplyBtn" class="toggle-mode-btn" onclick="toggleScheduleCodeMode()" style="display:none; background-color:#868e96;">근무</button>
-                    <button type="button" id="userResetBtn" class="reset-all-btn" onclick="resetMyRequests()" style="display: none; background-color: #e67e22;">초기화</button>
-                    <button type="button" id="resetAllBtn" class="reset-all-btn" onclick="resetAllRequests()">스케줄 전체 초기화</button>
-                    <button type="button" id="resetConfigBtn" class="reset-config-btn" onclick="resetAllConfigurations()">설정 전체 초기화</button>
-                    <button type="button" class="refresh-btn" onclick="refreshData()">새로고침</button>
-                    <button type="button" class="close-btn" onclick="closeCalendar()">닫기 ✕</button>
-                </div>
-            </div>
-            
-            <div id="adminConsole" class="admin-console-box">
-                <!-- 날짜 설정 -->
-                <div class="console-section" style="border-left: 2px solid #e67e22; padding-left: 10px;">
-                    <label for="targetYear">📅 신청 년/월 :</label>
-                    <select id="targetYear"></select>
-                    <select id="targetMonth"></select>
-                    <button type="button" class="config-save-btn" onclick="saveYearMonthConfig()">적용</button>
-                </div>
+<!-- ═══════════════════════════════════════════════
+     APP SHELL (로그인 후 표시)
+═══════════════════════════════════════════════ -->
+<div id="appShell" style="display:none; flex-direction:column; min-height:100vh;">
 
-                <!-- 기간 제한 -->
-                <div class="console-section" style="border-left: 2px solid #f39c12; padding-left: 10px;">
-                    <label for="startDateTimeConfig">⏱️ 신청 오픈 :</label>
-                    <input type="datetime-local" id="startDateTimeConfig">
-                    <button type="button" class="config-save-btn" onclick="saveDateTimeConfig()">적용</button>
-
-                    <label for="endDateTimeConfig" style="margin-left: 15px;">🛑 신청 마감 :</label>
-                    <input type="datetime-local" id="endDateTimeConfig">
-                    <button type="button" class="config-save-btn" onclick="saveEndDateTimeConfig()">적용</button>
-                </div>
-
-                <!-- 🎯 특정일 제한 + 📢 일별 신청 제한 + 📊 직원별 신청 제한 (모두 한 줄로 병합) -->
-                <div class="console-section" style="border-left: 2px solid #3498db; padding-left: 10px;">
-                    
-                    <div style="position: relative; display: flex; align-items: center;">
-                        <label id="specialDayTriggerBtn" style="font-size:13px; color:#2c3e50; font-weight: bold; cursor: pointer;" onclick="toggleSpecialDayBoard(event)">🎯 특정일 제한 (클릭) :</label>
-                        <div class="custom-floating-tooltip" id="specialDayTooltipBoard"></div>
-                    </div>
-                    
-                    <input type="number" id="specialDayInput" min="1" max="31" class="small-num-input" placeholder="일" style="width:45px; margin-left: 5px;">
-                    <input type="number" id="specialDayLimit" min="0" max="40" class="small-num-input" placeholder="명" style="width:45px;">
-                    <button type="button" class="config-save-btn" onclick="setSpecialDayLimit(true)">적용</button>
-
-                    <label for="dayMaxConfig" style="margin-left: 15px;">📢 일별 신청 제한 :</label>
-                    <input type="number" id="dayMaxConfig" min="1" max="40" class="small-num-input" placeholder="10">
-                    <button type="button" class="config-save-btn" onclick="saveDayMaxConstraint()">적용</button>
-
-                    <div style="position: relative; display: flex; align-items: center; margin-left: 15px;">
-                        <label id="limitListTriggerBtn" style="font-size:13px; color:#2c3e50; font-weight: bold; cursor: pointer;" onclick="toggleLimitListBoard(event)">📊 직원별 신청 제한 (클릭) :</label>
-                        <div class="custom-floating-tooltip" id="limitListTooltipBoard"></div>
-                    </div>
-                    
-                    <input type="text" id="limitEmpName" placeholder="사번" style="width: 80px; margin-left: 5px;">
-                    <input type="number" id="limitEmpCount" min="0" max="31" class="small-num-input" placeholder="개수">
-                    <button type="button" class="config-save-btn" onclick="setUserRequestLimit(true)">적용</button>
-                </div>
-
-                <!-- 조별 신청한도 (클릭=그룹팝업) + 휴무 개수 + 연차 (한 줄) -->
-                <div class="console-section" style="border-left: 2px solid #9b59b6; padding-left: 10px;">
-                    <div style="position: relative; display: flex; align-items: center;">
-                        <label id="groupPopupTriggerBtn" style="font-weight: bold; color: #9b59b6; cursor: pointer;" onclick="toggleGroupBoard(event)">👥 조별 신청 한도 (클릭) :</label>
-                        <div class="custom-floating-tooltip" id="groupListTooltipBoard" style="min-width: 380px;"></div>
-                    </div>
-                    <label for="groupMaxConfigA" style="font-size: 11px; color: #2980b9; margin-left:4px;">A조</label>
-                    <input type="number" id="groupMaxConfigA" min="1" max="40" class="small-num-input" placeholder="2">
-                    <label for="groupMaxConfigB" style="font-size: 11px; color: #8e44ad; margin-left: 2px;">B조</label>
-                    <input type="number" id="groupMaxConfigB" min="1" max="40" class="small-num-input" placeholder="2">
-                    <label for="groupMaxConfigC" style="font-size: 11px; color: #d35400; margin-left: 2px;">C조</label>
-                    <input type="number" id="groupMaxConfigC" min="1" max="40" class="small-num-input" placeholder="2">
-                    <label for="groupMaxConfigD" style="font-size: 11px; color: #1abc9c; margin-left: 2px;">D조</label>
-                    <input type="number" id="groupMaxConfigD" min="1" max="40" class="small-num-input" placeholder="2">
-                    <label for="groupMaxConfigE" style="font-size: 11px; color: #e84393; margin-left: 2px;">E조</label>
-                    <input type="number" id="groupMaxConfigE" min="1" max="40" class="small-num-input" placeholder="2">
-                    <button type="button" class="config-save-btn" style="margin-left: 5px;" onclick="saveGroupMaxConstraints()">적용</button>
-
-                    <!-- 휴무 개수 + 연차 (같은 줄, 구분선) -->
-                    <span style="margin-left:12px; border-left:1px solid #ddd; padding-left:12px; display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap;">
-                        <label for="globalUserMaxConfig" style="font-weight:bold; color:#2c3e50; font-size:13px; white-space:nowrap;">👤 휴무 개수 :</label>
-                        <input type="number" id="globalUserMaxConfig" min="1" max="31" class="small-num-input" placeholder="4">
-                        <button type="button" class="config-save-btn" onclick="saveGlobalUserMaxConstraint()">적용</button>
-                        <div style="position:relative; display:inline-flex; align-items:center; margin-left:8px;">
-                            <label id="annualStatusTrigger" style="font-weight:bold; color:#28a745; cursor:pointer; white-space:nowrap; font-size:13px;" onclick="toggleAnnualStatusBoard(event)">📋 연차 (클릭) :</label>
-                            <div class="custom-floating-tooltip" id="annualStatusTooltipBoard" style="min-width:380px;"></div>
-                        </div>
-                        <input type="file" id="annualExcelUpload" accept=".xlsx,.xls" style="display:none;">
-                        <button type="button" class="config-save-btn" onclick="triggerAnnualUpload()">업로드</button>
-                        <button type="button" class="limit-clear-btn" onclick="downloadAnnualTemplate()">양식</button>
-                    </span>
-                </div>
-
-                <!-- 🔢 조별 코드 제한 + 🗓️ 스케줄 코드 (한 줄) -->
-                <div class="console-section" style="border-left: 2px solid #c0392b; padding-left: 10px;">
-                    <div style="position: relative; display: flex; align-items: center;">
-                        <label id="scGroupLimitListTrigger" style="font-weight: bold; color: #c0392b; cursor: pointer;" onclick="toggleScGroupLimitBoard(event)">🔢 조별 코드 제한 (클릭) :</label>
-                        <div class="custom-floating-tooltip" id="scGroupLimitTooltipBoard" style="min-width: 360px;"></div>
-                    </div>
-                    <select id="scGroupLimitCodeSelect" style="padding:5px 6px; border:1px solid #ccc; border-radius:4px; font-size:12px; background:#fff; color:#333; width:80px;">
-                        <option value="">코드</option>
-                    </select>
-                    <label style="font-size:11px; color:#2980b9; margin-left:4px;">A조</label>
-                    <input type="number" id="scGroupLimitA" min="0" max="99" class="small-num-input" placeholder="-">
-                    <label style="font-size:11px; color:#8e44ad; margin-left:2px;">B조</label>
-                    <input type="number" id="scGroupLimitB" min="0" max="99" class="small-num-input" placeholder="-">
-                    <label style="font-size:11px; color:#d35400; margin-left:2px;">C조</label>
-                    <input type="number" id="scGroupLimitC" min="0" max="99" class="small-num-input" placeholder="-">
-                    <label style="font-size:11px; color:#1abc9c; margin-left:2px;">D조</label>
-                    <input type="number" id="scGroupLimitD" min="0" max="99" class="small-num-input" placeholder="-">
-                    <label style="font-size:11px; color:#e84393; margin-left:2px;">E조</label>
-                    <input type="number" id="scGroupLimitE" min="0" max="99" class="small-num-input" placeholder="-">
-                    <button type="button" class="config-save-btn" style="margin-left:4px;" onclick="saveScGroupLimit()">적용</button>
-
-                    <!-- 스케줄 코드 (같은 줄, 구분선) -->
-                    <span style="margin-left:12px; border-left:1px solid #ddd; padding-left:12px; display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap;">
-                        <div style="position: relative; display: inline-flex; align-items: center;">
-                            <label id="scheduleCodeListTrigger" style="font-weight: bold; color: #e91e8c; cursor: pointer; font-size:13px; white-space:nowrap;" onclick="toggleScheduleCodeBoard(event)">🗓️ 스케줄 코드 (클릭) :</label>
-                            <div class="custom-floating-tooltip" id="scheduleCodeTooltipBoard" style="min-width: 320px;"></div>
-                        </div>
-                        <input type="text" id="scheduleCodeInput" placeholder="코드" style="width: 70px; padding:5px 6px; border:1px solid #ccc; border-radius:4px; font-size:12px;">
-                        <input type="number" id="scheduleCodeLimit" min="1" max="999" class="small-num-input" placeholder="제한" style="width:50px;">
-                        <button type="button" class="config-save-btn" onclick="createScheduleCode()">생성</button>
-                    </span>
-                </div>
-
-
-
-
-                <!-- 👤 ID 신청 + 🔒 비밀번호 초기화 + 📊 스케줄 다운로드 (한 줄 배치) -->
-                <div class="console-section" style="border-left: 2px solid #34495e; padding-left: 10px;">
-                    
-                    <div style="position: relative; display: flex; align-items: center;">
-                        <label id="idPopupTriggerBtn" style="font-size:13px; color:#2c3e50; font-weight: bold; cursor: pointer;" onclick="toggleAllowedUsersBoard(event)">👤 ID 신청 (클릭) ⓘ</label>
-                        <div class="custom-floating-tooltip" id="allowedUsersTooltipBoard" style="min-width: 320px;"></div>
-                    </div>
-                    
-                    <input type="text" id="manageIdInput" placeholder="사번" style="width: 80px; margin-left: 5px;">
-                    <button type="button" class="config-save-btn" onclick="addAllowedUser()" title="사번 입력 후 클릭 → 이름/권한/비밀번호 입력 팝업">생성</button>
-
-                    <label for="targetEmpName" style="margin-left: 20px;">🔒 비밀번호 초기화 :</label>
-                    <input type="text" id="targetEmpName" placeholder="사번" style="width: 80px;" autocomplete="off">
-                    <input type="password" id="targetEmpPassword" placeholder="새 비밀번호 (6자↑)" style="width: 120px;" autocomplete="new-password">
-                    <button type="button" class="limit-clear-btn" onclick="resetUserPassword()">초기화</button>
-
-                    <label style="margin-left: 20px;">📊 스케줄 :</label>
-                    <button type="button" class="excel-download-btn" onclick="exportToExcel()">다운로드</button>
-
-                    <label style="margin-left: 20px;">🔑 내 비밀번호 변경 :</label>
-                    <input type="password" id="newAdminPassInput" placeholder="새 비밀번호" style="width: 110px;">
-                    <button type="button" class="config-save-btn" onclick="changeMyPassword()">변경</button>
-                </div>
-            </div>
-            
-            <!-- 슈퍼 관리자 전용 패널 -->
-            <div id="superAdminPanel" style="display:none; flex-direction:column; gap:15px; padding:10px; max-height:80vh; overflow-y:auto;">
-
-                <!-- 섹션1: 관리자 계정 비밀번호 초기화 -->
-                <div style="background:#fff3f3; border:1px solid #e53935; border-radius:8px; padding:15px;">
-                    <div style="font-size:15px; font-weight:bold; color:#e53935; margin-bottom:12px;">🔑 관리자 계정 비밀번호 초기화</div>
-                    <div id="superAdminPanelContent" style="overflow-x:auto;">로딩중...</div>
-                </div>
-
-                <!-- 섹션2: 지점별 직원 ID 일괄 등록 (엑셀 업로드) -->
-                <div style="background:#f0f7ff; border:1px solid #1565c0; border-radius:8px; padding:15px;">
-                    <div style="font-size:15px; font-weight:bold; color:#1565c0; margin-bottom:4px;">📋 지점별 직원 ID 일괄 등록 (엑셀 업로드)</div>
-                    <div style="font-size:12px; color:#888; margin-bottom:12px;">필수 컬럼: 이름 / 사번 / 지점 / 권한 / 임시비밀번호 (선택: 이메일 → recoveryEmail 저장)</div>
-
-                    <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:10px;">
-                        <label style="font-weight:bold; min-width:60px;">지점 선택:</label>
-                        <select id="superDeptSelect" style="padding:7px 12px; border:1px solid #ccc; border-radius:5px; font-size:13px;">
-                            <option value="">-- 지점 선택 --</option>
-                        </select>
-                        <label style="font-weight:bold; min-width:80px;">엑셀 파일:</label>
-                        <input type="file" id="bulkEmpExcelUpload" accept=".xlsx,.xls" style="font-size:13px;">
-                        <button onclick="handleBulkExcelUpload()" style="background:#1565c0; color:#fff; border:none; border-radius:6px; padding:8px 18px; font-size:13px; font-weight:bold; cursor:pointer;">📤 업로드</button>
-                        <button onclick="downloadExcelTemplate()" style="background:#43a047; color:#fff; border:none; border-radius:6px; padding:8px 14px; font-size:13px; font-weight:bold; cursor:pointer;">📥 양식 다운로드</button>
-                    </div>
-                    <div id="uploadResultMsg" style="font-size:13px; color:#1565c0; min-height:20px;"></div>
-                </div>
-
-                <!-- 섹션3: 지점별 직원 비밀번호 초기화 -->
-                <div style="background:#fff8e1; border:1px solid #f9a825; border-radius:8px; padding:15px;">
-                    <div style="font-size:15px; font-weight:bold; color:#e65100; margin-bottom:12px;">🔒 지점별 전체 비밀번호 초기화</div>
-                    <div id="superResetPanelContent" style="overflow-x:auto;">로딩중...</div>
-                </div>
-
-            </div>
-
-            <!-- 슈퍼관리자 초기화 선택 팝업 -->
-                <div id="superDeleteSection" style="display:none; background:#fff5f5; border:1px solid #c62828; border-radius:8px; padding:15px;">
-                    <div style="font-size:15px; font-weight:bold; color:#c62828; margin-bottom:12px;">직원 ID 삭제</div>
-                    <div id="superDeletePanelContent" style="overflow-x:auto;">로딩중...</div>
-                </div>
-
-            <div id="superResetChoiceModal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.55); z-index:99999; justify-content:center; align-items:center;">
-                <div style="background:#fff; border-radius:14px; padding:28px 26px 22px; width:340px; max-width:94%; box-shadow:0 8px 32px rgba(0,0,0,0.35); text-align:center; box-sizing:border-box;">
-                    <div style="font-size:20px; margin-bottom:6px;">🔒</div>
-                    <div style="font-size:15px; font-weight:bold; color:#222; margin-bottom:4px;" id="superResetModalDeptLabel">지점 초기화</div>
-                    <div style="font-size:12px; color:#888; margin-bottom:18px; line-height:1.6;">초기화 대상을 선택해주세요.<br>삭제된 비밀번호는 복구할 수 없습니다.</div>
-                    <div style="display:flex; flex-direction:column; gap:10px;">
-                        <button id="superResetAdminBtn" onclick="executeSuperReset('ADMIN')" style="background:#e53935; color:#fff; border:none; border-radius:8px; padding:13px; font-size:13px; font-weight:bold; cursor:pointer;">관리자 비밀번호만 초기화</button>
-                        <button id="superResetStaffBtn" onclick="executeSuperReset('STAFF')" style="background:#e67e22; color:#fff; border:none; border-radius:8px; padding:13px; font-size:13px; font-weight:bold; cursor:pointer;">해당 지점 직원 비밀번호 전체 초기화</button>
-                        <button onclick="closeSuperResetModal()" style="background:#adb5bd; color:#fff; border:none; border-radius:8px; padding:11px; font-size:13px; font-weight:bold; cursor:pointer; margin-top:2px;">취소</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="calendar-grid" id="mainCalendarGrid"></div>
-
+    <!-- ── Top Navigation ── -->
+    <nav class="top-nav">
+        <!-- 모바일 햄버거 -->
+        <div class="nav-hamburger" onclick="toggleMobileNav()" id="hamburgerBtn">
+            <span></span><span></span><span></span>
         </div>
+
+        <a class="nav-brand" href="#">TRINITYAIRSERVICE</a>
+
+        <div class="nav-menu" id="navMenu">
+            <button class="nav-item active" onclick="showPage('dashboard')">대시보드</button>
+            <button class="nav-item" onclick="showPage('requests')">신청관리</button>
+            <button class="nav-item" onclick="showPage('employees')">직원관리</button>
+            <button class="nav-item" onclick="showPage('settings')">설정</button>
+            <button class="nav-item" onclick="showPage('downloads')">다운로드</button>
+        </div>
+
+        <div class="nav-right">
+            <div class="nav-user-info">
+                <div class="nav-user-name" id="navUserName">—</div>
+                <div class="nav-user-dept" id="navUserDept">—</div>
+            </div>
+            <div class="nav-avatar" title="사용자">👤</div>
+            <button class="nav-logout" onclick="closeCalendar()">로그아웃</button>
+        </div>
+    </nav>
+
+    <!-- 모바일 드로어 -->
+    <div class="nav-drawer" id="navDrawer">
+        <button class="nav-item" onclick="showPage('dashboard'); closeMobileNav()">대시보드</button>
+        <button class="nav-item" onclick="showPage('requests'); closeMobileNav()">신청관리</button>
+        <button class="nav-item" onclick="showPage('employees'); closeMobileNav()">직원관리</button>
+        <button class="nav-item" onclick="showPage('settings'); closeMobileNav()">설정</button>
+        <button class="nav-item" onclick="showPage('downloads'); closeMobileNav()">다운로드</button>
+        <button class="nav-item" onclick="closeCalendar(); closeMobileNav()">로그아웃</button>
     </div>
 
-    <script src="js/config.js"></script>
+    <!-- ── Main Content ── -->
+    <div class="main-content">
+
+        <!-- ════════ 대시보드 페이지 ════════ -->
+        <div id="page-dashboard" class="section-page active">
+
+            <div class="page-header">
+                <div class="breadcrumb">홈 &rsaquo; <span>대시보드</span></div>
+                <div class="page-title">대시보드</div>
+                <div class="page-desc">휴무 및 연차 신청 현황을 한눈에 확인하세요.</div>
+            </div>
+
+            <!-- Stat cards -->
+            <div class="stat-cards">
+                <div class="stat-card">
+                    <div class="stat-icon blue">📅</div>
+                    <div class="stat-info">
+                        <div class="stat-label">오늘 신청 건수</div>
+                        <div class="stat-value" id="statToday">—</div>
+                        <div class="stat-meta" id="statTodayMeta">일별 신청 한도</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon green">👥</div>
+                    <div class="stat-info">
+                        <div class="stat-label">이번달 신청 건수</div>
+                        <div class="stat-value" id="statMonth">—</div>
+                        <div class="stat-meta" id="statMonthMeta">월별 신청 한도</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon orange">🧑‍💼</div>
+                    <div class="stat-info">
+                        <div class="stat-label">전체 직원 수</div>
+                        <div class="stat-value" id="statEmployees">—</div>
+                        <div class="stat-meta">활성 직원</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon purple">⏳</div>
+                    <div class="stat-info">
+                        <div class="stat-label">승인 대기</div>
+                        <div class="stat-value" id="statPending">—</div>
+                        <div class="stat-meta">신청 대기 중</div>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon red">🔔</div>
+                    <div class="stat-info">
+                        <div class="stat-label">알림</div>
+                        <div class="stat-value" id="statAlerts">—</div>
+                        <div class="stat-meta">확인 필요</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 빠른 조회 -->
+            <div class="filter-bar" id="adminFilterBar" style="display:none;">
+                <label>지점</label>
+                <select id="filterDept"><option value="">전체 지점</option></select>
+                <label>직원</label>
+                <select id="filterEmp"><option value="">전체 직원</option></select>
+                <button class="btn-primary" onclick="refreshData()">조회</button>
+                <div class="spacer"></div>
+                <div class="nav-arrows">
+                    <button class="btn-today" onclick="goToToday()">오늘</button>
+                    <button class="btn-arrow" onclick="prevMonth()">&#8249;</button>
+                    <button class="btn-arrow" onclick="nextMonth()">&#8250;</button>
+                </div>
+                <button class="btn-view" onclick="refreshData()">월간 보기</button>
+            </div>
+
+            <!-- 직원용 빠른 조회 -->
+            <div class="filter-bar" id="staffFilterBar" style="display:none;">
+                <div class="nav-arrows">
+                    <button class="btn-today" onclick="goToToday()">오늘</button>
+                    <button class="btn-arrow" onclick="prevMonth()">&#8249;</button>
+                    <button class="btn-arrow" onclick="nextMonth()">&#8250;</button>
+                </div>
+                <!-- 직원 전용 버튼들 -->
+                <button id="toggleModeBtn" class="btn btn-primary-sm" onclick="toggleApplicationMode()" style="display:none;">휴무</button>
+                <button id="scheduleCodeApplyBtn" class="btn btn-secondary" onclick="toggleScheduleCodeMode()" style="display:none;">근무</button>
+                <div class="spacer"></div>
+                <button id="userResetBtn" class="btn btn-warning" onclick="resetMyRequests()" style="display:none;">내 신청 초기화</button>
+            </div>
+
+            <!-- 관리자용 추가 버튼 (숨김 상태로 유지, JS에서 show) -->
+            <div id="adminActionBar" style="display:none; margin-bottom:12px;" class="flex gap-2 items-center">
+                <button id="resetAllBtn" class="btn btn-danger" onclick="resetAllRequests()" style="display:none;">스케줄 전체 초기화</button>
+                <button id="resetConfigBtn" class="btn btn-secondary" onclick="resetAllConfigurations()" style="display:none;">설정 전체 초기화</button>
+                <div class="spacer" style="flex:1;"></div>
+                <button class="btn btn-success" onclick="refreshData()">새로고침</button>
+            </div>
+
+            <!-- Dashboard body: calendar + right panel -->
+            <div class="dashboard-body">
+
+                <!-- Calendar card -->
+                <div class="calendar-card">
+                    <div class="calendar-card-header">
+                        <div class="calendar-month-title" id="welcomeMessage">연월 로딩중...</div>
+                    </div>
+                    <!-- 달력 그리드 -->
+                    <div class="calendar-grid" id="mainCalendarGrid"></div>
+                </div>
+
+                <!-- Right panel -->
+                <div class="right-panel">
+                    <!-- 최근 신청 내역 -->
+                    <div class="panel-card" id="recentRequestsCard">
+                        <div class="panel-card-header">
+                            <div class="panel-card-title">최근 신청 내역</div>
+                            <div class="panel-card-link">더보기 &rsaquo;</div>
+                        </div>
+                        <div class="panel-card-body">
+                            <div class="request-feed" id="recentFeed">
+                                <div style="font-size:12px; color:var(--text-light); text-align:center; padding:20px 0;">
+                                    신청 내역을 불러오는 중...
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 공지사항 -->
+                    <div class="panel-card">
+                        <div class="panel-card-header">
+                            <div class="panel-card-title">공지사항</div>
+                            <div class="panel-card-link">더보기 &rsaquo;</div>
+                        </div>
+                        <div class="panel-card-body">
+                            <div class="notice-list">
+                                <div class="notice-item">
+                                    <div class="notice-dot"></div>
+                                    <div class="notice-text" id="noticeMain">공지사항을 불러오는 중...</div>
+                                    <div class="notice-date"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ════════ 신청관리 페이지 ════════ -->
+        <div id="page-requests" class="section-page">
+            <div class="page-header">
+                <div class="breadcrumb">홈 &rsaquo; <span>신청관리</span></div>
+                <div class="page-title">신청관리</div>
+                <div class="page-desc">신청 제한 및 조별 설정을 관리합니다.</div>
+            </div>
+
+            <div class="cards-grid">
+
+                <!-- 특정일 제한 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon blue" style="background:#eff6ff;">🎯</div>
+                        <div>
+                            <div class="feature-card-title">특정일 제한</div>
+                            <div class="feature-card-desc">특정 날짜의 신청 가능 인원을 설정합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div class="form-row">
+                            <label class="form-label">현황</label>
+                            <div style="position:relative; flex:1;">
+                                <span id="specialDayTriggerBtn" style="font-size:12px; color:var(--accent); cursor:pointer; font-weight:600;" onclick="toggleSpecialDayBoard(event)">목록 보기 ▾</span>
+                                <div class="custom-floating-tooltip" id="specialDayTooltipBoard"></div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">날짜 (일)</label>
+                            <input type="number" id="specialDayInput" min="1" max="31" class="form-input small small-num-input" placeholder="일">
+                            <label class="form-label" style="min-width:auto;">제한 인원</label>
+                            <input type="number" id="specialDayLimit" min="0" max="40" class="form-input small small-num-input" placeholder="명">
+                            <button class="btn btn-primary-sm" onclick="setSpecialDayLimit(true)">적용</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 일별 신청 제한 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon orange" style="background:#fff7ed;">📢</div>
+                        <div>
+                            <div class="feature-card-title">일별 신청 제한</div>
+                            <div class="feature-card-desc">하루 최대 신청 가능 인원을 설정합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div class="form-row">
+                            <label class="form-label">최대 인원</label>
+                            <input type="number" id="dayMaxConfig" min="1" max="40" class="form-input small small-num-input" placeholder="10">
+                            <button class="btn btn-primary-sm" onclick="saveDayMaxConstraint()">적용</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 직원별 신청 제한 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon purple" style="background:#faf5ff;">📊</div>
+                        <div>
+                            <div class="feature-card-title">직원별 신청 제한</div>
+                            <div class="feature-card-desc">특정 직원의 신청 가능 횟수를 제한합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div class="form-row">
+                            <label class="form-label">현황</label>
+                            <div style="position:relative; flex:1;">
+                                <span id="limitListTriggerBtn" style="font-size:12px; color:var(--accent); cursor:pointer; font-weight:600;" onclick="toggleLimitListBoard(event)">목록 보기 ▾</span>
+                                <div class="custom-floating-tooltip" id="limitListTooltipBoard"></div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">사번</label>
+                            <input type="text" id="limitEmpName" placeholder="사번" class="form-input" style="max-width:100px;">
+                            <label class="form-label" style="min-width:auto;">횟수</label>
+                            <input type="number" id="limitEmpCount" min="0" max="31" class="form-input small small-num-input" placeholder="개">
+                            <button class="btn btn-primary-sm" onclick="setUserRequestLimit(true)">적용</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 조별 신청 한도 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon green" style="background:#f0fdf4;">👥</div>
+                        <div>
+                            <div class="feature-card-title">조별 신청 한도</div>
+                            <div class="feature-card-desc">각 조의 월별 신청 한도를 설정합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div class="form-row">
+                            <label class="form-label">조 편성</label>
+                            <div style="position:relative; flex:1;">
+                                <span id="groupPopupTriggerBtn" style="font-size:12px; color:var(--accent); cursor:pointer; font-weight:600;" onclick="toggleGroupBoard(event)">조 편성 보기 ▾</span>
+                                <div class="custom-floating-tooltip" id="groupListTooltipBoard" style="min-width:380px;"></div>
+                            </div>
+                        </div>
+                        <div class="form-row group-inputs">
+                            <span class="group-label gl-a">A조</span>
+                            <input type="number" id="groupMaxConfigA" min="1" max="40" class="form-input small small-num-input" placeholder="2">
+                            <span class="group-label gl-b">B조</span>
+                            <input type="number" id="groupMaxConfigB" min="1" max="40" class="form-input small small-num-input" placeholder="2">
+                            <span class="group-label gl-c">C조</span>
+                            <input type="number" id="groupMaxConfigC" min="1" max="40" class="form-input small small-num-input" placeholder="2">
+                        </div>
+                        <div class="form-row group-inputs">
+                            <span class="group-label gl-d">D조</span>
+                            <input type="number" id="groupMaxConfigD" min="1" max="40" class="form-input small small-num-input" placeholder="2">
+                            <span class="group-label gl-e">E조</span>
+                            <input type="number" id="groupMaxConfigE" min="1" max="40" class="form-input small small-num-input" placeholder="2">
+                            <button class="btn btn-primary-sm" onclick="saveGroupMaxConstraints()">적용</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 조별 코드 제한 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon" style="background:#fef2f2;">🔢</div>
+                        <div>
+                            <div class="feature-card-title">조별 코드 제한</div>
+                            <div class="feature-card-desc">스케줄 코드별 조별 신청 한도를 설정합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div class="form-row">
+                            <label class="form-label">현황</label>
+                            <div style="position:relative; flex:1;">
+                                <span id="scGroupLimitListTrigger" style="font-size:12px; color:var(--accent); cursor:pointer; font-weight:600;" onclick="toggleScGroupLimitBoard(event)">목록 보기 ▾</span>
+                                <div class="custom-floating-tooltip" id="scGroupLimitTooltipBoard" style="min-width:360px;"></div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">코드</label>
+                            <select id="scGroupLimitCodeSelect" class="form-select" style="width:80px;">
+                                <option value="">코드</option>
+                            </select>
+                        </div>
+                        <div class="form-row group-inputs">
+                            <span class="group-label gl-a">A조</span>
+                            <input type="number" id="scGroupLimitA" min="0" max="99" class="form-input small small-num-input" placeholder="-">
+                            <span class="group-label gl-b">B조</span>
+                            <input type="number" id="scGroupLimitB" min="0" max="99" class="form-input small small-num-input" placeholder="-">
+                            <span class="group-label gl-c">C조</span>
+                            <input type="number" id="scGroupLimitC" min="0" max="99" class="form-input small small-num-input" placeholder="-">
+                            <span class="group-label gl-d">D조</span>
+                            <input type="number" id="scGroupLimitD" min="0" max="99" class="form-input small small-num-input" placeholder="-">
+                            <span class="group-label gl-e">E조</span>
+                            <input type="number" id="scGroupLimitE" min="0" max="99" class="form-input small small-num-input" placeholder="-">
+                            <button class="btn btn-primary-sm" onclick="saveScGroupLimit()">적용</button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ════════ 직원관리 페이지 ════════ -->
+        <div id="page-employees" class="section-page">
+            <div class="page-header">
+                <div class="breadcrumb">홈 &rsaquo; <span>직원관리</span></div>
+                <div class="page-title">직원관리</div>
+                <div class="page-desc">직원 계정 생성, 삭제 및 비밀번호를 관리합니다.</div>
+            </div>
+
+            <div class="cards-grid">
+
+                <!-- 직원 생성 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon blue" style="background:#eff6ff;">➕</div>
+                        <div>
+                            <div class="feature-card-title">직원 생성</div>
+                            <div class="feature-card-desc">새로운 직원 계정을 생성합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div class="form-row">
+                            <label class="form-label">사번</label>
+                            <div style="position:relative; flex:1;">
+                                <span id="idPopupTriggerBtn" style="font-size:12px; color:var(--accent); cursor:pointer; font-weight:600;" onclick="toggleAllowedUsersBoard(event)">기존 직원 목록 ▾</span>
+                                <div class="custom-floating-tooltip" id="allowedUsersTooltipBoard" style="min-width:320px;"></div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <input type="text" id="manageIdInput" placeholder="사번을 입력하세요" class="form-input">
+                            <button class="btn btn-primary-sm" onclick="addAllowedUser()" title="사번 입력 후 클릭 → 이름/권한/비밀번호 입력 팝업">생성</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 비밀번호 초기화 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon orange" style="background:#fff7ed;">🔒</div>
+                        <div>
+                            <div class="feature-card-title">비밀번호 초기화</div>
+                            <div class="feature-card-desc">직원 비밀번호를 재설정합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div class="form-row">
+                            <label class="form-label">사번</label>
+                            <input type="text" id="targetEmpName" placeholder="사번" class="form-input" autocomplete="off">
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">새 비밀번호</label>
+                            <input type="password" id="targetEmpPassword" placeholder="6자 이상" class="form-input" autocomplete="new-password">
+                            <button class="btn btn-warning" onclick="resetUserPassword()">초기화</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 내 비밀번호 변경 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon purple" style="background:#faf5ff;">🔑</div>
+                        <div>
+                            <div class="feature-card-title">내 비밀번호 변경</div>
+                            <div class="feature-card-desc">현재 로그인한 계정의 비밀번호를 변경합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div class="form-row">
+                            <input type="password" id="newAdminPassInput" placeholder="새 비밀번호 (6자 이상)" class="form-input">
+                            <button class="btn btn-primary-sm" onclick="changeMyPassword()">변경</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 직원 엑셀 등록 (슈퍼관리자) -->
+                <div class="feature-card" id="cardBulkUpload" style="display:none;">
+                    <div class="feature-card-header">
+                        <div class="feature-icon green" style="background:#f0fdf4;">📋</div>
+                        <div>
+                            <div class="feature-card-title">직원 엑셀 등록</div>
+                            <div class="feature-card-desc">엑셀 파일로 직원을 일괄 등록합니다. (슈퍼관리자)</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div class="form-row">
+                            <label class="form-label">지점</label>
+                            <select id="superDeptSelect" class="form-select">
+                                <option value="">-- 지점 선택 --</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">파일</label>
+                            <input type="file" id="bulkEmpExcelUpload" accept=".xlsx,.xls" style="font-size:12px; flex:1;">
+                        </div>
+                        <div class="form-row">
+                            <button class="btn btn-navy" onclick="handleBulkExcelUpload()">📤 업로드</button>
+                            <button class="btn btn-success" onclick="downloadExcelTemplate()">📥 양식 다운로드</button>
+                        </div>
+                        <div id="uploadResultMsg"></div>
+                    </div>
+                </div>
+
+                <!-- 직원 삭제 (슈퍼관리자) -->
+                <div class="feature-card" id="cardDeleteEmp" style="display:none;">
+                    <div class="feature-card-header">
+                        <div class="feature-icon" style="background:#fef2f2;">🗑️</div>
+                        <div>
+                            <div class="feature-card-title">직원 삭제</div>
+                            <div class="feature-card-desc">직원 계정을 삭제합니다. (슈퍼관리자)</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div id="superDeleteSection">
+                            <div id="superDeletePanelContent" style="overflow-x:auto; font-size:13px; color:var(--text-sub);">로딩중...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 연차 업로드 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon" style="background:#f0fdf4;">📋</div>
+                        <div>
+                            <div class="feature-card-title">연차 업로드</div>
+                            <div class="feature-card-desc">직원별 연차 할당량을 엑셀로 업로드합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div class="form-row">
+                            <div style="position:relative; flex:1;">
+                                <span id="annualStatusTrigger" style="font-size:12px; color:var(--success); cursor:pointer; font-weight:600;" onclick="toggleAnnualStatusBoard(event)">연차 현황 보기 ▾</span>
+                                <div class="custom-floating-tooltip" id="annualStatusTooltipBoard" style="min-width:380px;"></div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <input type="file" id="annualExcelUpload" accept=".xlsx,.xls" style="display:none;">
+                            <button class="btn btn-primary-sm" onclick="triggerAnnualUpload()">📤 업로드</button>
+                            <button class="btn btn-secondary" onclick="downloadAnnualTemplate()">양식 다운로드</button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ════════ 설정 페이지 ════════ -->
+        <div id="page-settings" class="section-page">
+            <div class="page-header">
+                <div class="breadcrumb">홈 &rsaquo; <span>설정</span></div>
+                <div class="page-title">설정</div>
+                <div class="page-desc">신청 기간 및 시스템 설정을 관리합니다.</div>
+            </div>
+
+            <div class="cards-grid">
+
+                <!-- 신청 년월 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon blue" style="background:#eff6ff;">📅</div>
+                        <div>
+                            <div class="feature-card-title">신청 년월</div>
+                            <div class="feature-card-desc">신청 대상 년도와 월을 설정합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div class="form-row">
+                            <label class="form-label">년도</label>
+                            <select id="targetYear" class="form-select"></select>
+                            <label class="form-label" style="min-width:auto;">월</label>
+                            <select id="targetMonth" class="form-select"></select>
+                            <button class="btn btn-primary-sm" onclick="saveYearMonthConfig()">적용</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 신청 오픈 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon green" style="background:#f0fdf4;">⏱️</div>
+                        <div>
+                            <div class="feature-card-title">신청 오픈</div>
+                            <div class="feature-card-desc">직원 신청 가능 시작 일시를 설정합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div class="form-row">
+                            <input type="datetime-local" id="startDateTimeConfig" class="form-input">
+                            <button class="btn btn-success" onclick="saveDateTimeConfig()">적용</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 신청 마감 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon" style="background:#fef2f2;">🛑</div>
+                        <div>
+                            <div class="feature-card-title">신청 마감</div>
+                            <div class="feature-card-desc">직원 신청 가능 종료 일시를 설정합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div class="form-row">
+                            <input type="datetime-local" id="endDateTimeConfig" class="form-input">
+                            <button class="btn btn-danger" onclick="saveEndDateTimeConfig()">적용</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 휴무 개수 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon orange" style="background:#fff7ed;">👤</div>
+                        <div>
+                            <div class="feature-card-title">휴무 개수</div>
+                            <div class="feature-card-desc">직원 1인당 월별 최대 휴무 신청 횟수를 설정합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div class="form-row">
+                            <label class="form-label">최대 횟수</label>
+                            <input type="number" id="globalUserMaxConfig" min="1" max="31" class="form-input small small-num-input" placeholder="4">
+                            <button class="btn btn-primary-sm" onclick="saveGlobalUserMaxConstraint()">적용</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 스케줄 코드 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon purple" style="background:#faf5ff;">🗓️</div>
+                        <div>
+                            <div class="feature-card-title">스케줄 코드</div>
+                            <div class="feature-card-desc">근무 스케줄 코드를 등록하고 관리합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div class="form-row">
+                            <div style="position:relative; flex:1;">
+                                <span id="scheduleCodeListTrigger" style="font-size:12px; color:var(--purple); cursor:pointer; font-weight:600;" onclick="toggleScheduleCodeBoard(event)">코드 목록 보기 ▾</span>
+                                <div class="custom-floating-tooltip" id="scheduleCodeTooltipBoard" style="min-width:320px;"></div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">코드</label>
+                            <input type="text" id="scheduleCodeInput" placeholder="코드" class="form-input" style="max-width:100px;">
+                            <label class="form-label" style="min-width:auto;">제한</label>
+                            <input type="number" id="scheduleCodeLimit" min="1" max="999" class="form-input small small-num-input" placeholder="제한">
+                            <button class="btn btn-primary-sm" onclick="createScheduleCode()">생성</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 슈퍼관리자: 관리자 비밀번호 초기화 -->
+                <div class="feature-card" id="cardSuperAdminReset" style="display:none;">
+                    <div class="feature-card-header">
+                        <div class="feature-icon" style="background:#fef2f2;">🔑</div>
+                        <div>
+                            <div class="feature-card-title">관리자 비밀번호 초기화</div>
+                            <div class="feature-card-desc">지점 관리자 계정 비밀번호를 초기화합니다. (슈퍼관리자)</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div id="superAdminPanelContent" style="overflow-x:auto; font-size:13px; color:var(--text-sub);">로딩중...</div>
+                    </div>
+                </div>
+
+                <!-- 슈퍼관리자: 지점별 비밀번호 초기화 -->
+                <div class="feature-card" id="cardSuperResetPanel" style="display:none;">
+                    <div class="feature-card-header">
+                        <div class="feature-icon" style="background:#fffbeb;">🔒</div>
+                        <div>
+                            <div class="feature-card-title">지점별 비밀번호 초기화</div>
+                            <div class="feature-card-desc">지점 전체 직원 비밀번호를 초기화합니다. (슈퍼관리자)</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div id="superResetPanelContent" style="overflow-x:auto; font-size:13px; color:var(--text-sub);">로딩중...</div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ════════ 다운로드 페이지 ════════ -->
+        <div id="page-downloads" class="section-page">
+            <div class="page-header">
+                <div class="breadcrumb">홈 &rsaquo; <span>다운로드</span></div>
+                <div class="page-title">다운로드</div>
+                <div class="page-desc">스케줄 및 각종 양식을 다운로드합니다.</div>
+            </div>
+
+            <div class="cards-grid">
+
+                <!-- 스케줄 다운로드 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon green" style="background:#f0fdf4;">📊</div>
+                        <div>
+                            <div class="feature-card-title">스케줄 다운로드</div>
+                            <div class="feature-card-desc">이번 달 전체 스케줄을 엑셀로 다운로드합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <button class="btn btn-success btn-full" onclick="exportToExcel()">📥 스케줄 다운로드</button>
+                    </div>
+                </div>
+
+                <!-- 연차 양식 다운로드 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon blue" style="background:#eff6ff;">📄</div>
+                        <div>
+                            <div class="feature-card-title">연차 양식 다운로드</div>
+                            <div class="feature-card-desc">연차 업로드용 엑셀 양식을 다운로드합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <button class="btn btn-primary-sm btn-full" onclick="downloadAnnualTemplate()">📥 연차 양식 다운로드</button>
+                    </div>
+                </div>
+
+                <!-- 직원 엑셀 양식 -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon orange" style="background:#fff7ed;">📋</div>
+                        <div>
+                            <div class="feature-card-title">직원 엑셀 양식</div>
+                            <div class="feature-card-desc">직원 일괄 등록용 엑셀 양식을 다운로드합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <button class="btn btn-warning btn-full" onclick="downloadExcelTemplate()">📥 직원 양식 다운로드</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div><!-- /main-content -->
+
+    <div class="app-footer">
+        © 2025 TRINITYAIRSERVICE. All rights reserved.
+    </div>
+
+</div><!-- /appShell -->
+
+
+<!-- ═══════════════════════════════════════════════
+     HIDDEN COMPATIBILITY LAYER
+     (기존 JS가 참조하는 요소들 — 화면에 보이지 않음)
+═══════════════════════════════════════════════ -->
+
+<!-- calendarModal: 기존 JS의 modal 변수가 참조 -->
+<div id="calendarModal" class="modal-overlay" style="display:none !important;">
+    <div class="calendar-box">
+        <!-- adminConsole: 기존 JS가 display:flex/none 토글 -->
+        <div id="adminConsole" class="admin-console-box" style="display:none;">
+            <!-- 모든 원본 id 보존 (기존 JS 동작 유지) -->
+            <div class="console-section">
+                <label for="targetYear2" style="display:none;"></label>
+            </div>
+        </div>
+        <!-- superAdminPanel: 기존 JS가 display:flex/none 토글 -->
+        <div id="superAdminPanel" style="display:none; flex-direction:column; gap:15px; padding:10px; max-height:80vh; overflow-y:auto;"></div>
+    </div>
+</div>
+
+<!-- 초기화 선택 팝업 (직원용) -->
+<div id="resetChoiceModal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.55); z-index:99999; justify-content:center; align-items:center;">
+    <div style="background:#fff; border-radius:14px; padding:30px 28px 24px; width:320px; max-width:92%; box-shadow:0 8px 32px rgba(0,0,0,0.35); text-align:center; box-sizing:border-box;">
+        <div style="font-size:22px; margin-bottom:6px;">🗑️</div>
+        <div style="font-size:16px; font-weight:bold; color:#222; margin-bottom:6px;">전체 초기화</div>
+        <div style="font-size:13px; color:#666; margin-bottom:20px; line-height:1.6;">초기화할 항목을 선택해주세요.<br>삭제된 내역은 복구할 수 없습니다.</div>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+            <button onclick="executeResetChoice('ALL')" style="background:#e53935;color:#fff;border:none;border-radius:8px;padding:13px;font-size:14px;font-weight:bold;cursor:pointer;">전체 초기화 (휴무 + 코드, 연차 보존)</button>
+            <button onclick="executeResetChoice('SCHEDULE')" style="background:#e91e8c;color:#fff;border:none;border-radius:8px;padding:13px;font-size:14px;font-weight:bold;cursor:pointer;">스케줄 코드만 초기화</button>
+            <button onclick="executeResetChoice('HOLIDAY')" style="background:#e67e22;color:#fff;border:none;border-radius:8px;padding:13px;font-size:14px;font-weight:bold;cursor:pointer;">휴무/청원만 초기화 (연차 보존)</button>
+            <button onclick="closeResetChoiceModal()" style="background:#adb5bd;color:#fff;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:bold;cursor:pointer;margin-top:2px;">취소</button>
+        </div>
+    </div>
+</div>
+
+<!-- 슈퍼관리자 초기화 선택 팝업 -->
+<div id="superResetChoiceModal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.55); z-index:99999; justify-content:center; align-items:center;">
+    <div style="background:#fff; border-radius:14px; padding:28px 26px 22px; width:340px; max-width:94%; box-shadow:0 8px 32px rgba(0,0,0,0.35); text-align:center; box-sizing:border-box;">
+        <div style="font-size:20px; margin-bottom:6px;">🔒</div>
+        <div style="font-size:15px; font-weight:bold; color:#222; margin-bottom:4px;" id="superResetModalDeptLabel">지점 초기화</div>
+        <div style="font-size:12px; color:#888; margin-bottom:18px; line-height:1.6;">초기화 대상을 선택해주세요.<br>삭제된 비밀번호는 복구할 수 없습니다.</div>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+            <button id="superResetAdminBtn" onclick="executeSuperReset('ADMIN')" style="background:#e53935;color:#fff;border:none;border-radius:8px;padding:13px;font-size:13px;font-weight:bold;cursor:pointer;">관리자 비밀번호만 초기화</button>
+            <button id="superResetStaffBtn" onclick="executeSuperReset('STAFF')" style="background:#e67e22;color:#fff;border:none;border-radius:8px;padding:13px;font-size:13px;font-weight:bold;cursor:pointer;">해당 지점 직원 비밀번호 전체 초기화</button>
+            <button onclick="closeSuperResetModal()" style="background:#adb5bd;color:#fff;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:bold;cursor:pointer;margin-top:2px;">취소</button>
+        </div>
+    </div>
+</div>
+
+<!-- 최초 비밀번호 변경 모달 -->
+<div id="forcePasswordChangeModal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.7); z-index:100000; justify-content:center; align-items:center;">
+    <div style="background:#fff; border-radius:14px; padding:28px 26px 22px; width:360px; max-width:94%; box-shadow:0 8px 32px rgba(0,0,0,0.35); box-sizing:border-box;">
+        <div style="font-size:18px; font-weight:bold; color:#222; margin-bottom:10px; text-align:center;">비밀번호를 변경해주세요</div>
+        <div style="font-size:13px; color:#666; margin-bottom:18px; line-height:1.6; text-align:center;">최초 로그인 계정입니다. 비밀번호 변경 완료 전까지 시스템을 사용할 수 없습니다.</div>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+            <input type="password" id="forcePasswordNew" placeholder="새 비밀번호 (6자 이상)" style="padding:10px 12px; border:1px solid #ccc; border-radius:6px; font-size:13px;">
+            <input type="password" id="forcePasswordConfirm" placeholder="새 비밀번호 확인" style="padding:10px 12px; border:1px solid #ccc; border-radius:6px; font-size:13px;">
+            <button type="button" onclick="submitForcedPasswordChange()" style="background:#1a2744;color:#fff;border:none;border-radius:8px;padding:12px;font-size:14px;font-weight:bold;cursor:pointer;">비밀번호 변경</button>
+            <button type="button" onclick="auth.signOut()" style="background:#9e9e9e;color:#fff;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:bold;cursor:pointer;">로그아웃</button>
+        </div>
+    </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════
+     SCRIPTS
+═══════════════════════════════════════════════ -->
+<script src="js/config.js"></script>
 <script src="js/state.js"></script>
 <script src="js/firebase-store.js"></script>
 <script src="js/admin-users.js"></script>
@@ -271,45 +814,200 @@
 <script src="js/excel.js"></script>
 <script src="js/download-template.js"></script>
 <script src="js/main.js"></script>
-    <!-- 🗑️ 직원용 초기화 선택 팝업 모달 -->
-    <div id="resetChoiceModal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.55); z-index:99999; justify-content:center; align-items:center;">
-        <div style="background:#fff; border-radius:14px; padding:30px 28px 24px; width:320px; max-width:92%; box-shadow:0 8px 32px rgba(0,0,0,0.35); text-align:center; box-sizing:border-box;">
-            <div style="font-size:22px; margin-bottom:6px;">🗑️</div>
-            <div style="font-size:16px; font-weight:bold; color:#222; margin-bottom:6px;">전체 초기화</div>
-            <div style="font-size:13px; color:#666; margin-bottom:20px; line-height:1.6;">초기화할 항목을 선택해주세요.<br>삭제된 내역은 복구할 수 없습니다.</div>
-            <div style="display:flex; flex-direction:column; gap:10px;">
-                <button onclick="executeResetChoice('ALL')"
-                    style="background:#e53935; color:#fff; border:none; border-radius:8px; padding:13px; font-size:14px; font-weight:bold; cursor:pointer;">
-                    전체 초기화 (휴무 + 코드, 연차 보존)
-                </button>
-                <button onclick="executeResetChoice('SCHEDULE')"
-                    style="background:#e91e8c; color:#fff; border:none; border-radius:8px; padding:13px; font-size:14px; font-weight:bold; cursor:pointer;">
-                    스케줄 코드만 초기화
-                </button>
-                <button onclick="executeResetChoice('HOLIDAY')"
-                    style="background:#e67e22; color:#fff; border:none; border-radius:8px; padding:13px; font-size:14px; font-weight:bold; cursor:pointer;">
-                    휴무/청원만 초기화 (연차 보존)
-                </button>
-                <button onclick="closeResetChoiceModal()"
-                    style="background:#adb5bd; color:#fff; border:none; border-radius:8px; padding:11px; font-size:13px; font-weight:bold; cursor:pointer; margin-top:2px;">
-                    취소
-                </button>
-            </div>
-        </div>
-    </div>
 
-    <div id="forcePasswordChangeModal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.7); z-index:100000; justify-content:center; align-items:center;">
-        <div style="background:#fff; border-radius:14px; padding:28px 26px 22px; width:360px; max-width:94%; box-shadow:0 8px 32px rgba(0,0,0,0.35); box-sizing:border-box;">
-            <div style="font-size:18px; font-weight:bold; color:#222; margin-bottom:10px; text-align:center;">비밀번호를 변경해주세요</div>
-            <div style="font-size:13px; color:#666; margin-bottom:18px; line-height:1.6; text-align:center;">최초 로그인 계정입니다. 비밀번호 변경 완료 전까지 시스템을 사용할 수 없습니다.</div>
-            <div style="display:flex; flex-direction:column; gap:10px;">
-                <input type="password" id="forcePasswordNew" placeholder="새 비밀번호 (6자 이상)" style="padding:10px 12px; border:1px solid #ccc; border-radius:6px; font-size:13px;">
-                <input type="password" id="forcePasswordConfirm" placeholder="새 비밀번호 확인" style="padding:10px 12px; border:1px solid #ccc; border-radius:6px; font-size:13px;">
-                <button type="button" onclick="submitForcedPasswordChange()" style="background:#1565c0; color:#fff; border:none; border-radius:8px; padding:12px; font-size:14px; font-weight:bold; cursor:pointer;">비밀번호 변경</button>
-                <button type="button" onclick="auth.signOut()" style="background:#9e9e9e; color:#fff; border:none; border-radius:8px; padding:11px; font-size:13px; font-weight:bold; cursor:pointer;">로그아웃</button>
-            </div>
-        </div>
-    </div>
+<!-- ── UI Bridge Script ── -->
+<script>
+/* =====================================================
+   UI Bridge: 기존 JS 함수와 새 UI 연결
+   기존 함수명 / id / onclick 은 전혀 변경하지 않음
+   ===================================================== */
+
+// ── 페이지 전환 ──────────────────────────────────────
+function showPage(page) {
+    document.querySelectorAll('.section-page').forEach(function(p){ p.classList.remove('active'); });
+    var el = document.getElementById('page-' + page);
+    if (el) el.classList.add('active');
+
+    document.querySelectorAll('.nav-item').forEach(function(b){ b.classList.remove('active'); });
+    var pageMap = { dashboard:0, requests:1, employees:2, settings:3, downloads:4 };
+    var btns = document.querySelectorAll('.nav-menu .nav-item');
+    if (btns[pageMap[page]]) btns[pageMap[page]].classList.add('active');
+}
+
+// ── 모바일 햄버거 ──────────────────────────────────────
+function toggleMobileNav() {
+    document.getElementById('navDrawer').classList.toggle('open');
+}
+function closeMobileNav() {
+    document.getElementById('navDrawer').classList.remove('open');
+}
+
+// ── 달력 이전/다음 월 ─────────────────────────────────
+function prevMonth() {
+    var ym = document.getElementById('targetYear');
+    var mm = document.getElementById('targetMonth');
+    if (!ym || !mm) return;
+    var y = parseInt(ym.value), m = parseInt(mm.value);
+    m--; if (m < 1) { m = 12; y--; }
+    ym.value = y; mm.value = m;
+    if (typeof saveYearMonthConfig === 'function') saveYearMonthConfig();
+}
+function nextMonth() {
+    var ym = document.getElementById('targetYear');
+    var mm = document.getElementById('targetMonth');
+    if (!ym || !mm) return;
+    var y = parseInt(ym.value), m = parseInt(mm.value);
+    m++; if (m > 12) { m = 1; y++; }
+    ym.value = y; mm.value = m;
+    if (typeof saveYearMonthConfig === 'function') saveYearMonthConfig();
+}
+function goToToday() {
+    var ym = document.getElementById('targetYear');
+    var mm = document.getElementById('targetMonth');
+    var now = new Date();
+    if (ym) ym.value = now.getFullYear();
+    if (mm) mm.value = now.getMonth() + 1;
+    if (typeof saveYearMonthConfig === 'function') saveYearMonthConfig();
+}
+
+// ── 기존 JS의 openCalendar / closeCalendar override ──
+// closeCalendar = 로그아웃 (기존 함수 유지)
+var _origCloseCalendar = (typeof closeCalendar === 'function') ? closeCalendar : function(){};
+closeCalendar = function() {
+    // 기존 로그아웃 로직 실행
+    _origCloseCalendar();
+    // 새 UI 처리
+    document.getElementById('appShell').style.display = 'none';
+    document.getElementById('loginArea').style.display = 'flex';
+};
+
+// ── 기존 JS의 modal 표시를 새 UI로 안전 연결 ─────────────
+// 기존 JS가 calendarModal 을 열면 appShell 을 보여주고, 실제 옛 모달은 계속 숨김 처리
+function showAppShellFromLegacyModal() {
+    var shell = document.getElementById('appShell');
+    var loginArea = document.getElementById('loginArea');
+    var legacyModal = document.getElementById('calendarModal');
+    if (shell) shell.style.display = 'flex';
+    if (loginArea) loginArea.style.display = 'none';
+    if (legacyModal) legacyModal.style.setProperty('display', 'none', 'important');
+    updateNavUI();
+}
+
+var _origOpenCalendar = (typeof openCalendar === 'function') ? openCalendar : null;
+if (_origOpenCalendar) {
+    openCalendar = function() {
+        var result = _origOpenCalendar.apply(this, arguments);
+        showAppShellFromLegacyModal();
+        return result;
+    };
+}
+
+(function() {
+    var legacyModal = document.getElementById('calendarModal');
+    if (!legacyModal || typeof MutationObserver === 'undefined') return;
+    var observer = new MutationObserver(function() {
+        var display = legacyModal.style.display;
+        if (display === 'flex' || display === 'block') showAppShellFromLegacyModal();
+    });
+    observer.observe(legacyModal, { attributes: true, attributeFilter: ['style', 'class'] });
+})();
+
+// ── 로그인 후 상단 사용자 정보 업데이트 ──────────────
+function updateNavUI() {
+    setTimeout(function() {
+        var nameEl = document.getElementById('navUserName');
+        var deptEl = document.getElementById('navUserDept');
+        if (nameEl && typeof currentUser !== 'undefined') nameEl.textContent = currentUser || '—';
+        if (deptEl && typeof currentDept !== 'undefined') deptEl.textContent = currentDept || '—';
+
+        // 관리자/슈퍼관리자 여부에 따라 UI 조정
+        var isAdm = (typeof isAdmin !== 'undefined' && isAdmin) || (typeof isSuperAdmin !== 'undefined' && isSuperAdmin);
+        var isSup = (typeof isSuperAdmin !== 'undefined' && isSuperAdmin);
+
+        // 필터바 표시
+        var adminBar = document.getElementById('adminFilterBar');
+        var staffBar = document.getElementById('staffFilterBar');
+        var actionBar = document.getElementById('adminActionBar');
+        if (adminBar) adminBar.style.display = isAdm ? 'flex' : 'none';
+        if (staffBar) staffBar.style.display = isAdm ? 'none' : 'flex';
+        if (actionBar) actionBar.style.display = isAdm ? 'flex' : 'none';
+
+        // 슈퍼관리자 전용 카드
+        ['cardBulkUpload','cardDeleteEmp','cardSuperAdminReset','cardSuperResetPanel'].forEach(function(id){
+            var c = document.getElementById(id);
+            if (c) c.style.display = isSup ? 'block' : 'none';
+        });
+    }, 300);
+}
+
+// ── 기존 showSuperAdminPanel override ────────────────
+var _origShowSuperAdminPanel = (typeof showSuperAdminPanel === 'function') ? showSuperAdminPanel : function(){};
+showSuperAdminPanel = function() {
+    _origShowSuperAdminPanel();
+    updateNavUI();
+    // 슈퍼관리자는 설정 페이지로 이동
+    showPage('settings');
+    // superAdminPanel 내용을 새 UI 카드로 이동
+    setTimeout(function(){
+        var oldPanel = document.getElementById('superAdminPanel');
+        // 슈퍼관리자 패널 내용들은 이미 cardSuperAdminReset / cardSuperResetPanel 에 있음
+        if (oldPanel) oldPanel.style.display = 'none';
+    }, 100);
+};
+
+// ── 기존 renderRestrictedRoleView override ───────────
+var _origRenderRestricted = (typeof renderRestrictedRoleView === 'function') ? renderRestrictedRoleView : function(){};
+renderRestrictedRoleView = function() {
+    _origRenderRestricted();
+    updateNavUI();
+};
+
+// ── 직원 모드 버튼 초기 처리 ─────────────────────────
+// 기존 JS가 toggleModeBtn 을 display:none/flex 로 토글함
+// staffFilterBar 에 이미 배치했으므로 OK
+
+// ── 최근 신청 내역 더미 (실제 데이터는 DB에서) ────────
+// 실제 구현 시 firebase-store.js 의 리스너에서 call 가능
+function updateRecentFeed(items) {
+    var feed = document.getElementById('recentFeed');
+    if (!feed || !items || !items.length) return;
+    var html = '';
+    items.forEach(function(item) {
+        var badgeClass = 'badge-' + (item.type || '휴무');
+        html += '<div class="request-item">'
+            + '<div class="request-meta">'
+            + '<span class="request-time">' + (item.time || '') + '</span>'
+            + '<span class="request-name">' + (item.name || '') + '</span>'
+            + '<span class="request-id">' + (item.id || '') + '</span>'
+            + '<span class="request-type-badge ' + badgeClass + '">' + (item.type || '휴무') + '</span>'
+            + '</div>'
+            + '</div>';
+    });
+    feed.innerHTML = html;
+}
+
+// ── loginArea 표시 보정 (block → flex) ───────────────
+(function() {
+    var el = document.getElementById('loginArea');
+    if (!el || typeof MutationObserver === 'undefined') return;
+    var fixing = false;
+    var observer = new MutationObserver(function() {
+        if (fixing) return;
+        if (el.style.display === 'block') {
+            fixing = true;
+            el.style.display = 'flex';
+            fixing = false;
+        }
+    });
+    observer.observe(el, { attributes: true, attributeFilter: ['style'] });
+})();
+
+// ── 공지사항 기본 텍스트 ──────────────────────────────
+(function(){
+    var n = document.getElementById('noticeMain');
+    if (n) n.textContent = '시스템 공지사항이 없습니다.';
+})();
+</script>
 
 </body>
 </html>
