@@ -102,44 +102,39 @@
 
             <!-- Stat cards (관리자 전용) -->
             <div class="stat-cards" id="statCardsRow">
-                <div class="stat-card">
-                    <div class="stat-icon blue">📅</div>
+                <div class="stat-card stat-card-noicon">
                     <div class="stat-info">
-                        <div class="stat-label">오늘 신청 건수</div>
-                        <div class="stat-value" id="statToday">—</div>
-                        <div class="stat-meta" id="statTodayMeta">일별 신청 한도</div>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon green">👥</div>
-                    <div class="stat-info">
-                        <div class="stat-label">이번달 신청 건수</div>
-                        <div class="stat-value" id="statMonth">—</div>
-                        <div class="stat-meta" id="statMonthMeta">월별 신청 한도</div>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon orange">🧑‍💼</div>
-                    <div class="stat-info">
-                        <div class="stat-label">전체 직원 수</div>
+                        <div class="stat-label">전체 직원</div>
                         <div class="stat-value" id="statEmployees">—</div>
-                        <div class="stat-meta">활성 직원</div>
+                        <div class="stat-meta">활성 직원 수</div>
                     </div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon purple">⏳</div>
+                <div class="stat-card stat-card-noicon">
                     <div class="stat-info">
-                        <div class="stat-label">승인 대기</div>
-                        <div class="stat-value" id="statPending">—</div>
-                        <div class="stat-meta">기능 준비 중</div>
+                        <div class="stat-label">월 휴무 제한</div>
+                        <div class="stat-value" id="statMonthlyLimit">—</div>
+                        <div class="stat-meta">1인당 월 최대 신청 횟수</div>
                     </div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon red">🔔</div>
+                <div class="stat-card stat-card-noicon">
                     <div class="stat-info">
-                        <div class="stat-label">알림</div>
-                        <div class="stat-value" id="statAlerts">—</div>
-                        <div class="stat-meta">기능 준비 중</div>
+                        <div class="stat-label">신청 기간</div>
+                        <div class="stat-value stat-value-sm" id="statPeriod">—</div>
+                        <div class="stat-meta">오픈 ~ 마감</div>
+                    </div>
+                </div>
+                <div class="stat-card stat-card-noicon">
+                    <div class="stat-info">
+                        <div class="stat-label">현재 지점</div>
+                        <div class="stat-value stat-value-sm" id="statDept">—</div>
+                        <div class="stat-meta">로그인 지점</div>
+                    </div>
+                </div>
+                <div class="stat-card stat-card-noicon">
+                    <div class="stat-info">
+                        <div class="stat-label">신청 상태</div>
+                        <div class="stat-value stat-value-sm" id="statApplyStatus">—</div>
+                        <div class="stat-meta">현재 신청 가능 여부</div>
                     </div>
                 </div>
             </div>
