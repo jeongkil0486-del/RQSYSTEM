@@ -47,8 +47,11 @@ body {
    LOGIN PAGE
    ===================================================== */
 .login-page {
+  position: relative;
+  overflow: hidden;
   min-height: 100vh;
   width: 100%;
+  /* 영상 로드 실패 시 fallback 배경 — 기존 그라디언트 그대로 유지 */
   background: linear-gradient(135deg, #1a2744 0%, #2e3d6b 50%, #1a2744 100%);
   display: flex;
   align-items: center;
@@ -56,7 +59,32 @@ body {
   padding: 20px;
   box-sizing: border-box;
 }
+
+/* 로그인 화면 전용 배경 영상 — 순수 장식 레이어, 기능/로그인 로직과 무관.
+   영상을 불러오지 못하면 <video> 가 빈 공간(투명)으로 남고, 부모인
+   .login-page 의 그라디언트 배경이 자연스럽게 fallback 으로 보인다. */
+.login-bg-video {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 100%; height: 100%;
+  min-width: 100%; min-height: 100%;
+  transform: translate(-50%, -50%);
+  object-fit: cover;   /* 모바일 포함 어떤 화면비에서도 영상이 잘리지 않고 채워짐 */
+  z-index: 0;
+  pointer-events: none;
+}
+/* 영상 위 어두운 오버레이 — 로그인 카드의 가독성을 보장 */
+.login-bg-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(10, 16, 32, 0.55);
+  z-index: 1;
+  pointer-events: none;
+}
+/* 로그인 카드는 영상/오버레이 위에 항상 표시 */
 .login-card {
+  position: relative;
+  z-index: 2;
   background: var(--white);
   border-radius: 16px;
   padding: 44px 32px 36px;
