@@ -246,6 +246,8 @@ function refreshData() {
         });
 
         loadAdminCalendarData();
+        updateDashboardStatCards();
+        if (typeof refreshRecentFeed === "function") refreshRecentFeed();
         updateLimitTooltipBoard();
         drawAllowedUsersBoard();
         drawLiveGroupBoards();
@@ -503,25 +505,69 @@ function manageAdminSelection(date) {
     var dayStr = String(date);
     if (_isDayActionPending(dayStr)) return;
     var applicants = getAdminApplicantsByDay(dayStr);
+    openApplicantDetailModal(date, tm, applicants);
+}
+
+// ── 신청 상세 모달: 신청 순서(ts 오름차순, getAdminApplicantsByDay 에서 이미 정렬됨)대로
+//    번호를 매겨 표시하고, 각 행의 취소 버튼으로 기존 adminCancelRequest 를 그대로 호출한다.
+function openApplicantDetailModal(date, tm, applicants) {
+    var modalEl = document.getElementById("applicantDetailModal");
+    var titleEl = document.getElementById("applicantModalTitle");
+    var bodyEl  = document.getElementById("applicantModalBody");
+    if (!modalEl || !titleEl || !bodyEl) return;
+
+    titleEl.innerText = parseInt(tm.month, 10) + "월 " + date + "일 신청 목록 (" + applicants.length + "건)";
+
     if (applicants.length === 0) {
-        alert(parseInt(tm.month) + "\uC6D4 " + date + "\uC77C\uC5D0 \uC2E0\uCCAD \uB0B4\uC5ED\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.");
-        return;
+        bodyEl.innerHTML = "<div class='applicant-empty'>신청 내역이 없습니다.</div>";
+    } else {
+        bodyEl.innerHTML = "";
+        applicants.forEach(function(a, i) {
+            var row = document.createElement("div");
+            row.className = "applicant-row";
+
+            var num = document.createElement("div");
+            num.className = "ap-num";
+            num.innerText = (i + 1);
+            row.appendChild(num);
+
+            var info = document.createElement("div");
+            info.className = "ap-info";
+            var nameDiv = document.createElement("div");
+            nameDiv.className = "ap-name";
+            nameDiv.innerText = a.name;
+            var typeDiv = document.createElement("div");
+            typeDiv.className = "ap-type";
+            typeDiv.innerText = getRequestTypeLabel(a.req);
+            info.appendChild(nameDiv);
+            info.appendChild(typeDiv);
+            row.appendChild(info);
+
+            var cancelBtn = document.createElement("button");
+            cancelBtn.className = "ap-cancel-btn";
+            cancelBtn.innerText = "취소";
+            cancelBtn.onclick = function() {
+                _adminCancelFromModal(date, tm, a, cancelBtn);
+            };
+            row.appendChild(cancelBtn);
+
+            bodyEl.appendChild(row);
+        });
     }
-    var lines = applicants.map(function(a, i) {
-        return (i + 1) + ". " + a.label;
-    }).join("\n");
-    var numStr = window.prompt(
-        parseInt(tm.month) + "\uC6D4 " + date + "\uC77C \uC2E0\uCCAD \uBAA9\uB85D:\n" + lines +
-        "\n\n\uCDE8\uC18C\uD560 \uBC88\uD638 \uC785\uB825 (\uCDE8\uC18C\uD558\uB824\uBA74 \uBE48\uAC12\uC73C\uB85C \uB2EB\uAE30):"
-    );
-    if (!numStr || !numStr.trim()) return;
-    var num = parseInt(numStr.trim(), 10);
-    if (isNaN(num) || num < 1 || num > applicants.length) {
-        alert("\uC62C\uBC14\uB978 \uBC88\uD638\uB97C \uC785\uB825\uD574\uC8FC\uC138\uC694.");
-        return;
-    }
-    var target = applicants[num - 1];
-    if (!confirm(target.label + "\\n\\n\uD574\uB2F9 \uC2E0\uCCAD\uC744 \uCDE8\uC18C\uD558\uC2DC\uACA0\uC2B5\uB2C8\uAE4C?")) return;
+
+    modalEl.style.display = "flex";
+}
+
+function closeApplicantDetailModal() {
+    var modalEl = document.getElementById("applicantDetailModal");
+    if (modalEl) modalEl.style.display = "none";
+}
+
+function _adminCancelFromModal(date, tm, target, btnEl) {
+    if (!confirm(target.label + "\n\n해당 신청을 취소하시겠습니까?")) return;
+    var dayStr = String(date);
+    if (btnEl) { btnEl.disabled = true; btnEl.innerText = "처리중..."; }
+
     _runDayRequest(dayStr, function() {
         return fn.adminCancelRequest({
             deptId:    currentDept,
@@ -529,9 +575,15 @@ function manageAdminSelection(date) {
             day:       dayStr,
             targetUid: target.uid
         });
-    }, "\uCDE8\uC18C \uC2E4\uD328: \uC54C \uC218 \uC5C6\uB294 \uC624\uB958").then(function(success) {
-        if (success) alert("\uC9C1\uC811 \uCDE8\uC18C \uC644\uB8CC: " + target.label);
-    }).catch(function() {});
+    }, "취소 실패: 알 수 없는 오류").then(function(success) {
+        if (success) {
+            // 모달 내 목록을 새 데이터로 다시 그려서 즉시 갱신
+            var refreshed = getAdminApplicantsByDay(dayStr);
+            openApplicantDetailModal(date, tm, refreshed);
+        }
+    }).catch(function() {
+        if (btnEl) { btnEl.disabled = false; btnEl.innerText = "취소"; }
+    });
 }
 
 // ── 관리자: 신청 기간 저장 (Cloud Function) ───────────────────────────────────
@@ -776,6 +828,30 @@ function loadUserCalendarData() {
     }
 }
 
+// ── 신청 유형별 요약 집계 ──────────────────────────────────────────────────────
+// 같은 날짜에 신청자가 많아도 셀에는 "휴무 (3)" 처럼 유형별 개수만 표시하고,
+// 클릭 시 상세 모달에서 실제 명단(신청 순서대로)을 보여준다.
+function _summarizeApplicantsByType(applicants) {
+    var order = [];      // 표시 순서 보존
+    var groups = {};     // key -> { label, cls, items: [] }
+
+    applicants.forEach(function(a) {
+        var type = (a.req && a.req.type) || "normal";
+        var key, label, cls;
+        if (type === "petition") { key = "petition"; label = "청원"; cls = "petition-item"; }
+        else if (type === "annual") { key = "annual"; label = "연차"; cls = "annual-item"; }
+        else if (type === "schedule") {
+            var code = (a.req && a.req.scheduleCode) || "코드";
+            key = "schedule_" + code; label = code; cls = "schedule-item";
+        } else { key = "normal"; label = "휴무"; cls = ""; }
+
+        if (!groups[key]) { groups[key] = { label: label, cls: cls, items: [] }; order.push(key); }
+        groups[key].items.push(a);
+    });
+
+    return order.map(function(key) { return groups[key]; });
+}
+
 function loadAdminCalendarData() {
     var tm        = getTargetYearMonth();
     var totalDays = new Date(parseInt(tm.year), parseInt(tm.month), 0).getDate();
@@ -798,27 +874,68 @@ function loadAdminCalendarData() {
 
         var applicants = getAdminApplicantsByDay(d);
         if (applicants.length > 0) {
-            // ⚠️ 신청자 명단은 admin-list 그리드(작은 칸)로 표시하고, 유형별로
-            //    색상을 구분한다 (휴무=빨강 / 청원=보라 / 연차=초록 / 근무코드=파랑).
-            //    이전에는 .user-note 로만 출력되어 색상 구분이 전혀 없었고
-            //    인원이 많아지면 셀이 그대로 늘어나며 레이아웃이 깨졌음.
+            // ⚠️ 요약 표시: 신청자 이름을 모두 나열하지 않고 유형별 개수만 표시.
+            //    인원이 많아져도 셀이 깨지지 않으며, 클릭하면 상세 명단 모달이 뜬다.
+            var groups = _summarizeApplicantsByType(applicants);
             var list = document.createElement("div");
             list.className = "admin-list";
-            applicants.forEach(function(a) {
+            groups.forEach(function(g) {
                 var item = document.createElement("div");
-                var typeClass = "";
-                if (a.req && a.req.type === "petition") typeClass = "petition-item";
-                else if (a.req && a.req.type === "annual") typeClass = "annual-item";
-                else if (a.req && a.req.type === "schedule") typeClass = "schedule-item";
-                item.className = "admin-item" + (typeClass ? " " + typeClass : "");
-                item.innerText = a.label;
-                item.title = a.label; // 잘린 텍스트 호버 시 전체 이름 확인 가능
+                item.className = "admin-item" + (g.cls ? " " + g.cls : "");
+                item.innerText = g.label + " (" + g.items.length + ")";
                 list.appendChild(item);
             });
             fragment.appendChild(list);
         }
         cell.appendChild(fragment);
     }
+}
+
+// ── 대시보드 통계 카드 실데이터 연결 ──────────────────────────────────────────
+// 오늘 신청 건수 / 이번달 신청 건수 / 전체 직원 수는 이미 클라이언트에 로드된
+// adminViewCache, deptEmployees 로 정확히 계산 가능하므로 그대로 연결한다.
+// "승인대기"와 "알림"은 이 시스템에 승인 워크플로우/알림 기능 자체가 없으므로
+// 임의의 숫자를 채우지 않고 "—"로 둔다 (거짓 데이터를 보여주지 않기 위함).
+function updateDashboardStatCards() {
+    var tm = getTargetYearMonth();
+    var todayDate = new Date();
+    var isCurrentMonth = (todayDate.getFullYear() === parseInt(tm.year, 10)) &&
+                          (todayDate.getMonth() + 1 === parseInt(tm.month, 10));
+    var todayDay = String(todayDate.getDate());
+
+    var monthCount = 0;
+    var todayCount = 0;
+    Object.keys(adminViewCache || {}).forEach(function(uid) {
+        var days = adminViewCache[uid] || {};
+        Object.keys(days).forEach(function(dayKey) {
+            if (!days[dayKey]) return;
+            monthCount++;
+            if (isCurrentMonth && String(parseInt(dayKey, 10)) === todayDay) todayCount++;
+        });
+    });
+
+    var configDayMax = parseInt(getFirebaseItem("rq_config_day_max", "10"), 10);
+    var totalDaysInMonth = new Date(parseInt(tm.year, 10), parseInt(tm.month, 10), 0).getDate();
+    var monthMax = configDayMax * totalDaysInMonth;
+
+    var elToday      = document.getElementById("statToday");
+    var elTodayMeta   = document.getElementById("statTodayMeta");
+    var elMonth       = document.getElementById("statMonth");
+    var elMonthMeta   = document.getElementById("statMonthMeta");
+    var elEmployees   = document.getElementById("statEmployees");
+    var elPending     = document.getElementById("statPending");
+    var elAlerts      = document.getElementById("statAlerts");
+
+    if (elToday) elToday.innerText = todayCount;
+    if (elTodayMeta) elTodayMeta.innerText = "일별 신청 한도 " + configDayMax + "명 기준";
+    if (elMonth) elMonth.innerText = monthCount;
+    if (elMonthMeta) elMonthMeta.innerText = "월 한도 약 " + monthMax + "건 기준";
+    if (elEmployees) elEmployees.innerText = (deptEmployees || []).length;
+
+    // 승인대기 / 알림: 이 시스템에는 해당 기능(워크플로우)이 없어 실데이터가
+    // 존재하지 않는다. 추측치를 채우지 않고 명확히 "—"로 표시한다.
+    if (elPending) elPending.innerText = "—";
+    if (elAlerts)  elAlerts.innerText  = "—";
 }
 
 window.saveDateTimeConfig = saveDateTimeConfig;
