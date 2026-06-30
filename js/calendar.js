@@ -922,7 +922,7 @@ function loadAdminCalendarData() {
             groups.forEach(function(g) {
                 var item = document.createElement("div");
                 item.className = "admin-item" + (g.cls ? " " + g.cls : "");
-                item.innerText = g.label + " (" + g.items.length + ")";
+                item.innerText = g.label + " " + g.items.length;
                 list.appendChild(item);
             });
             fragment.appendChild(list);
