@@ -472,7 +472,12 @@ body {
 }
 .filter-bar .btn-today:hover { background: var(--bg); }
 .filter-bar .nav-arrows {
-  display: flex; gap: 4px;
+  display: flex; gap: 4px; align-items: center;
+}
+.month-nav-label {
+  margin-right: 6px;
+  white-space: nowrap;
+  min-width: auto !important;
 }
 .filter-bar .btn-arrow {
   width: 30px; height: 30px;
@@ -825,6 +830,11 @@ body {
   gap: 8px;
   flex-wrap: wrap;
   margin-bottom: 10px;
+}
+/* 데스크탑/태블릿에서는 한 줄 유지, 좁은 화면(모바일)에서만 줄바꿈 */
+.form-row-nowrap { flex-wrap: nowrap; }
+@media (max-width: 640px) {
+  .form-row-nowrap { flex-wrap: wrap; }
 }
 .form-row:last-child { margin-bottom: 0; }
 .form-label {
