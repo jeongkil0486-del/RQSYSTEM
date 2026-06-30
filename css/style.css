@@ -54,9 +54,12 @@ body {
   /* 영상 로드 실패 시 fallback 배경 — 기존 그라디언트 그대로 유지 */
   background: linear-gradient(135deg, #1a2744 0%, #2e3d6b 50%, #1a2744 100%);
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
+  /* PC/데스크탑 기본값: 카드를 좌측 하단에 배치해 배경 영상(비행기,
+     좌상단 문구)을 크게 살리는 항공사/그룹웨어 스타일. 768px 이하
+     모바일에서는 아래 미디어쿼리가 다시 중앙 정렬로 되돌린다. */
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: 90px 20px 90px 80px;
   box-sizing: border-box;
 }
 
@@ -71,9 +74,9 @@ body {
   transform: translate(-50%, -50%);
   object-fit: cover;   /* 모바일 포함 어떤 화면비에서도 영상이 잘리지 않고 채워짐 */
   /* 영상 좌상단의 'TRINITY AIR SERVICE' 문구가 잘리지 않도록 크롭
-     기준점을 살짝 좌상단 쪽으로 이동. 화면 중앙에 있는 로그인
-     카드와 겹쳐 어색해지지 않도록 너무 극단적이지 않은 값으로 조정. */
-  object-position: 35% 30%;
+     기준점을 좌상단 쪽으로 이동. 카드가 PC에서는 좌측 하단으로
+     옮겨졌으므로 더 적극적으로 좌상단을 보여줄 수 있게 조정. */
+  object-position: 25% 20%;
   z-index: 0;
   pointer-events: none;
 }
@@ -1184,6 +1187,20 @@ body {
 }
 
 @media (max-width: 768px) {
+  /* 모바일/좁은 화면: 로그인 카드를 다시 화면 정중앙으로 복귀
+     (PC 전용 좌측하단 배치는 데스크탑에서만 의미가 있고, 좁은
+     화면에서는 사용성을 위해 기존 중앙 배치를 유지) */
+  .login-page {
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  /* 카드가 다시 중앙으로 오므로, 영상도 좌상단에 너무 치우치지
+     않도록 중앙에 더 가까운 크롭 기준점 사용 */
+  .login-bg-video {
+    object-position: 45% 30%;
+  }
+
   :root { --header-h: 56px; }
   .main-content { padding: 16px 14px; }
   .stat-cards { grid-template-columns: repeat(2, 1fr); gap: 10px; }
