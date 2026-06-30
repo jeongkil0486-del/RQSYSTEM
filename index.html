@@ -153,9 +153,8 @@
                 <button id="resetAllBtn" class="btn btn-danger" onclick="resetAllRequests()" style="display:none;">스케줄 전체 초기화</button>
                 <button id="resetConfigBtn" class="btn btn-secondary" onclick="resetAllConfigurations()" style="display:none;">설정 전체 초기화</button>
                 <div class="nav-arrows month-nav-inline">
-                    <label class="form-label month-nav-label">달력 월</label>
-                    <button class="btn-today" onclick="goToToday()">오늘</button>
                     <button class="btn-arrow" onclick="prevMonth()">&#8249;</button>
+                    <span id="adminMonthDisplay" class="month-nav-display">—년 —월</span>
                     <button class="btn-arrow" onclick="nextMonth()">&#8250;</button>
                 </div>
             </div>
@@ -890,6 +889,7 @@ function prevMonth() {
     m--; if (m < 1) { m = 12; y--; }
     ym.value = String(y);
     mm.value = _pad2(m);
+    if (typeof _updateAdminMonthDisplay === 'function') _updateAdminMonthDisplay();
     if (typeof saveYearMonthConfig === 'function') saveYearMonthConfig();
 }
 function nextMonth() {
@@ -900,6 +900,7 @@ function nextMonth() {
     m++; if (m > 12) { m = 1; y++; }
     ym.value = String(y);
     mm.value = _pad2(m);
+    if (typeof _updateAdminMonthDisplay === 'function') _updateAdminMonthDisplay();
     if (typeof saveYearMonthConfig === 'function') saveYearMonthConfig();
 }
 function goToToday() {
@@ -908,6 +909,7 @@ function goToToday() {
     var now = new Date();
     if (ym) ym.value = String(now.getFullYear());
     if (mm) mm.value = _pad2(now.getMonth() + 1);
+    if (typeof _updateAdminMonthDisplay === 'function') _updateAdminMonthDisplay();
     if (typeof saveYearMonthConfig === 'function') saveYearMonthConfig();
 }
 
@@ -973,12 +975,29 @@ function _fixDateTimeInputs() {
     }
 }
 
+// ── 관리자 월 이동 표시 갱신 ('< 2026년 7월 >' 형태) ────
+// targetYear/targetMonth select 의 현재 값을 그대로 읽어 표시한다.
+// (저장 성공 여부와 무관하게 화면에 보이는 값 = select 의 현재 값을
+//  항상 일치시키는 것이 목적이므로 getTargetYearMonth() 대신 select
+//  자체를 직접 읽는다.)
+function _updateAdminMonthDisplay() {
+    var display = document.getElementById("adminMonthDisplay");
+    if (!display) return;
+    var ym = document.getElementById("targetYear");
+    var mm = document.getElementById("targetMonth");
+    if (!ym || !mm || !ym.value || !mm.value) return;
+    var y = ym.value;
+    var m = parseInt(mm.value, 10);
+    display.innerText = y + "년 " + m + "월";
+}
+
 // refreshData 가 호출된 후 datetime input 을 다시 보정
 var _origRefreshDataForDt = (typeof refreshData === 'function') ? refreshData : null;
 if (_origRefreshDataForDt) {
     refreshData = function() {
         var ret = _origRefreshDataForDt.apply(this, arguments);
         setTimeout(_fixDateTimeInputs, 50);
+        setTimeout(_updateAdminMonthDisplay, 50);
         return ret;
     };
 }
@@ -1083,7 +1102,10 @@ function applyRoleBasedUI() {
         showPage('dashboard');
 
         // datetime input 보정 (관리자만 해당)
-        if (isAdm) setTimeout(_fixDateTimeInputs, 200);
+        if (isAdm) {
+            setTimeout(_fixDateTimeInputs, 200);
+            setTimeout(_updateAdminMonthDisplay, 200);
+        }
     }, 250);
 }
 
