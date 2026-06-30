@@ -5,6 +5,7 @@
  */
 
 var allowedUsersSortMode = "empNo";
+var allowedUsersSearchTerm = "";
 var groupBoardState = { POOL: [], A: [], B: [], C: [], D: [], E: [] };
 var groupBoardStateLoaded = false;
 
@@ -12,6 +13,12 @@ function _getVisibleDeptEmployees() {
     return (Array.isArray(deptEmployees) ? deptEmployees : []).filter(function(emp) {
         return !!(emp && emp.uid && String(emp.empNo || "").trim() && String(emp.name || "").trim());
     });
+}
+
+// ── 직원 목록 검색(사번/이름) — UI 필터링만, deptEmployees 원본은 그대로 ────────
+function filterAllowedUsersBoard(term) {
+    allowedUsersSearchTerm = String(term || "").trim().toLowerCase();
+    drawAllowedUsersBoard();
 }
 
 // ── 직원 목록 정렬 (정렬 버튼용 — 표시 순서만, 배열 원본 비변경) ───────────
@@ -37,28 +44,43 @@ function setAllowedUsersSortMode(mode) {
 // ── ID 신청 (직원 목록) 보드 — 드래그로 순서 변경 ────────────────────────────
 // deptEmployees 배열 순서 = 스케줄 다운로드(exportToExcel) 행 순서
 function drawAllowedUsersBoard() {
-    var board = document.getElementById("allowedUsersTooltipBoard");
+    var listContainer = document.getElementById("allowedUsersTooltipBoardList");
+    // (구버전 마크업과의 호환을 위해 list 컨테이너가 없으면 board 자체에 그린다)
+    var board = listContainer || document.getElementById("allowedUsersTooltipBoard");
     if (!board) return;
     var visibleEmployees = _getVisibleDeptEmployees();
+
+    var term = allowedUsersSearchTerm;
+    var filteredEmployees = term ? visibleEmployees.filter(function(emp) {
+        return String(emp.empNo || "").toLowerCase().indexOf(term) !== -1 ||
+               String(emp.name  || "").toLowerCase().indexOf(term) !== -1;
+    }) : visibleEmployees;
 
     if (visibleEmployees.length === 0) {
         board.innerHTML = "<div style='color:#aaa;font-size:13px;'>등록된 직원이 없습니다.</div>";
         return;
     }
+    if (filteredEmployees.length === 0) {
+        board.innerHTML = "<div style='color:#aaa;font-size:13px;'>검색 결과가 없습니다.</div>";
+        return;
+    }
 
-    var html = "<strong style='color:#fff;font-size:13px;'>직원 목록 (" + visibleEmployees.length + "명)</strong>";
-    html += "<div style='font-size:10px;color:#bdc3c7;margin:3px 0 7px;'>드래그로 순서 변경 → 스케줄 다운로드 순서에 반영</div>";
+    var html = "<strong style='color:#fff;font-size:13px;'>직원 목록 (" + filteredEmployees.length + " / " + visibleEmployees.length + "명)</strong>";
+    html += "<div style='font-size:10px;color:#bdc3c7;margin:3px 0 7px;'>드래그로 순서 변경 → 스케줄 다운로드 순서에 반영 (검색 중에는 순서 변경이 비활성화됩니다)</div>";
     html += "<div id='empDragList' style='display:flex;flex-wrap:wrap;gap:5px;'>";
-    visibleEmployees.forEach(function(emp, idx) {
-        html += "<span draggable='true' data-empidx='" + idx + "'"
+    filteredEmployees.forEach(function(emp) {
+        var idx = visibleEmployees.indexOf(emp);
+        html += "<span" + (term ? "" : " draggable='true'") + " data-empidx='" + idx + "'"
               + " style='background:rgba(46,204,113,0.2);border:1px solid #2ecc71;"
               + "border-radius:5px;padding:4px 8px;font-size:12px;color:#2ecc71;"
-              + "cursor:grab;user-select:none;white-space:nowrap;'"
+              + "cursor:" + (term ? "default" : "grab") + ";user-select:none;white-space:nowrap;'"
               + ">"
               + emp.name + " (" + emp.empNo + ")</span>";
     });
     html += "</div>";
     board.innerHTML = html;
+
+    if (term) return; // 검색 중에는 드래그 정렬 비활성화 (인덱스 불일치 방지)
 
     // HTML5 드래그앤드롭 — deptEmployees 배열 재정렬
     var dragSrcIdx = null;
@@ -111,7 +133,7 @@ function drawAllowedUsersBoard() {
 function toggleAllowedUsersBoard(event) {
     drawAllowedUsersBoard();
     var board = document.getElementById("allowedUsersTooltipBoard");
-    if (board) board.classList.toggle("active");
+    if (board) { board.classList.toggle("active"); _applyAccordionState(board); }
     if (event) event.stopPropagation();
 }
 
@@ -120,7 +142,7 @@ function toggleGroupBoard(event) {
     groupBoardStateLoaded = false;
     drawLiveGroupBoards();
     var board = document.getElementById("groupListTooltipBoard");
-    if (board) board.classList.toggle("active");
+    if (board) { board.classList.toggle("active"); _applyAccordionState(board); }
     if (event) event.stopPropagation();
 }
 
@@ -155,7 +177,7 @@ function _normalizeGroupToken(token) {
 
 function _getGroupBoardTokenLabel(token) {
     var emp = employeeByUid[token] || employeeByEmpNo[String(token).toLowerCase()];
-    if (!emp) return String(token || "");
+    if (!emp) return "삭제된 직원";
     return emp.name + (emp.empNo ? " (" + emp.empNo + ")" : "");
 }
 
@@ -223,34 +245,41 @@ function _bindGroupBoardDropTarget(target, zone, indexResolver) {
     });
 }
 
-// ── 조별 배정 보드 — 드래그 전용 ─────────────────────────────────────────────
+// ── 조별 배정 보드 — 드래그 전용, Grid(카드) 배치 + 저장 버튼 Sticky ──────────
 function drawLiveGroupBoards() {
     var board = document.getElementById("groupListTooltipBoard");
     if (!board) return;
     if (!groupBoardStateLoaded) _buildGroupBoardState();
 
+    var ZONE_LABELS = { A: "A조", B: "B조", C: "C조", D: "D조", E: "E조", POOL: "미배정" };
+    var ZONE_ORDER  = ["A", "B", "C", "D", "E", "POOL"];
+
     var html = "<strong style='color:#fff;font-size:13px;'>조별 배정</strong>"
-             + "<div style='font-size:10px;color:#bdc3c7;margin:3px 0 6px;'>직원 ID 목록을 드래그해서 POOL/A/B/C/D/E 사이로만 이동할 수 있습니다. 직접 입력은 비활성화되었습니다.</div>";
+             + "<div style='font-size:10px;color:#bdc3c7;margin:3px 0 6px;'>직원 카드를 드래그해서 조 사이로 이동할 수 있습니다. 직접 입력은 비활성화되었습니다.</div>";
 
-    html += "<div style='margin-bottom:8px;display:flex;gap:6px;align-items:flex-start;'>";
-    html += "<label style='color:#fff;font-weight:bold;width:38px;line-height:28px;flex-shrink:0;'>POOL</label>";
-    html += "<div id='groupDropZonePOOL' class='group-drop-zone' style='flex:1;min-height:38px;background:rgba(255,255,255,0.04);border:1px dashed #555;border-radius:4px;padding:4px;display:flex;flex-wrap:wrap;gap:4px;align-content:flex-start;'>";
-    html += groupBoardState.POOL.length ? groupBoardState.POOL.map(function(token, index) {
-        return "<span class='group-drag-emp group-member-chip' draggable='true' data-token='" + token + "' data-zone='POOL' data-index='" + index + "' style='background:rgba(52,152,219,0.2);border:1px solid #3498db;border-radius:4px;padding:3px 7px;font-size:12px;color:#74b9ff;cursor:grab;user-select:none;white-space:nowrap;'>" + _getGroupBoardTokenLabel(token) + "</span>";
-    }).join("") : "<span style='color:#666;font-size:11px;'>미배정 직원</span>";
-    html += "</div></div>";
-
-    ["A","B","C","D","E"].forEach(function(group) {
-        html += "<div style='margin:5px 0;display:flex;gap:6px;align-items:flex-start;'>";
-        html += "<label style='color:#fff;font-weight:bold;width:38px;line-height:28px;flex-shrink:0;'>" + group + "</label>";
-        html += "<div id='groupDropZone" + group + "' class='group-drop-zone' data-zone='" + group + "' style='flex:1;min-height:38px;background:rgba(255,255,255,0.04);border:1px dashed #555;border-radius:4px;padding:4px;display:flex;flex-wrap:wrap;gap:4px;align-content:flex-start;'>";
-        html += groupBoardState[group].length ? groupBoardState[group].map(function(token, index) {
-            return "<span class='group-drag-emp group-member-chip' draggable='true' data-token='" + token + "' data-zone='" + group + "' data-index='" + index + "' style='background:rgba(46,204,113,0.2);border:1px solid #2ecc71;border-radius:4px;padding:3px 7px;font-size:12px;color:#8af5b2;cursor:grab;user-select:none;white-space:nowrap;'>" + _getGroupBoardTokenLabel(token) + "</span>";
-        }).join("") : "<span style='color:#666;font-size:11px;'>여기로 드래그</span>";
+    html += "<div class='group-board-scroll'>";
+    html += "<div class='group-grid'>";
+    ZONE_ORDER.forEach(function(zone) {
+        var emptyMsg = zone === "POOL" ? "미배정 직원 없음" : "여기로 드래그";
+        html += "<div class='group-grid-card'>";
+        html += "<div class='group-grid-card-title'>" + ZONE_LABELS[zone] + "</div>";
+        html += "<div id='groupDropZone" + zone + "' class='group-grid-dropzone' data-zone='" + zone + "'>";
+        html += groupBoardState[zone].length ? groupBoardState[zone].map(function(token, index) {
+            var isPool = zone === "POOL";
+            var bg = isPool ? "rgba(52,152,219,0.2)" : "rgba(46,204,113,0.2)";
+            var bd = isPool ? "#3498db" : "#2ecc71";
+            var tx = isPool ? "#74b9ff" : "#8af5b2";
+            return "<span class='group-drag-emp group-member-chip' draggable='true' data-token='" + token + "' data-zone='" + zone + "' data-index='" + index + "' style='background:" + bg + ";border:1px solid " + bd + ";border-radius:4px;padding:3px 7px;font-size:12px;color:" + tx + ";cursor:grab;user-select:none;white-space:nowrap;'>" + _getGroupBoardTokenLabel(token) + "</span>";
+        }).join("") : "<span style='color:#666;font-size:11px;'>" + emptyMsg + "</span>";
         html += "</div></div>";
     });
+    html += "</div>"; // .group-grid
 
-    html += "<button type='button' class='btn btn-primary-sm' style='margin-top:10px; width:100%;' onclick='saveAllGroupsFromInputs()'>저장</button>";
+    html += "<div class='group-board-stickyfoot'>";
+    html += "<button type='button' class='btn btn-primary-sm' onclick='saveAllGroupsFromInputs()'>저장</button>";
+    html += "</div>";
+    html += "</div>"; // .group-board-scroll
+
     board.innerHTML = html;
 
     board.querySelectorAll(".group-drag-emp").forEach(function(el) {
@@ -264,9 +293,8 @@ function drawLiveGroupBoards() {
         });
     });
 
-    _bindGroupBoardDropTarget(document.getElementById("groupDropZonePOOL"), "POOL");
-    ["A","B","C","D","E"].forEach(function(group) {
-        _bindGroupBoardDropTarget(document.getElementById("groupDropZone" + group), group);
+    ZONE_ORDER.forEach(function(zone) {
+        _bindGroupBoardDropTarget(document.getElementById("groupDropZone" + zone), zone);
     });
 
     board.querySelectorAll(".group-member-chip").forEach(function(chip) {
@@ -399,3 +427,4 @@ function toggleApplicationMode() {
 window.toggleGroupBoard        = toggleGroupBoard;
 window.toggleAllowedUsersBoard = toggleAllowedUsersBoard;
 window.setAllowedUsersSortMode = setAllowedUsersSortMode;
+window.filterAllowedUsersBoard = filterAllowedUsersBoard;

@@ -387,7 +387,7 @@ function downloadAnnualTemplate() {
 
 function toggleAnnualStatusBoard(event) {
     var board = document.getElementById("annualStatusTooltipBoard");
-    if (board) board.classList.toggle("active");
+    if (board) { board.classList.toggle("active"); if (typeof _applyAccordionState === "function") _applyAccordionState(board); }
     if (event) event.stopPropagation();
 }
 
@@ -423,7 +423,7 @@ function drawAnnualStatusBoard() {
 
         hasAny = true;
         var remain   = quota - used;
-        var label    = (emp.name || uid) + " (" + empNo + ")";
+        var label    = (emp.name || "삭제된 직원") + " (" + empNo + ")";
         var bgColor  = remain <= 0 ? "rgba(229,57,53,0.25)"  : remain <= 2 ? "rgba(245,127,23,0.25)"  : "rgba(46,125,50,0.25)";
         var bdColor  = remain <= 0 ? "#e53935"               : remain <= 2 ? "#f57f17"               : "#43a047";
         var txColor  = remain <= 0 ? "#ff8a80"               : remain <= 2 ? "#ffcc02"               : "#a5d6a7";

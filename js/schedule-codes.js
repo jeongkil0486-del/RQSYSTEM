@@ -59,7 +59,7 @@ function deleteScheduleCode() {
 
 function toggleScheduleCodeBoard(event) {
     var board = document.getElementById("scheduleCodeTooltipBoard");
-    if (board) board.classList.toggle("active");
+    if (board) { board.classList.toggle("active"); if (typeof _applyAccordionState === "function") _applyAccordionState(board); }
     if (event) event.stopPropagation();
 }
 
@@ -188,7 +188,7 @@ function clearScGroupLimit() {
 
 function toggleScGroupLimitBoard(event) {
     var board = document.getElementById("scGroupLimitTooltipBoard");
-    if (board) board.classList.toggle("active");
+    if (board) { board.classList.toggle("active"); if (typeof _applyAccordionState === "function") _applyAccordionState(board); }
     if (event) event.stopPropagation();
 }
 
