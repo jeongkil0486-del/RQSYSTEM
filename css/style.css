@@ -65,21 +65,17 @@ body {
 
 /* 로그인 화면 전용 배경 영상 — 순수 장식 레이어, 기능/로그인 로직과 무관.
    영상을 불러오지 못하면 <video> 가 빈 공간(투명)으로 남고, 부모인
-   .login-page 의 그라디언트 배경이 자연스럽게 fallback 으로 보인다. */
+   .login-page 의 그라디언트 배경이 자연스럽게 fallback 으로 보인다.
+   영상 파일(login-bg.mp4)은 좌우 검은 여백을 제거한 상태로 교체되었으므로
+   object-position 은 center center 가 기본값. */
 .login-bg-video {
   position: absolute;
   top: 50%; left: 50%;
   width: 100%; height: 100%;
   min-width: 100%; min-height: 100%;
   transform: translate(-50%, -50%);
-  object-fit: cover;   /* 모바일 포함 어떤 화면비에서도 영상이 잘리지 않고 채워짐 */
-  /* 영상 내부 좌상단 문구('TRINITY AIR SERVICE' / 'Safe · Reliable ·
-     Professional')가 잘리지 않도록 크롭 기준점을 좌상단 쪽으로 이동.
-     ⚠️ object-position 의 Y값은 클수록 영상의 '아래쪽'이 보이고 상단은
-     더 잘리는 방향이다. 직전 수정(25%→32%)이 이 방향을 반대로 적용해
-     문구가 더 잘리는 결과를 냈음 — 이번에 Y값을 낮춰 상단이 더 많이
-     보이도록 정정. */
-  object-position: 30% 18%;
+  object-fit: cover;
+  object-position: center center;
   z-index: 0;
   pointer-events: none;
 }
@@ -1303,10 +1299,8 @@ body {
     justify-content: center;
     padding: 20px;
   }
-  /* 카드가 다시 중앙으로 오므로, 영상도 좌상단에 너무 치우치지
-     않도록 중앙에 더 가까운 크롭 기준점 사용 */
   .login-bg-video {
-    object-position: 45% 30%;
+    object-position: center center;
   }
   /* 모바일에서는 데스크탑 전용 좌상단 고정 로고를 숨기고,
      카드 내부 로고(.login-logo-wrap)를 다시 사용한다. */
