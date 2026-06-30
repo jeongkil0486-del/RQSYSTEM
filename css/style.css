@@ -898,17 +898,6 @@ body {
   position: relative;
 }
 .feature-card:hover { box-shadow: var(--shadow-md); }
-/* 펼쳐진(Expand) 카드 강조 — 현재 어떤 카드가 열려있는지 한눈에 보이도록 */
-.feature-card.expanded {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(37,99,235,.14), var(--shadow-md);
-}
-.feature-card.expanded .feature-card-header {
-  background: #eff6ff;
-}
-.feature-card.expanded .feature-card-title {
-  color: var(--accent);
-}
 .feature-card-header {
   padding: 16px 20px 14px;
   border-top-left-radius: var(--radius);
@@ -917,7 +906,6 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  transition: background .15s;
 }
 .feature-icon {
   width: 40px; height: 40px;
@@ -1056,12 +1044,9 @@ body {
 .gl-d { background: #d1fae5; color: #065f46; }
 .gl-e { background: #fce7f3; color: #9d174d; }
 
-/* Tooltip panels */
-/* Expand 패널 (구 floating tooltip) — 카드 내부, 클릭 시 카드 하단에 펼쳐짐.
-   더 이상 화면 위에 뜨는 팝업/플로팅 박스가 아니라, 카드 본문의 일부로
-   흐름(inline flow)에 포함되며, 내부만 스크롤된다. */
+/* 목록 패널 (입력 영역 바로 아래 항상 표시 — 펼치기/접기 없음) */
 .custom-floating-tooltip {
-  display: none;
+  display: block;
   position: static;
   width: 100%;
   margin-top: 12px;
@@ -1095,7 +1080,6 @@ body {
   padding-top: 12px;
   margin-top: -12px;
 }
-.custom-floating-tooltip.active { display: block !important; }
 
 /* 조별편성 Grid (A~E조 + 미배정) — 세로 리스트 대신 카드형 그리드 배치 */
 .group-grid {
@@ -1127,21 +1111,20 @@ body {
   align-content: flex-start;
   min-height: 60px;
 }
-/* 조별편성 패널 내부 스크롤 + 저장 버튼 우측 하단 고정(Sticky) */
+/* 조별편성 패널 내부 — Sticky 저장 버튼을 위한 래퍼 (스크롤은 상위
+   .custom-floating-tooltip 에서 한 번만 일어나도록 통일, 중첩 스크롤 방지) */
 .group-board-scroll {
-  max-height: 420px;
-  overflow-y: auto;
   padding-bottom: 44px;
   position: relative;
 }
 .group-board-stickyfoot {
   position: sticky;
-  bottom: 0;
+  bottom: -12px;
   right: 0;
   display: flex;
   justify-content: flex-end;
-  padding: 8px 0 0;
-  margin-top: 6px;
+  padding: 8px 16px 8px 0;
+  margin: 6px -16px -12px;
   background: linear-gradient(to top, rgba(26,39,68,1) 60%, rgba(26,39,68,0));
 }
 
@@ -1478,15 +1461,7 @@ body {
   .cards-grid { grid-template-columns: 1fr; }
 
   .custom-floating-tooltip {
-    position: fixed;
-    top: auto; bottom: 10px;
-    left: 5% !important;
-    width: 90% !important;
-    min-width: auto;
-    max-width: 90%;
-    max-height: 70vh;
-    overflow-y: auto;
-    box-sizing: border-box;
+    max-height: 320px;
   }
 }
 
