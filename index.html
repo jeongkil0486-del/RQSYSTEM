@@ -131,7 +131,7 @@
                     <div class="stat-info">
                         <div class="stat-label">승인 대기</div>
                         <div class="stat-value" id="statPending">—</div>
-                        <div class="stat-meta">신청 대기 중</div>
+                        <div class="stat-meta">기능 준비 중</div>
                     </div>
                 </div>
                 <div class="stat-card">
@@ -139,7 +139,7 @@
                     <div class="stat-info">
                         <div class="stat-label">알림</div>
                         <div class="stat-value" id="statAlerts">—</div>
-                        <div class="stat-meta">확인 필요</div>
+                        <div class="stat-meta">기능 준비 중</div>
                     </div>
                 </div>
             </div>
@@ -163,12 +163,10 @@
                 <button class="btn btn-success staff-btn" onclick="refreshData()" style="margin-left:auto;">새로고침</button>
             </div>
 
-            <!-- 관리자용 추가 버튼 -->
+            <!-- 관리자용 추가 버튼 (요청에 따라 새로고침 버튼 제거 — 직원모드에는 유지) -->
             <div id="adminActionBar" style="display:none; margin-bottom:12px;" class="flex gap-2 items-center">
                 <button id="resetAllBtn" class="btn btn-danger" onclick="resetAllRequests()" style="display:none;">스케줄 전체 초기화</button>
                 <button id="resetConfigBtn" class="btn btn-secondary" onclick="resetAllConfigurations()" style="display:none;">설정 전체 초기화</button>
-                <div class="spacer" style="flex:1;"></div>
-                <button class="btn btn-success" onclick="refreshData()">🔄 새로고침</button>
             </div>
 
             <!-- Dashboard body: calendar + right panel -->
@@ -814,6 +812,17 @@
     </div>
 </div>
 
+<!-- 신청 상세 모달 (관리자용 — 달력 셀 클릭 시 신청 순서대로 명단 + 개별 취소) -->
+<div id="applicantDetailModal" onclick="if(event.target===this) closeApplicantDetailModal();" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.55); z-index:99998; justify-content:center; align-items:center;">
+    <div style="background:#fff; border-radius:14px; padding:0; width:380px; max-width:92%; max-height:80vh; box-shadow:0 8px 32px rgba(0,0,0,0.35); box-sizing:border-box; display:flex; flex-direction:column; overflow:hidden;">
+        <div style="padding:18px 20px 14px; border-bottom:1px solid #e2e8f0; display:flex; align-items:center; justify-content:space-between;">
+            <div id="applicantModalTitle" style="font-size:15px; font-weight:700; color:#1e293b;">신청 목록</div>
+            <button type="button" onclick="closeApplicantDetailModal()" style="background:none; border:none; font-size:18px; color:#94a3b8; cursor:pointer; line-height:1; padding:0 4px;">✕</button>
+        </div>
+        <div id="applicantModalBody" style="padding:8px 12px; overflow-y:auto; flex:1;"></div>
+    </div>
+</div>
+
 
 <!-- ═══════════════════════════════════════════════
      SCRIPTS
@@ -1100,20 +1109,61 @@ renderRestrictedRoleView = function() {
 // ── 최근 신청 내역 렌더 헬퍼 (관리자 대시보드 전용) ────
 function updateRecentFeed(items) {
     var feed = document.getElementById('recentFeed');
-    if (!feed || !items || !items.length) return;
+    if (!feed) return;
+    if (!items || !items.length) {
+        feed.innerHTML = "<div style='font-size:12px; color:var(--text-light); text-align:center; padding:20px 0;'>최근 신청 내역이 없습니다.</div>";
+        return;
+    }
     var html = '';
     items.forEach(function(item) {
-        var badgeClass = 'badge-' + (item.type || '휴무');
+        var typeLabel = item.type || '휴무';
         html += '<div class="request-item">'
             + '<div class="request-meta">'
             + '<span class="request-time">' + (item.time || '') + '</span>'
             + '<span class="request-name">' + (item.name || '') + '</span>'
             + '<span class="request-id">' + (item.id || '') + '</span>'
-            + '<span class="request-type-badge ' + badgeClass + '">' + (item.type || '휴무') + '</span>'
+            + '<span class="request-type-badge badge-' + typeLabel + '">' + typeLabel + '</span>'
             + '</div>'
             + '</div>';
     });
     feed.innerHTML = html;
+}
+
+// ── 최근 신청 내역: adminViewCache 의 신청 데이터에서 ts(신청 시각) 기준으로
+//    가장 최근 N건을 뽑아 위 updateRecentFeed 에 전달한다.
+function refreshRecentFeed(limit) {
+    limit = limit || 8;
+    var entries = [];
+    Object.keys(adminViewCache || {}).forEach(function(uid) {
+        var days = adminViewCache[uid] || {};
+        Object.keys(days).forEach(function(dayKey) {
+            var req = days[dayKey];
+            if (!req) return;
+            var emp = employeeByUid[uid] || {};
+            var typeLabel = "휴무";
+            if (req.type === "petition") typeLabel = "청원";
+            else if (req.type === "annual") typeLabel = "연차";
+            else if (req.type === "schedule") typeLabel = "스케줄코드";
+            entries.push({
+                ts:   req.ts || 0,
+                name: emp.name || req.name || uid,
+                id:   emp.empNo || req.empNo || "",
+                type: typeLabel
+            });
+        });
+    });
+    entries.sort(function(a, b) { return b.ts - a.ts; }); // 최신순
+    entries = entries.slice(0, limit);
+
+    entries.forEach(function(e) {
+        var d = e.ts ? new Date(e.ts) : null;
+        e.time = d ? (
+            (d.getMonth() + 1) + "/" + d.getDate() + " " +
+            String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0")
+        ) : "";
+    });
+
+    if (typeof updateRecentFeed === "function") updateRecentFeed(entries);
 }
 
 // ── loginArea display 패치 (block → flex) ────────────
