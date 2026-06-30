@@ -142,6 +142,7 @@
             <!-- 빠른 조회 (관리자) — 지점/직원 선택 제거 (관리자는 이미 자기 지점으로 로그인) -->
             <div class="filter-bar" id="adminFilterBar" style="display:none;">
                 <div class="nav-arrows">
+                    <label class="form-label month-nav-label">달력 월</label>
                     <button class="btn-today" onclick="goToToday()">오늘</button>
                     <button class="btn-arrow" onclick="prevMonth()">&#8249;</button>
                     <button class="btn-arrow" onclick="nextMonth()">&#8250;</button>
@@ -182,7 +183,7 @@
                     <div class="panel-card" id="recentRequestsCard">
                         <div class="panel-card-header">
                             <div class="panel-card-title">최근 신청 내역</div>
-                            <div class="panel-card-link">더보기 &rsaquo;</div>
+                            <div class="panel-card-link" onclick="openRecentFeedModal()" style="cursor:pointer;">더보기 &rsaquo;</div>
                         </div>
                         <div class="panel-card-body">
                             <div class="request-feed" id="recentFeed">
@@ -197,7 +198,6 @@
                     <div class="panel-card">
                         <div class="panel-card-header">
                             <div class="panel-card-title">공지사항</div>
-                            <div class="panel-card-link">더보기 &rsaquo;</div>
                         </div>
                         <div class="panel-card-body">
                             <div class="notice-list">
@@ -223,8 +223,8 @@
 
             <div class="cards-grid">
 
-                <!-- 특정일 제한 -->
-                <div class="feature-card">
+                <!-- 특정일 제한 (전체 너비 — 날짜/제한인원/적용 버튼이 한 줄에 들어가도록) -->
+                <div class="feature-card card-wide">
                     <div class="feature-card-header">
                         <div class="feature-icon blue" style="background:#eff6ff;">🎯</div>
                         <div>
@@ -240,7 +240,7 @@
                                 <div class="custom-floating-tooltip" id="specialDayTooltipBoard"></div>
                             </div>
                         </div>
-                        <div class="form-row">
+                        <div class="form-row form-row-nowrap">
                             <label class="form-label">날짜 (일)</label>
                             <input type="number" id="specialDayInput" min="1" max="31" class="form-input small small-num-input" placeholder="일">
                             <label class="form-label" style="min-width:auto;">제한 인원</label>
@@ -605,13 +605,13 @@
                     </div>
                 </div>
 
-                <!-- 연차 양식 다운로드 (슈퍼관리자 전용) -->
+                <!-- 연차 양식 다운로드 (관리자 전용 — 연차 업로드 기능과 짝을 이룸) -->
                 <div class="feature-card" id="cardDownloadAnnualTemplate" style="display:none;">
                     <div class="feature-card-header">
                         <div class="feature-icon blue" style="background:#eff6ff;">📄</div>
                         <div>
                             <div class="feature-card-title">연차 양식 다운로드</div>
-                            <div class="feature-card-desc">연차 업로드용 엑셀 양식을 다운로드합니다. (슈퍼관리자)</div>
+                            <div class="feature-card-desc">연차 업로드용 엑셀 양식을 다운로드합니다.</div>
                         </div>
                     </div>
                     <div class="feature-card-body">
@@ -815,6 +815,17 @@
             <button type="button" onclick="closeApplicantDetailModal()" style="background:none; border:none; font-size:18px; color:#94a3b8; cursor:pointer; line-height:1; padding:0 4px;">✕</button>
         </div>
         <div id="applicantModalBody" style="padding:8px 12px; overflow-y:auto; flex:1;"></div>
+    </div>
+</div>
+
+<!-- 최근 신청 내역 전체보기 모달 ('더보기' 클릭 시) -->
+<div id="recentFeedModal" onclick="if(event.target===this) closeRecentFeedModal();" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.55); z-index:99998; justify-content:center; align-items:center;">
+    <div style="background:#fff; border-radius:14px; padding:0; width:420px; max-width:92%; max-height:80vh; box-shadow:0 8px 32px rgba(0,0,0,0.35); box-sizing:border-box; display:flex; flex-direction:column; overflow:hidden;">
+        <div style="padding:18px 20px 14px; border-bottom:1px solid #e2e8f0; display:flex; align-items:center; justify-content:space-between;">
+            <div style="font-size:15px; font-weight:700; color:#1e293b;">최근 신청 내역 전체</div>
+            <button type="button" onclick="closeRecentFeedModal()" style="background:none; border:none; font-size:18px; color:#94a3b8; cursor:pointer; line-height:1; padding:0 4px;">✕</button>
+        </div>
+        <div id="recentFeedModalBody" class="request-feed" style="padding:8px 16px; overflow-y:auto; flex:1;"></div>
     </div>
 </div>
 
@@ -1072,13 +1083,14 @@ function applyRoleBasedUI() {
             if (dashBody2) dashBody2.style.gridTemplateColumns = '';
         }
 
-        // ── 직원 엑셀 양식 다운로드 / 연차 양식 다운로드는 슈퍼관리자만 ──
+        // ── 직원 엑셀 양식 다운로드: 슈퍼관리자만 (직원 계정 생성용이라 권한 민감) ──
+        // ── 연차 양식 다운로드: 관리자도 사용 (연차 업로드 기능과 짝을 이루므로 복구) ──
         var tmplCard = document.getElementById('cardDownloadEmpTemplate');
         var annualTmplCard = document.getElementById('cardDownloadAnnualTemplate');
         var annualTmplBtnInEmpPage = document.getElementById('btnAnnualTemplateInEmpPage');
         if (tmplCard) tmplCard.style.display = 'none'; // 관리자/직원 모두 비노출 (슈퍼관리자는 별도 페이지 사용)
-        if (annualTmplCard) annualTmplCard.style.display = 'none';
-        if (annualTmplBtnInEmpPage) annualTmplBtnInEmpPage.style.display = 'none';
+        if (annualTmplCard) annualTmplCard.style.display = isAdm ? 'block' : 'none';
+        if (annualTmplBtnInEmpPage) annualTmplBtnInEmpPage.style.display = isAdm ? 'inline-flex' : 'none';
 
         showPage('dashboard');
 
@@ -1102,8 +1114,8 @@ renderRestrictedRoleView = function() {
 };
 
 // ── 최근 신청 내역 렌더 헬퍼 (관리자 대시보드 전용) ────
-function updateRecentFeed(items) {
-    var feed = document.getElementById('recentFeed');
+function updateRecentFeed(items, targetId) {
+    var feed = document.getElementById(targetId || 'recentFeed');
     if (!feed) return;
     if (!items || !items.length) {
         feed.innerHTML = "<div style='font-size:12px; color:var(--text-light); text-align:center; padding:20px 0;'>최근 신청 내역이 없습니다.</div>";
@@ -1126,7 +1138,7 @@ function updateRecentFeed(items) {
 
 // ── 최근 신청 내역: adminViewCache 의 신청 데이터에서 ts(신청 시각) 기준으로
 //    가장 최근 N건을 뽑아 위 updateRecentFeed 에 전달한다.
-function refreshRecentFeed(limit) {
+function refreshRecentFeed(limit, targetId) {
     limit = limit || 8;
     var entries = [];
     Object.keys(adminViewCache || {}).forEach(function(uid) {
@@ -1158,7 +1170,20 @@ function refreshRecentFeed(limit) {
         ) : "";
     });
 
-    if (typeof updateRecentFeed === "function") updateRecentFeed(entries);
+    if (typeof updateRecentFeed === "function") updateRecentFeed(entries, targetId);
+}
+
+// ── 최근 신청 내역 '더보기' 모달 ──────────────────────
+function openRecentFeedModal() {
+    var modalEl = document.getElementById("recentFeedModal");
+    if (!modalEl) return;
+    // 대시보드 패널은 8건만 보여주므로, 모달에서는 최대 100건까지 전체 표시
+    refreshRecentFeed(100, "recentFeedModalBody");
+    modalEl.style.display = "flex";
+}
+function closeRecentFeedModal() {
+    var modalEl = document.getElementById("recentFeedModal");
+    if (modalEl) modalEl.style.display = "none";
 }
 
 // ── loginArea display 패치 (block → flex) ────────────
