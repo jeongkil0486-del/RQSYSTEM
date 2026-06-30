@@ -139,17 +139,6 @@
                 </div>
             </div>
 
-            <!-- 빠른 조회 (관리자) — 지점/직원 선택 제거 (관리자는 이미 자기 지점으로 로그인) -->
-            <div class="filter-bar" id="adminFilterBar" style="display:none;">
-                <div class="nav-arrows">
-                    <label class="form-label month-nav-label">달력 월</label>
-                    <button class="btn-today" onclick="goToToday()">오늘</button>
-                    <button class="btn-arrow" onclick="prevMonth()">&#8249;</button>
-                    <button class="btn-arrow" onclick="nextMonth()">&#8250;</button>
-                </div>
-                <div class="spacer"></div>
-            </div>
-
             <!-- 직원용 빠른 조회: 달력만, 새로고침 버튼만 -->
             <div class="filter-bar staff-action-bar" id="staffFilterBar" style="display:none;">
                 <!-- 직원 전용 신청 버튼들 (휴무/근무/초기화/새로고침 — 한 줄 고정) -->
@@ -159,10 +148,16 @@
                 <button class="btn btn-success staff-btn" onclick="refreshData()" style="margin-left:auto;">새로고침</button>
             </div>
 
-            <!-- 관리자용 추가 버튼 (요청에 따라 새로고침 버튼 제거 — 직원모드에는 유지) -->
+            <!-- 관리자용 추가 버튼 + 달력 월 이동 (한 액션바에 자연스럽게 통합) -->
             <div id="adminActionBar" style="display:none; margin-bottom:12px;" class="flex gap-2 items-center">
                 <button id="resetAllBtn" class="btn btn-danger" onclick="resetAllRequests()" style="display:none;">스케줄 전체 초기화</button>
                 <button id="resetConfigBtn" class="btn btn-secondary" onclick="resetAllConfigurations()" style="display:none;">설정 전체 초기화</button>
+                <div class="nav-arrows month-nav-inline">
+                    <label class="form-label month-nav-label">달력 월</label>
+                    <button class="btn-today" onclick="goToToday()">오늘</button>
+                    <button class="btn-arrow" onclick="prevMonth()">&#8249;</button>
+                    <button class="btn-arrow" onclick="nextMonth()">&#8250;</button>
+                </div>
             </div>
 
             <!-- Dashboard body: calendar + right panel -->
@@ -223,8 +218,8 @@
 
             <div class="cards-grid">
 
-                <!-- 특정일 제한 (전체 너비 — 날짜/제한인원/적용 버튼이 한 줄에 들어가도록) -->
-                <div class="feature-card card-wide">
+                <!-- 특정일 제한 (다른 두 카드와 한 줄 배치 — 내부는 압축 정렬) -->
+                <div class="feature-card">
                     <div class="feature-card-header">
                         <div class="feature-icon blue" style="background:#eff6ff;">🎯</div>
                         <div>
@@ -240,12 +235,10 @@
                                 <div class="custom-floating-tooltip" id="specialDayTooltipBoard"></div>
                             </div>
                         </div>
-                        <div class="form-row form-row-nowrap">
-                            <label class="form-label">날짜 (일)</label>
-                            <input type="number" id="specialDayInput" min="1" max="31" class="form-input small small-num-input" placeholder="일">
-                            <label class="form-label" style="min-width:auto;">제한 인원</label>
-                            <input type="number" id="specialDayLimit" min="0" max="40" class="form-input small small-num-input" placeholder="명">
-                            <button class="btn btn-primary-sm" onclick="setSpecialDayLimit(true)">적용</button>
+                        <div class="form-row form-row-nowrap form-row-compact">
+                            <input type="number" id="specialDayInput" min="1" max="31" class="form-input tiny-num-input" placeholder="일" title="날짜 (일)">
+                            <input type="number" id="specialDayLimit" min="0" max="40" class="form-input tiny-num-input" placeholder="명" title="제한 인원">
+                            <button class="btn btn-primary-sm btn-compact" onclick="setSpecialDayLimit(true)">적용</button>
                         </div>
                     </div>
                 </div>
@@ -1024,12 +1017,10 @@ function applyRoleBasedUI() {
             // 대시보드 위젯 전체 숨김 (슈퍼관리자는 지점관리 화면 사용)
             var statRow = document.getElementById('statCardsRow');
             var dashBody = document.getElementById('dashboardBody');
-            var adminBar = document.getElementById('adminFilterBar');
             var staffBar = document.getElementById('staffFilterBar');
             var actionBar = document.getElementById('adminActionBar');
             if (statRow) statRow.style.display = 'none';
             if (dashBody) dashBody.style.display = 'none';
-            if (adminBar) adminBar.style.display = 'none';
             if (staffBar) staffBar.style.display = 'none';
             if (actionBar) actionBar.style.display = 'none';
 
@@ -1060,7 +1051,6 @@ function applyRoleBasedUI() {
         // ── 대시보드 위젯: 직원은 달력만, 관리자는 전체 ──
         var statRow2 = document.getElementById('statCardsRow');
         var dashBody2 = document.getElementById('dashboardBody');
-        var adminBar2 = document.getElementById('adminFilterBar');
         var staffBar2 = document.getElementById('staffFilterBar');
         var actionBar2 = document.getElementById('adminActionBar');
         var rightPanel = document.getElementById('rightPanel');
@@ -1069,14 +1059,12 @@ function applyRoleBasedUI() {
 
         if (isStaffOnly) {
             if (statRow2) statRow2.style.display = 'none';
-            if (adminBar2) adminBar2.style.display = 'none';
             if (staffBar2) staffBar2.style.display = 'flex';
             if (actionBar2) actionBar2.style.display = 'none';
             if (rightPanel) rightPanel.style.display = 'none';
             if (dashBody2) dashBody2.style.gridTemplateColumns = '1fr';
         } else {
             if (statRow2) statRow2.style.display = 'grid';
-            if (adminBar2) adminBar2.style.display = 'flex';
             if (staffBar2) staffBar2.style.display = 'none';
             if (actionBar2) actionBar2.style.display = 'flex';
             if (rightPanel) rightPanel.style.display = 'flex';
