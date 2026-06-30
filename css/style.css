@@ -1062,6 +1062,7 @@ body {
   max-width: none;
   max-height: 420px;
   overflow-y: auto;
+  overflow-x: hidden;
   border: 1px solid rgba(255,255,255,.1);
   pointer-events: auto;
 }
@@ -1131,21 +1132,35 @@ body {
 /* 직원 검색 */
 .emp-search-row { margin-bottom: 10px; }
 
-/* 기존 직원 목록 — PC 3열 / 모바일 1열 */
+/* 기존 직원 목록 — PC 3열 / 모바일 1열, 이름(사번)이 잘리지 않고 줄바꿈되도록 */
 .emp-list-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
 }
-.emp-list-grid > span { text-align: center; }
+.emp-list-grid > span {
+  text-align: center;
+  font-size: 11px;
+  padding: 4px 5px;
+  line-height: 1.3;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
 
-/* 연차 현황 — PC 2열 / 모바일 1열 */
+/* 연차 현황 — PC 2열 / 모바일 1열, 이름(사번)이 잘리지 않고 줄바꿈되도록 */
 .annual-list-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
 }
-.annual-list-grid > span { text-align: center; }
+.annual-list-grid > span {
+  text-align: center;
+  font-size: 11px;
+  padding: 4px 5px;
+  line-height: 1.3;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
 
 @media (max-width: 640px) {
   .group-grid { grid-template-columns: repeat(2, 1fr); }
