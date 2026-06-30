@@ -28,6 +28,15 @@
     </video>
     <div class="login-bg-overlay"></div>
 
+    <!-- 영상 안에 포함된 좌상단 문구(흐릿함)를 가리는 마스크.
+         그 위에 동일 문구를 선명한 HTML/CSS 텍스트로 새로 표시한다.
+         순수 장식 레이어 — 로그인 로직과 무관. -->
+    <div class="login-topleft-mask"></div>
+    <div class="login-topleft-text">
+        <div class="login-topleft-title">TRINITY AIR SERVICE</div>
+        <div class="login-topleft-sub">Safe · Reliable · Professional</div>
+    </div>
+
     <!-- 좌상단 고정 로고 (SONO TRINITY 스타일) — 모바일에서는 CSS로 숨기고
          기존처럼 카드 내부 로고(.login-logo-wrap)만 보이도록 처리 -->
     <div class="login-brand-corner">
