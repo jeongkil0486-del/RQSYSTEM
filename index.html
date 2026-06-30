@@ -19,6 +19,15 @@
      LOGIN PAGE
 ═══════════════════════════════════════════════ -->
 <div class="login-page" id="loginArea">
+    <!-- 배경 영상 (로그인 화면 전용) — 기존 그라디언트 배경 위에 표시되며,
+         영상 로드 실패 시 .login-page 의 기존 배경(그라디언트)이 그대로
+         보이는 자연스러운 fallback 이 된다. 기능/로그인 로직과 무관한
+         순수 장식 레이어. -->
+    <video class="login-bg-video" autoplay muted loop playsinline preload="auto">
+        <source src="assets/login-bg.mp4" type="video/mp4">
+    </video>
+    <div class="login-bg-overlay"></div>
+
     <div class="login-card">
         <div class="login-logo-wrap">
             <svg viewBox="0 0 100 100" width="52" height="52">
@@ -913,6 +922,19 @@ function goToToday() {
     if (typeof saveYearMonthConfig === 'function') saveYearMonthConfig();
 }
 
+// ── 로그인 배경 영상 재생 제어 (순수 장식 — 로그인 로직과 무관) ──
+// 로그인 화면이 보이지 않을 때(관리자/직원 화면 진입 후) 영상을
+// 일시정지해 불필요한 리소스 사용을 막고, 다시 로그인 화면으로
+// 돌아오면(로그아웃 시) 재생을 재시작한다.
+function _pauseLoginBgVideo() {
+    var v = document.querySelector('.login-bg-video');
+    if (v && !v.paused) v.pause();
+}
+function _playLoginBgVideo() {
+    var v = document.querySelector('.login-bg-video');
+    if (v) { try { v.play(); } catch (e) {} }
+}
+
 // ── 로그아웃 (기존 closeCalendar 함수 유지 + 새 UI 처리) ──
 var _origCloseCalendar = (typeof closeCalendar === 'function') ? closeCalendar : function(){};
 closeCalendar = function() {
@@ -1206,6 +1228,16 @@ function closeRecentFeedModal() {
         set: function(v) {
             _d = (v === 'block') ? 'flex' : v;
             el.setAttribute('style', 'display:' + _d);
+            // 로그인 화면 배경 영상 재생 제어 (순수 장식 — 로그인 판단
+            // 로직과는 무관). js/main.js 가 loginArea.style.display 를
+            // 직접 'none'/'flex' 로 바꾸는 모든 경로(로그인 성공,
+            // 강제 비밀번호 변경 모달 진입 등)가 이 setter 를 거치므로,
+            // js/main.js 를 전혀 수정하지 않고도 모든 케이스를 커버한다.
+            if (_d === 'none') {
+                if (typeof _pauseLoginBgVideo === 'function') _pauseLoginBgVideo();
+            } else {
+                if (typeof _playLoginBgVideo === 'function') _playLoginBgVideo();
+            }
         },
         configurable: true
     });
