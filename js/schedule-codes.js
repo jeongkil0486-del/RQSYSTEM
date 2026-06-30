@@ -57,12 +57,6 @@ function deleteScheduleCode() {
       }).catch(function(e) { alert(e.message || "삭제 실패"); });
 }
 
-function toggleScheduleCodeBoard(event) {
-    var board = document.getElementById("scheduleCodeTooltipBoard");
-    if (board) { board.classList.toggle("active"); if (typeof _applyAccordionState === "function") _applyAccordionState(board); }
-    if (event) event.stopPropagation();
-}
-
 function drawScheduleCodeBoard() {
     var container = document.getElementById("scheduleCodeTooltipBoard");
     if (!container) return;
@@ -186,15 +180,7 @@ function clearScGroupLimit() {
       }).catch(function(e) { alert(e.message || "해제 실패"); });
 }
 
-function toggleScGroupLimitBoard(event) {
-    var board = document.getElementById("scGroupLimitTooltipBoard");
-    if (board) { board.classList.toggle("active"); if (typeof _applyAccordionState === "function") _applyAccordionState(board); }
-    if (event) event.stopPropagation();
-}
-
 window.saveScGroupLimit = saveScGroupLimit;
-window.toggleScGroupLimitBoard = toggleScGroupLimitBoard;
-window.toggleScheduleCodeBoard = toggleScheduleCodeBoard;
 window.createScheduleCode = createScheduleCode;
 
 function drawScGroupLimitBoard() {

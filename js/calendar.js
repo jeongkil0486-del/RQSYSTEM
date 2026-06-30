@@ -108,40 +108,6 @@ function _runDayRequest(day, requestFn, errorMessage) {
     });
 }
 
-// ── Expand Card 아코디언 공용 헬퍼 ────────────────────────────────────────────
-// 기존에는 custom-floating-tooltip 이 화면 위에 떠다니는 팝업이었으나,
-// 이제는 카드 본문 안에서 펼쳐지는 패널(Expand Card)로 동작한다.
-// 패널이 열릴 때: ① 같은 화면의 다른 열린 패널은 모두 닫고,
-//               ② 부모 .feature-card 에 'expanded' 클래스를 줘서
-//                  현재 펼쳐진 카드가 한눈에 보이도록 강조한다.
-function _applyAccordionState(boardEl) {
-    if (!boardEl) return;
-    var isOpen = boardEl.classList.contains("active");
-    document.querySelectorAll(".custom-floating-tooltip.active").forEach(function(other) {
-        if (other === boardEl) return;
-        other.classList.remove("active");
-        var otherCard = other.closest(".feature-card");
-        if (otherCard) otherCard.classList.remove("expanded");
-    });
-    var myCard = boardEl.closest(".feature-card");
-    if (myCard) {
-        if (isOpen) myCard.classList.add("expanded");
-        else myCard.classList.remove("expanded");
-    }
-}
-
-function toggleSpecialDayBoard(event) {
-    var board = document.getElementById("specialDayTooltipBoard");
-    if (board) { board.classList.toggle("active"); _applyAccordionState(board); }
-    if (event) event.stopPropagation();
-}
-
-function toggleLimitListBoard(event) {
-    var board = document.getElementById("limitListTooltipBoard");
-    if (board) { board.classList.toggle("active"); _applyAccordionState(board); }
-    if (event) event.stopPropagation();
-}
-
 function updateLimitTooltipBoard() {
     var limitContainer   = document.getElementById("limitListTooltipBoard");
     var specialContainer = document.getElementById("specialDayTooltipBoard");
@@ -272,6 +238,7 @@ function refreshData() {
         if (typeof refreshRecentFeed === "function") refreshRecentFeed();
         updateLimitTooltipBoard();
         drawAllowedUsersBoard();
+        groupBoardStateLoaded = false;
         drawLiveGroupBoards();
         drawScheduleCodeBoard();
         drawScGroupLimitBoard();

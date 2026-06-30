@@ -385,12 +385,6 @@ function downloadAnnualTemplate() {
     XLSX.writeFile(wb, "annual_quota_template.xlsx");
 }
 
-function toggleAnnualStatusBoard(event) {
-    var board = document.getElementById("annualStatusTooltipBoard");
-    if (board) { board.classList.toggle("active"); if (typeof _applyAccordionState === "function") _applyAccordionState(board); }
-    if (event) event.stopPropagation();
-}
-
 function drawAnnualStatusBoard() {
     var container = document.getElementById("annualStatusTooltipBoard");
     if (!container) return;
@@ -478,4 +472,3 @@ window.saveGroupMaxConstraints    = saveGroupMaxConstraints;
 window.setSpecialDayLimit         = setSpecialDayLimit;
 window.triggerAnnualUpload        = triggerAnnualUpload;
 window.downloadAnnualTemplate     = downloadAnnualTemplate;
-window.toggleAnnualStatusBoard    = toggleAnnualStatusBoard;

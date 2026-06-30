@@ -130,22 +130,7 @@ function drawAllowedUsersBoard() {
     });
 }
 
-function toggleAllowedUsersBoard(event) {
-    drawAllowedUsersBoard();
-    var board = document.getElementById("allowedUsersTooltipBoard");
-    if (board) { board.classList.toggle("active"); _applyAccordionState(board); }
-    if (event) event.stopPropagation();
-}
-
 // ── 조 관련 ───────────────────────────────────────────────────────────────────
-function toggleGroupBoard(event) {
-    groupBoardStateLoaded = false;
-    drawLiveGroupBoards();
-    var board = document.getElementById("groupListTooltipBoard");
-    if (board) { board.classList.toggle("active"); _applyAccordionState(board); }
-    if (event) event.stopPropagation();
-}
-
 function getLiveGroupList(letter) {
     var val = liveDBData["rq_live_group_" + letter];
     if (!val) return [];
@@ -188,8 +173,12 @@ function _buildGroupBoardState() {
 
     ["A", "B", "C", "D", "E"].forEach(function(group) {
         getLiveGroupList(group).forEach(function(member) {
-            var token = _normalizeGroupToken(member);
-            if (!token || assigned[token]) return;
+            var raw = String(member || "").trim();
+            if (!raw) return;
+            var emp = employeeByUid[raw] || employeeByEmpNo[raw.toLowerCase()];
+            if (!emp) return; // 삭제된/존재하지 않는 직원 — 화면에 표시하지 않고 자동으로 무시 (다음 저장 시 DB에서도 정리됨)
+            var token = emp.uid || emp.empNo || raw;
+            if (assigned[token]) return;
             assigned[token] = true;
             state[group].push(token);
         });
@@ -424,7 +413,5 @@ function toggleApplicationMode() {
     setModeButtonStyles();
 }
 
-window.toggleGroupBoard        = toggleGroupBoard;
-window.toggleAllowedUsersBoard = toggleAllowedUsersBoard;
 window.setAllowedUsersSortMode = setAllowedUsersSortMode;
 window.filterAllowedUsersBoard = filterAllowedUsersBoard;
