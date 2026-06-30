@@ -91,13 +91,25 @@ function _setDayProcessingIndicator(day, pending) {
     cell.removeAttribute("data-processing");
 }
 
-function _runDayRequest(day, requestFn, errorMessage) {
+function _runDayRequest(day, requestFn, errorMessage, skipAutoRefresh) {
     if (_isDayActionPending(day)) return Promise.resolve(false);
 
     _setDayActionPending(day, true);
     _setDayProcessingIndicator(day, true);
 
     return requestFn().then(function() {
+        // ⚠️ 신청/취소 성공 직후 화면을 즉시 갱신한다.
+        // 이전에는 이 시점에 아무 후속 처리가 없어서, 휴무/근무코드
+        // 카운터·기간 표시·상단 현황 영역이 다른 동작(다른 날짜 클릭,
+        // 메뉴 이동 등)으로 우연히 refreshData() 가 다시 호출되기
+        // 전까지는 갱신되지 않는 문제가 있었음. 이 함수는 일반 휴무 /
+        // 청원 / 연차 / 근무코드 신청, 그리고 취소까지 직원의 모든
+        // 신청 액션이 공통으로 거쳐가므로 여기서 한 번에 해결한다.
+        // (일괄 취소 루프(resetMyRequests)처럼 항목마다 매번 전체
+        //  새로고침을 하면 비효율적이고 경쟁 상태가 생길 수 있는
+        //  경우에는 skipAutoRefresh=true 로 호출해 마지막에 한 번만
+        //  refreshData() 를 호출하도록 한다.)
+        if (!skipAutoRefresh && typeof refreshData === "function") refreshData();
         return true;
     }).catch(function(e) {
         alert((e && e.message) || errorMessage);
@@ -256,25 +268,6 @@ function refreshData() {
         updateScGroupLimitCodeSelect();
         drawAnnualStatusBoard();
     } else {
-        var savedConfig    = getFirebaseItem("rq_allowed_start_datetime", null);
-        var savedEndConfig = getFirebaseItem("rq_allowed_end_datetime", null);
-        var noticeStr      = "언제나 신청 가능";
-        if (savedConfig && savedEndConfig) {
-            noticeStr = formatDateTimeString(savedConfig) + " ~ " + formatDateTimeString(savedEndConfig);
-        } else if (savedConfig) {
-            noticeStr = formatDateTimeString(savedConfig) + " 부터 신청 가능";
-        } else if (savedEndConfig) {
-            noticeStr = formatDateTimeString(savedEndConfig) + " 까지 신청 가능";
-        }
-
-        var myCurrentCount = getMyTotalCount();
-        var myAnnualCount  = getMyAnnualCount();
-        var customLimitStr = getFirebaseItem("rq_limit_uid_" + currentUid, null);
-        var globalUserMax  = parseInt(getFirebaseItem("rq_config_global_user_max", "4"));
-        var personalQuota  = getAnnualQuota(currentUser);
-        var annualMaxLimit = personalQuota !== null ? personalQuota : parseInt(getFirebaseItem("rq_config_annual_user_max", "15"));
-        var maxLimit       = customLimitStr !== null ? parseInt(customLimitStr) : globalUserMax;
-
         var btnMap = { toggleModeBtn: "flex", userResetBtn: "flex", resetAllBtn: "none", resetConfigBtn: "none", adminConsole: "none" };
         Object.keys(btnMap).forEach(function(id) {
             var el = document.getElementById(id);
@@ -282,9 +275,9 @@ function refreshData() {
         });
 
         var scBtn  = document.getElementById("scheduleCodeApplyBtn");
-        var scList = getScheduleCodeList();
+        var scListForBtn = getScheduleCodeList();
         if (scBtn) {
-            scBtn.style.display = scList.length > 0 ? "flex" : "none";
+            scBtn.style.display = scListForBtn.length > 0 ? "flex" : "none";
             scBtn.innerText = (currentAppMode === "SCHEDULE_CODE" && currentScheduleCode) ? currentScheduleCode : "근무";
         }
         var toggleModeBtn = document.getElementById("toggleModeBtn");
@@ -295,23 +288,56 @@ function refreshData() {
         }
         setModeButtonStyles();
 
-        var scInfoStr = "";
-        if (scList.length > 0) {
-            scInfoStr = "<br><span class='wm-row'><span class='wm-label'>근무 코드</span> " + scList.map(function(c) {
-                return c.name + ": " + getMyScheduleCodeCount(c.name) + "/" + c.limit + "개";
-            }).join(" | ") + "</span>";
-        }
-
-        document.getElementById("welcomeMessage").innerHTML =
-            "<span class='wm-period'>" + tm.label + "</span><br>" +
-            "<span style='font-size:13px;color:#007bff;font-weight:bold;'>[" + currentUser + "]님 로그인함 (날짜 클릭 시 즉시 신청/취소)<br>" +
-            "<span class='wm-row'><span class='wm-label'>휴무</span> <mark style='background:#e6f2ff;color:#0056b3;font-weight:bold;padding:2px 4px;border-radius:3px;'>" + myCurrentCount + " / " + maxLimit + "</mark>" +
-            " | 연차 <mark style='background:#e6f4ea;color:#137333;font-weight:bold;padding:2px 4px;border-radius:3px;'>" + myAnnualCount + " / " + annualMaxLimit + "</mark>" +
-            " (※ 청원 무제한)</span>" + scInfoStr + "<br>" +
-            "<span class='wm-row wm-nowrap'><span class='wm-label'>기간</span> " + noticeStr + "</span></span>";
-
+        _updateMyStatusSummary(tm);
         loadUserCalendarData();
     }
+}
+
+// ── 직원 상단 현황 영역(나의 현황: 휴무/연차/근무코드/기간) 갱신 ─────────────
+// refreshData() 의 직원 분기와, Firebase 실시간 리스너(_updateMyUserCells)
+// 양쪽에서 공통으로 호출해 항상 동일한 최신 카운터를 보장한다.
+// (이전에는 이 블록이 refreshData() 안에만 인라인으로 있어서, 실시간
+//  리스너 쪽 경로(_updateMyUserCells)는 달력 셀의 배지만 갱신하고
+//  상단 카운터/기간 텍스트는 갱신하지 않는 문제가 있었음.)
+function _updateMyStatusSummary(tm) {
+    tm = tm || getTargetYearMonth();
+
+    var savedConfig    = getFirebaseItem("rq_allowed_start_datetime", null);
+    var savedEndConfig = getFirebaseItem("rq_allowed_end_datetime", null);
+    var noticeStr      = "언제나 신청 가능";
+    if (savedConfig && savedEndConfig) {
+        noticeStr = formatDateTimeString(savedConfig) + " ~ " + formatDateTimeString(savedEndConfig);
+    } else if (savedConfig) {
+        noticeStr = formatDateTimeString(savedConfig) + " 부터 신청 가능";
+    } else if (savedEndConfig) {
+        noticeStr = formatDateTimeString(savedEndConfig) + " 까지 신청 가능";
+    }
+
+    var myCurrentCount = getMyTotalCount();
+    var myAnnualCount  = getMyAnnualCount();
+    var customLimitStr = getFirebaseItem("rq_limit_uid_" + currentUid, null);
+    var globalUserMax  = parseInt(getFirebaseItem("rq_config_global_user_max", "4"));
+    var personalQuota  = getAnnualQuota(currentUser);
+    var annualMaxLimit = personalQuota !== null ? personalQuota : parseInt(getFirebaseItem("rq_config_annual_user_max", "15"));
+    var maxLimit       = customLimitStr !== null ? parseInt(customLimitStr) : globalUserMax;
+
+    var scList = getScheduleCodeList();
+    var scInfoStr = "";
+    if (scList.length > 0) {
+        scInfoStr = "<br><span class='wm-row'><span class='wm-label'>근무 코드</span> " + scList.map(function(c) {
+            return c.name + ": " + getMyScheduleCodeCount(c.name) + "/" + c.limit + "개";
+        }).join(" | ") + "</span>";
+    }
+
+    var wm = document.getElementById("welcomeMessage");
+    if (!wm) return;
+    wm.innerHTML =
+        "<span class='wm-period'>" + tm.label + "</span><br>" +
+        "<span style='font-size:13px;color:#007bff;font-weight:bold;'>[" + currentUser + "]님 로그인함 (날짜 클릭 시 즉시 신청/취소)<br>" +
+        "<span class='wm-row'><span class='wm-label'>휴무</span> <mark style='background:#e6f2ff;color:#0056b3;font-weight:bold;padding:2px 4px;border-radius:3px;'>" + myCurrentCount + " / " + maxLimit + "</mark>" +
+        " | 연차 <mark style='background:#e6f4ea;color:#137333;font-weight:bold;padding:2px 4px;border-radius:3px;'>" + myAnnualCount + " / " + annualMaxLimit + "</mark>" +
+        " (※ 청원 무제한)</span>" + scInfoStr + "<br>" +
+        "<span class='wm-row wm-nowrap'><span class='wm-label'>기간</span> " + noticeStr + "</span></span>";
 }
 
 // ── 내 신청 전체 초기화 (직원용) ──────────────────────────────────────────────
@@ -368,13 +394,14 @@ function executeResetChoice(mode) {
     function runNext(index) {
         if (index >= daysToCancel.length) {
             _resetInFlight = false;
+            if (typeof refreshData === "function") refreshData(); // 일괄 처리 완료 후 한 번만 갱신
             alert("\uC804\uCCB4 \uCD08\uAE30\uD654 \uC644\uB8CC (" + processed + "\uAC74)");
             return;
         }
         var item = daysToCancel[index];
         _runDayRequest(item.day, function() {
             return fn.cancelRequest({ deptId: currentDept, yyyymm: yyyymm, day: item.day });
-        }, "\uC77C\uAD04 \uCDE8\uC18C \uC2E4\uD328, \uC624\uB958 \uB85C\uADF8\uB97C \uD655\uC778\uD574\uC8FC\uC138\uC694.").then(function(success) {
+        }, "\uC77C\uAD04 \uCDE8\uC18C \uC2E4\uD328, \uC624\uB958 \uB85C\uADF8\uB97C \uD655\uC778\uD574\uC8FC\uC138\uC694.", true).then(function(success) {
             if (success) processed++;
             runNext(index + 1);
         }).catch(function() {
@@ -558,9 +585,17 @@ function openApplicantDetailModal(date, tm, applicants) {
     modalEl.style.display = "flex";
 }
 
+var _applicantModalNeedsCalendarRefresh = false;
+
 function closeApplicantDetailModal() {
     var modalEl = document.getElementById("applicantDetailModal");
     if (modalEl) modalEl.style.display = "none";
+    // 모달이 열려있는 동안 개별 취소가 있었다면, 닫을 때 달력 전체
+    // (요약 카운트 등)를 한 번 갱신한다.
+    if (_applicantModalNeedsCalendarRefresh) {
+        _applicantModalNeedsCalendarRefresh = false;
+        if (typeof refreshData === "function") refreshData();
+    }
 }
 
 function _adminCancelFromModal(date, tm, target, btnEl) {
@@ -568,6 +603,10 @@ function _adminCancelFromModal(date, tm, target, btnEl) {
     var dayStr = String(date);
     if (btnEl) { btnEl.disabled = true; btnEl.innerText = "처리중..."; }
 
+    // skipAutoRefresh=true: 모달이 열린 상태에서 배경 달력 전체가 갑자기
+    // 다시 그려지면 깜빡임이 발생하므로, 여기서는 모달 내부 목록만
+    // 가볍게 다시 그리고, 달력 전체 갱신(요약 카운트 등)은 모달을
+    // 닫는 시점(closeApplicantDetailModal)에 한 번만 수행한다.
     _runDayRequest(dayStr, function() {
         return fn.adminCancelRequest({
             deptId:    currentDept,
@@ -575,8 +614,9 @@ function _adminCancelFromModal(date, tm, target, btnEl) {
             day:       dayStr,
             targetUid: target.uid
         });
-    }, "취소 실패: 알 수 없는 오류").then(function(success) {
+    }, "취소 실패: 알 수 없는 오류", true).then(function(success) {
         if (success) {
+            _applicantModalNeedsCalendarRefresh = true;
             // 모달 내 목록을 새 데이터로 다시 그려서 즉시 갱신
             var refreshed = getAdminApplicantsByDay(dayStr);
             openApplicantDetailModal(date, tm, refreshed);

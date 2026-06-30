@@ -365,6 +365,15 @@ function _updateMyUserCells() {
         });
         cell.appendChild(fragment);
     }
+    // ⚠️ 달력 셀 배지뿐 아니라 상단 '나의 현황' 카운터(휴무/연차/근무코드)와
+    // 기간 텍스트도 함께 갱신한다. 이 함수는 Firebase 실시간 리스너
+    // (userRequests/{uid}/{yyyymm} 의 on("value")) 가 호출하는 경로라서,
+    // 신청/취소가 RTDB 에 반영되는 즉시 자동으로 실행된다 — 누락되어
+    // 있으면 셀 배지는 바뀌어도 상단 카운터는 그대로 남아있는 것처럼
+    // 보이는 문제가 있었음.
+    if (!isAdmin && !isSuperAdmin && typeof _updateMyStatusSummary === "function") {
+        _updateMyStatusSummary(tm);
+    }
 }
 
 var _refreshTimer = null;
