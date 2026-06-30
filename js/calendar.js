@@ -295,18 +295,18 @@ function refreshData() {
 
         var scInfoStr = "";
         if (scList.length > 0) {
-            scInfoStr = "<br>🗓️ 스케줄코드 현황: " + scList.map(function(c) {
+            scInfoStr = "<br><span class='wm-row'><span class='wm-label'>근무 코드</span> " + scList.map(function(c) {
                 return c.name + ": " + getMyScheduleCodeCount(c.name) + "/" + c.limit + "개";
-            }).join(" | ");
+            }).join(" | ") + "</span>";
         }
 
         document.getElementById("welcomeMessage").innerHTML =
-            "📅 " + tm.label + "<br>" +
+            "<span class='wm-period'>" + tm.label + "</span><br>" +
             "<span style='font-size:13px;color:#007bff;font-weight:bold;'>[" + currentUser + "]님 로그인함 (날짜 클릭 시 즉시 신청/취소)<br>" +
-            "📊 나의 현황: 휴무 <mark style='background:#e6f2ff;color:#0056b3;font-weight:bold;padding:2px 4px;border-radius:3px;'>" + myCurrentCount + " / " + maxLimit + "</mark>" +
+            "<span class='wm-row'><span class='wm-label'>휴무</span> <mark style='background:#e6f2ff;color:#0056b3;font-weight:bold;padding:2px 4px;border-radius:3px;'>" + myCurrentCount + " / " + maxLimit + "</mark>" +
             " | 연차 <mark style='background:#e6f4ea;color:#137333;font-weight:bold;padding:2px 4px;border-radius:3px;'>" + myAnnualCount + " / " + annualMaxLimit + "</mark>" +
-            " (※ 청원 무제한)" + scInfoStr + "<br>" +
-            "⏱️ 기간 : " + noticeStr + "</span>";
+            " (※ 청원 무제한)</span>" + scInfoStr + "<br>" +
+            "<span class='wm-row wm-nowrap'><span class='wm-label'>기간</span> " + noticeStr + "</span></span>";
 
         loadUserCalendarData();
     }
@@ -706,11 +706,19 @@ function getAdminApplicantsByDay(day) {
             uid: uid,
             name: name,
             req: req,
+            ts: (req && req.ts) ? req.ts : 0,
             label: name + " (" + getRequestTypeLabel(req) + ")"
         });
     });
 
+    // ⚠️ 먼저 신청한 사람이 항상 1번, 2번, 3번 순서로 표시되어야 한다.
+    // 기존에는 이름 가나다순(localeCompare)으로 정렬되어 있어서 신청 순서와
+    // 무관하게 보였던 문제가 있었음 — 신청 시각(ts) 오름차순으로 정렬하도록 수정.
+    // ts 가 없는 과거 데이터는 맨 뒤로 보내되 그 안에서는 이름순 유지(안정성).
     applicants.sort(function(a, b) {
+        if (a.ts && b.ts) return a.ts - b.ts;
+        if (a.ts && !b.ts) return -1;
+        if (!a.ts && b.ts) return 1;
         return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
     });
     return applicants;
@@ -787,13 +795,28 @@ function loadAdminCalendarData() {
         badge.className = "count-badge " + (count >= dayMax ? "badge-full" : "badge-safe");
         badge.innerText = count + "/" + dayMax + "\uBA85";
         fragment.appendChild(badge);
+
         var applicants = getAdminApplicantsByDay(d);
-        applicants.forEach(function(a) {
-            var n = document.createElement("div");
-            n.className = "user-note";
-            n.innerText = a.label;
-            fragment.appendChild(n);
-        });
+        if (applicants.length > 0) {
+            // ⚠️ 신청자 명단은 admin-list 그리드(작은 칸)로 표시하고, 유형별로
+            //    색상을 구분한다 (휴무=빨강 / 청원=보라 / 연차=초록 / 근무코드=파랑).
+            //    이전에는 .user-note 로만 출력되어 색상 구분이 전혀 없었고
+            //    인원이 많아지면 셀이 그대로 늘어나며 레이아웃이 깨졌음.
+            var list = document.createElement("div");
+            list.className = "admin-list";
+            applicants.forEach(function(a) {
+                var item = document.createElement("div");
+                var typeClass = "";
+                if (a.req && a.req.type === "petition") typeClass = "petition-item";
+                else if (a.req && a.req.type === "annual") typeClass = "annual-item";
+                else if (a.req && a.req.type === "schedule") typeClass = "schedule-item";
+                item.className = "admin-item" + (typeClass ? " " + typeClass : "");
+                item.innerText = a.label;
+                item.title = a.label; // 잘린 텍스트 호버 시 전체 이름 확인 가능
+                list.appendChild(item);
+            });
+            fragment.appendChild(list);
+        }
         cell.appendChild(fragment);
     }
 }
