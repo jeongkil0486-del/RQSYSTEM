@@ -54,12 +54,12 @@ body {
   /* 영상 로드 실패 시 fallback 배경 — 기존 그라디언트 그대로 유지 */
   background: linear-gradient(135deg, #1a2744 0%, #2e3d6b 50%, #1a2744 100%);
   display: flex;
-  /* PC/데스크탑 기본값: 카드를 좌측 하단에 배치해 배경 영상(비행기,
-     좌상단 문구)을 크게 살리는 항공사/그룹웨어 스타일. 768px 이하
-     모바일에서는 아래 미디어쿼리가 다시 중앙 정렬로 되돌린다. */
+  /* PC/데스크탑 기본값: 로그인 영역을 좌측 하단에 배치해 배경 영상이
+     화면 전체를 차지하는 'SONO TRINITY' 스타일. 768px 이하 모바일에서는
+     아래 미디어쿼리가 기존 중앙 카드 레이아웃으로 되돌린다. */
   align-items: flex-end;
   justify-content: flex-start;
-  padding: 90px 20px 90px 80px;
+  padding: 100px 20px 100px 80px;
   box-sizing: border-box;
 }
 
@@ -74,136 +74,125 @@ body {
   transform: translate(-50%, -50%);
   object-fit: cover;   /* 모바일 포함 어떤 화면비에서도 영상이 잘리지 않고 채워짐 */
   /* 영상 좌상단의 'TRINITY AIR SERVICE' 문구가 잘리지 않도록 크롭
-     기준점을 좌상단 쪽으로 이동. 카드가 PC에서는 좌측 하단으로
-     옮겨졌으므로 더 적극적으로 좌상단을 보여줄 수 있게 조정. */
+     기준점을 좌상단 쪽으로 이동. */
   object-position: 25% 20%;
   z-index: 0;
   pointer-events: none;
 }
-/* 영상 위 어두운 오버레이 — 로그인 카드 가독성은 카드 자체의
-   반투명 배경+blur 로 보장하므로, 오버레이는 최소한으로만 어둡게
-   해서 배경 영상이 선명하게 보이도록 함. */
+/* 영상 위 오버레이 — 영상이 주인공이므로 최소한으로만 어둡게 처리
+   (요청 범위: rgba(0,0,0,.08~.12)) */
 .login-bg-overlay {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(10, 16, 32, 0.16);
+  background: rgba(0, 0, 0, 0.10);
   z-index: 1;
   pointer-events: none;
 }
-/* 로그인 카드는 영상/오버레이 위에 항상 표시 */
+
+/* ─── 좌상단 고정 로고 (SONO TRINITY 스타일) ───────────────────────────────
+   데스크탑에서만 표시. 모바일에서는 숨기고 카드 내부 로고
+   (.login-logo-wrap)만 보이도록 처리 (아래 모바일 미디어쿼리 참고) */
+.login-brand-corner {
+  position: absolute;
+  top: 32px; left: 40px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+.login-brand-corner-text {
+  font-family: 'Cinzel', serif;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #fff;
+  text-shadow: 0 1px 6px rgba(0,0,0,.45);
+  white-space: nowrap;
+}
+
+/* ─── 로그인 영역 (데스크탑: 투명 레이아웃 / 모바일: 기존 카드) ───────────
+   .login-card 라는 클래스명은 유지하지만(HTML 변경 없음), 데스크탑
+   디자인은 더 이상 '카드'가 아니라 투명 레이아웃이다. */
 .login-card {
   position: relative;
   z-index: 2;
-  /* 완전 흰색 → 살짝 반투명 + blur 로 배경 영상과 자연스럽게 어우러지도록 */
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  border-radius: 16px;
-  padding: 44px 32px 36px;
-  width: 380px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: 0;
+  width: 320px;
   max-width: 100%;
-  /* 카드 전용 그림자 — 공용 --shadow-lg 보다 부드럽게 (다른 곳의
-     모달 등에 쓰이는 --shadow-lg 변수는 그대로 두고 카드에만 적용) */
-  box-shadow: 0 8px 28px rgba(10, 16, 32, 0.18);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
 }
-/* backdrop-filter 미지원 브라우저: blur 없이도 톤은 유지되도록
-   배경을 살짝 더 진하게 보정 (가독성 유지를 위한 fallback) */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .login-card { background: rgba(255, 255, 255, 0.94); }
-}
-.login-logo-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  margin-bottom: 4px;
-  width: 100%;
-}
-.login-brand {
-  font-family: 'Cinzel', serif;
-  font-size: 16px;
-  color: var(--navy);
-  font-weight: 700;
-  letter-spacing: .5px;
+/* 데스크탑에서는 카드 내부 로고(.login-logo-wrap)를 숨김 — 좌상단
+   고정 로고(.login-brand-corner)가 그 역할을 대신한다. */
+.login-logo-wrap { display: none; }
+.login-sub { display: none; }
+/* 라벨('사번', '비밀번호')은 SONO 스타일처럼 시각적으로 숨기되,
+   DOM에서 완전히 제거하지 않아 접근성과 for/id 연결은 그대로 유지 */
+.input-group label {
+  position: absolute;
+  width: 1px; height: 1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
   white-space: nowrap;
-  width: 100%;
-  text-align: center;
-}
-.login-sub {
-  font-size: 12px;
-  color: var(--text-sub);
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  margin-bottom: 26px;
-  text-align: center;
-  width: 100%;
-}
-.login-divider {
-  height: 1px;
-  background: var(--border);
-  margin: 20px 0;
-  width: 100%;
 }
 .input-group {
-  margin-bottom: 16px;
-  text-align: center;
+  margin-bottom: 14px;
+  text-align: left;
   width: 100%;
-  max-width: 280px;
-}
-.input-group label {
-  display: block;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-sub);
-  text-transform: uppercase;
-  text-align: center;
-  letter-spacing: .5px;
-  margin-bottom: 6px;
+  max-width: none;
 }
 .input-group input {
   width: 100%;
-  padding: 11px 14px;
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-sm);
+  height: 48px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 8px;
   font-size: 14px;
   color: var(--text-main);
-  background: #f8fafc;
-  text-align: center;
-  transition: border-color .2s, box-shadow .2s;
+  background: rgba(255, 255, 255, 0.92);
+  text-align: left;
+  box-shadow: 0 2px 10px rgba(0,0,0,.12);
+  transition: background .2s, box-shadow .2s;
+  box-sizing: border-box;
 }
-/* placeholder 도 입력값과 동일하게 중앙 정렬 (브라우저별 접두사 모두 필요) */
-.input-group input::placeholder { text-align: center; }
-.input-group input::-webkit-input-placeholder { text-align: center; }
-.input-group input::-moz-placeholder { text-align: center; }
-.input-group input:-ms-input-placeholder { text-align: center; }
+/* placeholder 좌측 정렬 (SONO 스타일은 입력창 텍스트가 좌측 정렬) */
+.input-group input::placeholder { text-align: left; color: #94a3b8; }
+.input-group input::-webkit-input-placeholder { text-align: left; color: #94a3b8; }
+.input-group input::-moz-placeholder { text-align: left; color: #94a3b8; }
+.input-group input:-ms-input-placeholder { text-align: left; color: #94a3b8; }
 .input-group input:focus {
   outline: none;
-  border-color: var(--accent);
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+  box-shadow: 0 0 0 3px rgba(255,255,255,.35), 0 2px 10px rgba(0,0,0,.16);
 }
 .submit-btn {
   width: 100%;
-  max-width: 280px;
-  padding: 13px;
-  background: var(--accent);
+  max-width: none;
+  height: 48px;
+  padding: 0;
+  /* 영상과 잘 어울리는 짙은 네이비/차콜 단색 버튼 */
+  background: #1f2937;
   color: #fff;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
-  margin-top: 8px;
+  margin-top: 6px;
   transition: background .2s, transform .1s;
   letter-spacing: .3px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.18);
 }
-.submit-btn:hover { background: var(--accent-h); }
+.submit-btn:hover { background: #111827; }
 .submit-btn:active { transform: scale(.99); }
 
 /* =====================================================
@@ -1187,9 +1176,9 @@ body {
 }
 
 @media (max-width: 768px) {
-  /* 모바일/좁은 화면: 로그인 카드를 다시 화면 정중앙으로 복귀
-     (PC 전용 좌측하단 배치는 데스크탑에서만 의미가 있고, 좁은
-     화면에서는 사용성을 위해 기존 중앙 배치를 유지) */
+  /* 모바일/좁은 화면: 로그인 화면을 기존 '카드' 레이아웃으로 복귀.
+     데스크탑(SONO 스타일)과 달리 모바일에서는 사용성을 위해
+     중앙 정렬 흰색 카드 + 카드 내부 로고 + 라벨을 모두 그대로 살린다. */
   .login-page {
     align-items: center;
     justify-content: center;
@@ -1200,6 +1189,110 @@ body {
   .login-bg-video {
     object-position: 45% 30%;
   }
+  /* 모바일에서는 데스크탑 전용 좌상단 고정 로고를 숨기고,
+     카드 내부 로고(.login-logo-wrap)를 다시 사용한다. */
+  .login-brand-corner { display: none; }
+
+  /* 오버레이도 모바일에서는 기존 가독성 위주 톤으로 살짝 더 어둡게 */
+  .login-bg-overlay { background: rgba(10, 16, 32, 0.30); }
+
+  /* ── 카드 디자인 복원 ── */
+  .login-card {
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 16px;
+    padding: 36px 20px 28px;
+    width: 100%;
+    max-width: 380px;
+    box-shadow: 0 8px 28px rgba(10, 16, 32, 0.18);
+    align-items: center;
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .login-card { background: rgba(255, 255, 255, 0.96); }
+  }
+  .login-logo-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 4px;
+    width: 100%;
+  }
+  .login-brand {
+    font-family: 'Cinzel', serif;
+    font-size: 13.5px;
+    letter-spacing: 0;
+    color: var(--navy);
+    font-weight: 700;
+    white-space: nowrap;
+    width: 100%;
+    text-align: center;
+  }
+  .login-sub {
+    display: block;
+    font-size: 12px;
+    color: var(--text-sub);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 26px;
+    text-align: center;
+    width: 100%;
+  }
+  .input-group label {
+    position: static;
+    width: auto; height: auto;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-sub);
+    text-transform: uppercase;
+    text-align: center;
+    letter-spacing: .5px;
+    margin-bottom: 6px;
+  }
+  .input-group {
+    margin-bottom: 16px;
+    text-align: center;
+    width: 100%;
+    max-width: 280px;
+  }
+  .input-group input {
+    height: auto;
+    padding: 11px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: #f8fafc;
+    text-align: center;
+    box-shadow: none;
+  }
+  .input-group input::placeholder,
+  .input-group input::-webkit-input-placeholder,
+  .input-group input::-moz-placeholder,
+  .input-group input:-ms-input-placeholder {
+    text-align: center;
+    color: inherit;
+  }
+  .input-group input:focus {
+    border-color: var(--accent);
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+  }
+  .submit-btn {
+    height: auto;
+    padding: 13px;
+    background: var(--accent);
+    border-radius: var(--radius-sm);
+    margin-top: 8px;
+    box-shadow: none;
+    max-width: 280px;
+  }
+  .submit-btn:hover { background: var(--accent-h); }
 
   :root { --header-h: 56px; }
   .main-content { padding: 16px 14px; }
