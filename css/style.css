@@ -48,11 +48,13 @@ body {
    ===================================================== */
 .login-page {
   min-height: 100vh;
+  width: 100%;
   background: linear-gradient(135deg, #1a2744 0%, #2e3d6b 50%, #1a2744 100%);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
+  box-sizing: border-box;
 }
 .login-card {
   background: var(--white);
@@ -62,20 +64,26 @@ body {
   max-width: 100%;
   box-shadow: var(--shadow-lg);
   text-align: center;
+  box-sizing: border-box;
 }
 .login-logo-wrap {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 12px;
   margin-bottom: 6px;
+  width: 100%;
 }
 .login-brand {
   font-family: 'Cinzel', serif;
-  font-size: 20px;
+  font-size: 19px;
   color: var(--navy);
   font-weight: 700;
-  letter-spacing: 1.5px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  width: 100%;
+  text-align: center;
 }
 .login-sub {
   font-size: 12px;
@@ -92,6 +100,7 @@ body {
 .input-group {
   margin-bottom: 16px;
   text-align: left;
+  width: 100%;
 }
 .input-group label {
   display: block;
@@ -148,31 +157,37 @@ body {
   background: var(--navy);
   display: flex;
   align-items: center;
-  padding: 0 24px;
+  padding: 0 20px;
   z-index: 1000;
   box-shadow: 0 2px 8px rgba(0,0,0,.25);
+  gap: 8px;
 }
 .nav-brand {
   font-family: 'Cinzel', serif;
-  font-size: 15px;
+  font-size: 14px;
   color: #fff;
   font-weight: 700;
-  letter-spacing: 1.5px;
+  letter-spacing: 1px;
   white-space: nowrap;
-  margin-right: 40px;
+  margin-right: 28px;
   text-decoration: none;
+  flex-shrink: 0;
 }
 .nav-menu {
   display: flex;
   align-items: center;
   gap: 2px;
   flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.nav-menu::-webkit-scrollbar { display: none; }
 .nav-item {
   color: rgba(255,255,255,.72);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 500;
-  padding: 8px 14px;
+  padding: 8px 12px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all .2s;
@@ -180,42 +195,48 @@ body {
   border: none;
   background: transparent;
   letter-spacing: .2px;
+  flex-shrink: 0;
 }
 .nav-item:hover { color: #fff; background: rgba(255,255,255,.1); }
 .nav-item.active { color: #fff; background: rgba(255,255,255,.15); }
 .nav-right {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   margin-left: auto;
+  flex-shrink: 0;
 }
 .nav-user-info {
   text-align: right;
+  flex-shrink: 0;
 }
 .nav-user-name {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
   color: #fff;
   line-height: 1.3;
+  white-space: nowrap;
 }
 .nav-user-dept {
-  font-size: 11px;
+  font-size: 10.5px;
   color: rgba(255,255,255,.55);
+  white-space: nowrap;
 }
 .nav-avatar {
-  width: 34px; height: 34px;
+  width: 32px; height: 32px;
   border-radius: 50%;
   background: rgba(255,255,255,.15);
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 15px;
+  font-size: 14px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 .nav-logout {
   color: rgba(255,255,255,.65);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 500;
   padding: 7px 12px;
   border-radius: var(--radius-sm);
@@ -224,6 +245,7 @@ body {
   background: transparent;
   transition: all .2s;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .nav-logout:hover { color: #fff; border-color: rgba(255,255,255,.5); background: rgba(255,255,255,.08); }
 
@@ -686,23 +708,20 @@ body {
    ===================================================== */
 .section-page { display: none; }
 .section-page.active { display: block; }
-
-.cards-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 16px;
-}
 .feature-card {
   background: var(--bg-card);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--border);
-  overflow: hidden;
+  overflow: visible;
   transition: box-shadow .2s;
+  position: relative;
 }
 .feature-card:hover { box-shadow: var(--shadow-md); }
 .feature-card-header {
   padding: 16px 20px 14px;
+  border-top-left-radius: var(--radius);
+  border-top-right-radius: var(--radius);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -729,6 +748,8 @@ body {
 }
 .feature-card-body {
   padding: 16px 20px;
+  border-bottom-left-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
 }
 .form-row {
   display: flex;
@@ -796,11 +817,18 @@ body {
 .btn-full { width: 100%; justify-content: center; }
 
 /* Group limit inputs */
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+.card-wide { grid-column: 1 / -1; }
 .group-inputs {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  row-gap: 10px;
 }
 .group-label {
   font-size: 11px;
@@ -831,9 +859,13 @@ body {
   z-index: 10005;
   min-width: 260px;
   max-width: 400px;
+  max-height: 320px;
+  overflow-y: auto;
   border: 1px solid rgba(255,255,255,.1);
   pointer-events: auto;
 }
+.custom-floating-tooltip::-webkit-scrollbar { width: 6px; }
+.custom-floating-tooltip::-webkit-scrollbar-thumb { background: rgba(255,255,255,.25); border-radius: 3px; }
 .custom-floating-tooltip strong {
   display: block;
   border-bottom: 1px solid rgba(255,255,255,.15);
@@ -841,6 +873,11 @@ body {
   padding-bottom: 4px;
   color: #60a5fa;
   font-size: 13px;
+  position: sticky;
+  top: -12px;
+  background: rgba(26,39,68,.98);
+  padding-top: 12px;
+  margin-top: -12px;
 }
 .custom-floating-tooltip.active { display: block !important; }
 .hover-tooltip-trigger:hover + .custom-floating-tooltip,
@@ -980,10 +1017,13 @@ body {
   .stat-value { font-size: 18px; }
   .stat-icon { width: 38px; height: 38px; font-size: 17px; }
 
+  .top-nav { padding: 0 12px; gap: 6px; }
+  .nav-brand { font-size: 12px; margin-right: 0; }
   .nav-menu { display: none; }
-  .nav-brand { margin-right: 0; }
   .nav-hamburger { display: flex; }
   .nav-user-info { display: none; }
+  .nav-avatar { display: none; }
+  .nav-logout { font-size: 11.5px; padding: 6px 10px; }
 
   .filter-bar { gap: 6px; }
   .filter-bar select,
@@ -1010,6 +1050,8 @@ body {
     width: 90% !important;
     min-width: auto;
     max-width: 90%;
+    max-height: 70vh;
+    overflow-y: auto;
     box-sizing: border-box;
   }
 }
