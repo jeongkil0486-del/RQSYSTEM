@@ -394,6 +394,13 @@ function filterAnnualStatusBoard(term) {
 }
 
 function drawAnnualStatusBoard() {
+    // page-employees가 active가 아니면 dirty 플래그만 세우고 건너뜀
+    if (typeof _isPageActive === "function" && !_isPageActive("employees")) {
+        _dirtyAnnualStatusBoard = true;
+        return;
+    }
+    _dirtyAnnualStatusBoard = false;
+
     var container = document.getElementById("annualStatusTooltipBoard");
     if (!container) return;
 

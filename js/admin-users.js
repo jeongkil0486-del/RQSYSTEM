@@ -2,7 +2,27 @@
  * admin-users.js
  * Employee list display, group assignment helpers,
  * employee create, password reset, sort mode.
+ *
+ * 성능 최적화: dirty 플래그 + 활성 페이지 체크
+ *   - 각 렌더링 함수는 해당 페이지가 active일 때만 실제 DOM을 그린다.
+ *   - 비활성 상태에서 호출되면 dirty 플래그만 세우고 즉시 반환한다.
+ *   - showPage() 전환 시 dirty 플래그를 확인해 필요한 함수만 1회 호출한다.
+ *   - 데이터가 변경되면 dirty 플래그가 세워지므로 페이지를 열면 항상 최신 상태다.
+ *   - 기존 ID/onclick/이벤트는 전혀 변경하지 않는다.
  */
+
+// ── dirty 플래그 (이 파일이 가장 먼저 로드되므로 여기서 전역 선언) ──────────────
+var _dirtyAllowedUsersBoard  = false;
+var _dirtyAnnualStatusBoard  = false;
+var _dirtyLiveGroupBoards    = false;
+var _dirtyScheduleCodeBoard  = false;
+var _dirtyScGroupLimitBoard  = false;
+
+/** 현재 특정 page-* 요소가 active 클래스를 가지고 있는지 확인 */
+function _isPageActive(pageId) {
+    var el = document.getElementById("page-" + pageId);
+    return el ? el.classList.contains("active") : false;
+}
 
 var allowedUsersSortMode = "empNo";
 var allowedUsersSearchTerm = "";
@@ -44,6 +64,13 @@ function setAllowedUsersSortMode(mode) {
 // ── ID 신청 (직원 목록) 보드 — 드래그로 순서 변경 ────────────────────────────
 // deptEmployees 배열 순서 = 스케줄 다운로드(exportToExcel) 행 순서
 function drawAllowedUsersBoard() {
+    // page-employees가 active가 아니면 dirty 플래그만 세우고 건너뜀
+    if (!_isPageActive("employees")) {
+        _dirtyAllowedUsersBoard = true;
+        return;
+    }
+    _dirtyAllowedUsersBoard = false;
+
     var listContainer = document.getElementById("allowedUsersTooltipBoardList");
     // (구버전 마크업과의 호환을 위해 list 컨테이너가 없으면 board 자체에 그린다)
     var board = listContainer || document.getElementById("allowedUsersTooltipBoard");
@@ -176,7 +203,7 @@ function _buildGroupBoardState() {
             var raw = String(member || "").trim();
             if (!raw) return;
             var emp = employeeByUid[raw] || employeeByEmpNo[raw.toLowerCase()];
-            if (!emp) return; // 삭제된/존재하지 않는 직원 — 화면에 표시하지 않고 자동으로 무시 (다음 저장 시 DB에서도 정리됨)
+            if (!emp) return; // 삭제된/존재하지 않는 직원 — 화면에 표시하지 않고 자동으로 무시
             var token = emp.uid || emp.empNo || raw;
             if (assigned[token]) return;
             assigned[token] = true;
@@ -193,24 +220,6 @@ function _buildGroupBoardState() {
 
     groupBoardState = state;
     groupBoardStateLoaded = true;
-}
-
-function _moveGroupToken(token, targetZone, targetIndex) {
-    if (!targetZone || !groupBoardState[targetZone]) return;
-    var normalized = _normalizeGroupToken(token);
-    if (!normalized) return;
-
-    Object.keys(groupBoardState).forEach(function(zone) {
-        groupBoardState[zone] = (groupBoardState[zone] || []).filter(function(item) {
-            return item !== normalized;
-        });
-    });
-
-    var list = groupBoardState[targetZone];
-    var nextIndex = typeof targetIndex === "number" ? targetIndex : list.length;
-    if (nextIndex < 0) nextIndex = 0;
-    if (nextIndex > list.length) nextIndex = list.length;
-    list.splice(nextIndex, 0, normalized);
 }
 
 function _bindGroupBoardDropTarget(target, zone, indexResolver) {
@@ -236,6 +245,13 @@ function _bindGroupBoardDropTarget(target, zone, indexResolver) {
 
 // ── 조별 배정 보드 — 드래그 전용, Grid(카드) 배치 + 저장 버튼 Sticky ──────────
 function drawLiveGroupBoards() {
+    // page-requests가 active가 아니면 dirty 플래그만 세우고 건너뜀
+    if (!_isPageActive("requests")) {
+        _dirtyLiveGroupBoards = true;
+        return;
+    }
+    _dirtyLiveGroupBoards = false;
+
     var board = document.getElementById("groupListTooltipBoard");
     if (!board) return;
     if (!groupBoardStateLoaded) _buildGroupBoardState();
@@ -291,6 +307,21 @@ function drawLiveGroupBoards() {
             return parseInt(node.getAttribute("data-index"), 10);
         });
     });
+}
+
+function _moveGroupToken(token, targetZone, targetIndex) {
+    // 기존 위치에서 제거
+    var ZONES = ["A", "B", "C", "D", "E", "POOL"];
+    ZONES.forEach(function(z) {
+        groupBoardState[z] = (groupBoardState[z] || []).filter(function(t) { return t !== token; });
+    });
+    // 목적지에 삽입
+    if (!groupBoardState[targetZone]) groupBoardState[targetZone] = [];
+    if (targetIndex !== undefined && targetIndex >= 0) {
+        groupBoardState[targetZone].splice(targetIndex, 0, token);
+    } else {
+        groupBoardState[targetZone].push(token);
+    }
 }
 
 function saveAllGroupsFromInputs() {
@@ -412,6 +443,41 @@ function toggleApplicationMode() {
     }
     setModeButtonStyles();
 }
+
+// ── 페이지 전환 시 dirty 보드 즉시 렌더링 ─────────────────────────────────────
+// showPage()는 index.html의 inline script에서 정의되므로,
+// DOMContentLoaded 이후에 monkey-patch해야 안전하다.
+document.addEventListener("DOMContentLoaded", function() {
+    var _origShowPage = typeof window.showPage === "function" ? window.showPage : null;
+    if (!_origShowPage) return;
+
+    window.showPage = function(page) {
+        _origShowPage.call(this, page);
+
+        // 페이지 전환 후 dirty 보드가 있으면 즉시 렌더링
+        if (page === "employees") {
+            if (_dirtyAllowedUsersBoard) drawAllowedUsersBoard();
+            if (_dirtyAnnualStatusBoard) {
+                if (typeof drawAnnualStatusBoard === "function") drawAnnualStatusBoard();
+            }
+        } else if (page === "requests") {
+            if (_dirtyLiveGroupBoards) {
+                groupBoardStateLoaded = false;
+                drawLiveGroupBoards();
+            }
+            if (_dirtyScGroupLimitBoard) {
+                if (typeof drawScGroupLimitBoard === "function") drawScGroupLimitBoard();
+            }
+        } else if (page === "settings") {
+            if (_dirtyScheduleCodeBoard) {
+                if (typeof drawScheduleCodeBoard === "function") drawScheduleCodeBoard();
+            }
+            if (_dirtyScGroupLimitBoard) {
+                if (typeof drawScGroupLimitBoard === "function") drawScGroupLimitBoard();
+            }
+        }
+    };
+});
 
 window.setAllowedUsersSortMode = setAllowedUsersSortMode;
 window.filterAllowedUsersBoard = filterAllowedUsersBoard;

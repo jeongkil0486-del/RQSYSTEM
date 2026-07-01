@@ -58,6 +58,13 @@ function deleteScheduleCode() {
 }
 
 function drawScheduleCodeBoard() {
+    // page-settings가 active가 아니면 dirty 플래그만 세우고 건너뜀
+    if (typeof _isPageActive === "function" && !_isPageActive("settings")) {
+        _dirtyScheduleCodeBoard = true;
+        return;
+    }
+    _dirtyScheduleCodeBoard = false;
+
     var container = document.getElementById("scheduleCodeTooltipBoard");
     if (!container) return;
     var list = getScheduleCodeList();
@@ -184,6 +191,13 @@ window.saveScGroupLimit = saveScGroupLimit;
 window.createScheduleCode = createScheduleCode;
 
 function drawScGroupLimitBoard() {
+    // page-requests가 active가 아니면 dirty 플래그만 세우고 건너뜀
+    if (typeof _isPageActive === "function" && !_isPageActive("requests")) {
+        _dirtyScGroupLimitBoard = true;
+        return;
+    }
+    _dirtyScGroupLimitBoard = false;
+
     var container = document.getElementById("scGroupLimitTooltipBoard");
     if (!container) return;
     var list   = getScheduleCodeList();
