@@ -179,31 +179,16 @@ function _showNextImportantPopup() {
 
 /**
  * confirmImportantNotice()
- * 팝업 확인 버튼 → 읽음 처리 → 다음 팝업 또는 닫기
+ * 팝업 "확인했습니다" 버튼 → 팝업만 닫음.
+ * markNoticeRead 호출 없음. 배너/내역 DOM 삭제 없음.
+ * 재로그인 시에도 내역 확인(markNoticeRead)을 누르기 전까지 공지는 계속 표시.
  */
 function confirmImportantNotice() {
     var modal = document.getElementById("importantNoticeModal");
     if (modal) modal.style.display = "none";
-
-    if (!_importantCurrent) return;
-    var nid    = _importantCurrent.id;
-    var deptId = _importantCurrent.deptId;
     _importantCurrent = null;
 
-    // 배너에서도 해당 공지 즉시 제거
-    var el = document.getElementById("notice-" + nid);
-    if (el) el.remove();
-
-    var container = document.getElementById("noticeMain");
-    if (container && !container.querySelector(".notice-item")) {
-        container.innerHTML = "<span style='color:#aaa;font-size:12px;'>새 공지사항이 없습니다.</span>";
-    }
-
-    // 읽음 기록 (비동기)
-    fn.markNoticeRead({ deptId: deptId, noticeId: nid })
-        .catch(function(e) { console.warn("[notices] markNoticeRead failed:", e && e.message); });
-
-    // 다음 중요 공지 팝업
+    // 다음 중요 공지 팝업이 있으면 순차 표시
     if (_importantQueue.length > 0) {
         setTimeout(_showNextImportantPopup, 300);
     }
@@ -211,7 +196,9 @@ function confirmImportantNotice() {
 
 /**
  * markNoticeRead(noticeId, deptId)
- * 배너의 확인 버튼 클릭 → DOM 즉시 제거 + fn.markNoticeRead 호출
+ * 배너/내역의 "확인" 버튼 클릭 시에만 호출.
+ * → 해당 공지를 내역에서 즉시 제거 + fn.markNoticeRead 로 읽음 기록.
+ * → 재로그인 시 이 함수가 호출된 공지만 표시되지 않음.
  */
 function markNoticeRead(noticeId, deptId) {
     if (!noticeId || !deptId) return;
