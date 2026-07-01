@@ -509,8 +509,24 @@ exports.bulkCreateEmployees = functions.runWith({ ...RUN_OPTS, timeoutSeconds: 3
     const rows = Array.isArray(data.rows) ? data.rows : [];
     if (rows.length === 0) throw new functions.https.HttpsError("invalid-argument", "rows가 비어있음");
 
+    // 지점별 기존 sortOrder 최대값을 먼저 계산합니다.
+    // 같은 지점에 엑셀을 여러 번 업로드해도 A2=1이 다시 저장되어 순서가 중복되는 문제를 방지합니다.
+    const existingSnap = await db.ref("users").once("value");
+    const sortBaseByDept = {};
+    existingSnap.forEach(function(child) {
+        const p = child.val() || {};
+        const dept = String(p.deptId || "").trim();
+        if (!dept) return;
+        const n = Number(p.sortOrder);
+        if (Number.isFinite(n)) {
+            sortBaseByDept[dept] = Math.max(sortBaseByDept[dept] || 0, n);
+        }
+    });
+
     const results = [];
+    let rowIndex = 0;
     for (const row of rows) {
+        rowIndex++;
         const empNo        = normalizeEmpNo(row.empNo);
         const name         = String(row.name         || "").trim();
         const deptId       = String(row.deptId       || "").trim();
@@ -533,7 +549,8 @@ exports.bulkCreateEmployees = functions.runWith({ ...RUN_OPTS, timeoutSeconds: 3
                 legacyName: name,
                 createdAt: Date.now(),
                 mustChangePassword: true,
-                passwordResetRequired: true
+                passwordResetRequired: true,
+                sortOrder: (sortBaseByDept[deptId] || 0) + (Number.isFinite(Number(row.sortOrder)) ? Number(row.sortOrder) : rowIndex)
             };
             if (recoveryEmail) profile.recoveryEmail = recoveryEmail;
             await db.ref("users/" + rec.uid).set(profile);
@@ -633,11 +650,12 @@ exports.listDeptEmployees = functions.runWith(RUN_OPTS).https.onCall(async (data
     snap.forEach(function(child) {
         const p = child.val();
         employees.push({
-            uid:   child.key,
-            empNo: p.empNo || "",
-            name:  p.legacyName || p.name || "",
-            role:  p.role  || "staff",
-            deptId: p.deptId || ""
+            uid:       child.key,
+            empNo:     p.empNo || "",
+            name:      p.legacyName || p.name || "",
+            role:      p.role  || "staff",
+            deptId:    p.deptId || "",
+            sortOrder: (Number.isFinite(Number(p.sortOrder)) ? Number(p.sortOrder) : null)
         });
     });
     return { employees };
