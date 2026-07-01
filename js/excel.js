@@ -90,7 +90,10 @@ function handleBulkExcelUpload() {
 
                 if (!name || !empNo || !dept || !role || !pass) continue;
 
-                var entry = { name: name, empNo: empNo, deptId: dept, role: role, tempPassword: pass };
+                var entry = {
+                        name: name, empNo: empNo, deptId: dept, role: role, tempPassword: pass,
+                        sortOrder: i   // 엑셀 A2=1, A3=2, A4=3 … 순서 그대로 보존
+                    };
 
                 if (colMap["이메일"] !== undefined) {
                     var recoveryEmail = String(row[colMap["이메일"]] || "").trim();

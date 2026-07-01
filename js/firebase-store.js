@@ -7,9 +7,25 @@ var _countersCache = {};
 var _deptConnectToken = 0;
 
 function _rebuildEmployeeMaps(rows) {
-    deptEmployees = (Array.isArray(rows) ? rows : []).filter(function(emp) {
+    var sorted = (Array.isArray(rows) ? rows : []).filter(function(emp) {
         return !!(emp && emp.uid && String(emp.empNo || "").trim());
     });
+
+    // 엑셀 업로드 순서(sortOrder) 우선 → 없으면 empNo 사전순 fallback
+    // 기존 직원(sortOrder 없음)과 신규 직원(sortOrder 있음)이 섞인 경우:
+    //   sortOrder 있는 직원 먼저(오름차순), sortOrder 없는 직원 뒤(empNo순)
+    sorted.sort(function(a, b) {
+        var aOrder = Number(a.sortOrder);
+        var bOrder = Number(b.sortOrder);
+        var aHas = Number.isFinite(aOrder);
+        var bHas = Number.isFinite(bOrder);
+        if (aHas && bHas && aOrder !== bOrder) return aOrder - bOrder;
+        if (aHas && !bHas) return -1;
+        if (!aHas && bHas) return 1;
+        return String(a.empNo || "").localeCompare(String(b.empNo || ""), undefined, { numeric: true, sensitivity: "base" });
+    });
+
+    deptEmployees = sorted;
     employeeByUid = {};
     employeeByEmpNo = {};
     employeeByName = {};
@@ -18,10 +34,11 @@ function _rebuildEmployeeMaps(rows) {
     deptEmployees.forEach(function(emp) {
         if (!emp || !emp.uid) return;
         var clean = {
-            uid: emp.uid,
-            empNo: emp.empNo || "",
-            name: emp.name || emp.empNo || emp.uid,
-            role: emp.role || "staff"
+            uid:       emp.uid,
+            empNo:     emp.empNo || "",
+            name:      emp.name || emp.empNo || emp.uid,
+            role:      emp.role || "staff",
+            sortOrder: (Number.isFinite(Number(emp.sortOrder)) ? Number(emp.sortOrder) : null)
         };
         employeeByUid[clean.uid] = clean;
         if (clean.empNo) employeeByEmpNo[String(clean.empNo).toLowerCase()] = clean;
