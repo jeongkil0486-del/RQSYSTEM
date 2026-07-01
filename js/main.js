@@ -18,6 +18,8 @@ var fn = {
   bulkCreateEmployees: fnClient.httpsCallable("bulkCreateEmployees"),
   deleteEmployee:      fnClient.httpsCallable("deleteEmployee"),
   bulkDeleteEmployees: fnClient.httpsCallable("bulkDeleteEmployees"),
+  saveNotice:          fnClient.httpsCallable("saveNotice"),
+  deleteNotice:        fnClient.httpsCallable("deleteNotice"),
   saveGroupAssignment: fnClient.httpsCallable("saveGroupAssignment"),
   getSuperAdminSummary: fnClient.httpsCallable("getSuperAdminSummary"),
   listDepartments:      fnClient.httpsCallable("listDepartments"),
