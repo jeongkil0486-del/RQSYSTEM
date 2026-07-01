@@ -91,15 +91,78 @@ function _setDayProcessingIndicator(day, pending) {
     cell.removeAttribute("data-processing");
 }
 
-function _runDayRequest(day, requestFn, errorMessage) {
+// ── Optimistic UI 헬퍼 ────────────────────────────────────────────────────────
+// 서버 응답 전에 즉시 셀 UI를 낙관적으로 변경한다.
+// - onValue 콜백은 ".user-note:not(.processing)" 만 지우므로,
+//   Optimistic 노트를 ".processing" 으로 표시하면 덮어쓰기 충돌이 없다.
+// - 서버 성공 시: onValue가 실제 데이터로 자연스럽게 교체(Optimistic 노트 사라짐)
+// - 서버 실패 시: _rollbackOptimistic()으로 노트 제거 후 원래 상태 복귀
+function _applyOptimistic(day, action, type, scheduleCode) {
+    var cell = document.getElementById("d-" + day);
+    if (!cell) return;
+    // 기존 .optimistic 제거 후 새로 추가
+    cell.querySelectorAll(".user-note.optimistic").forEach(function(n) { n.remove(); });
+    if (action === "cancel") return; // 취소: 해당 배지만 즉시 회색 처리
+    var note = document.createElement("div");
+    var labels = { normal: "휴무", petition: "청원", annual: "연차", schedule: scheduleCode || "" };
+    var classMap = { normal: "user-note optimistic processing", petition: "user-note petition optimistic processing", annual: "user-note annual optimistic processing", schedule: "user-note schedule optimistic processing" };
+    note.className = classMap[type] || "user-note optimistic processing";
+    note.innerText = labels[type] || type;
+    note.style.opacity = "0.65";
+    cell.appendChild(note);
+    // 취소 시: 기존 해당 타입 배지를 투명하게
+    cell.querySelectorAll(".user-note:not(.processing)").forEach(function(n) {
+        n.style.opacity = "";
+    });
+}
+
+function _applyOptimisticCancel(day) {
+    var cell = document.getElementById("d-" + day);
+    if (!cell) return;
+    // 취소 Optimistic: 기존 실제 배지는 삭제하지 않고 흐리게만 표시한다.
+    // 실패 시 원상복구해야 하므로 .optimistic(삭제 대상) 대신 .optimistic-cancel을 사용한다.
+    cell.querySelectorAll(".user-note:not(.processing)").forEach(function(n) {
+        n.style.opacity = "0.3";
+        n.classList.add("optimistic-cancel");
+    });
+}
+
+function _rollbackOptimistic(day) {
+    var cell = document.getElementById("d-" + day);
+    if (!cell) return;
+    // 신청 Optimistic으로 새로 만든 임시 배지만 제거한다.
+    cell.querySelectorAll(".user-note.optimistic").forEach(function(n) { n.remove(); });
+    // 취소 실패 시 기존 실제 배지를 원래 상태로 복구한다.
+    cell.querySelectorAll(".user-note.optimistic-cancel").forEach(function(n) {
+        n.classList.remove("optimistic-cancel");
+        n.style.opacity = "";
+    });
+    cell.querySelectorAll(".user-note").forEach(function(n) { n.style.opacity = ""; });
+}
+
+// ── _runDayRequest: 중복 방지 + Optimistic UI + 롤백 ────────────────────────
+// action : "submit" | "cancel"
+// type   : "normal" | "petition" | "annual" | "schedule"
+// scheduleCode: 스케줄 코드명 (type === "schedule" 일 때만 사용)
+function _runDayRequest(day, requestFn, errorMessage, action, type, scheduleCode) {
     if (_isDayActionPending(day)) return Promise.resolve(false);
 
     _setDayActionPending(day, true);
     _setDayProcessingIndicator(day, true);
 
+    // ── Optimistic UI: 서버 응답 전 즉시 셀 상태 반영 ──────────────────────
+    if (action === "cancel") {
+        _applyOptimisticCancel(day);
+    } else if (action === "submit" && type) {
+        _applyOptimistic(day, "submit", type, scheduleCode);
+    }
+
     return requestFn().then(function() {
+        // 성공: onValue가 실제 데이터로 덮어쓰므로 별도 처리 불필요
         return true;
     }).catch(function(e) {
+        // 실패: Optimistic 롤백 후 에러 표시
+        _rollbackOptimistic(day);
         alert((e && e.message) || errorMessage);
         throw e;
     }).finally(function() {
@@ -412,7 +475,7 @@ function executeResetChoice(mode) {
         var item = daysToCancel[index];
         _runDayRequest(item.day, function() {
             return fn.cancelRequest({ deptId: currentDept, yyyymm: yyyymm, day: item.day });
-        }, "\uC77C\uAD04 \uCDE8\uC18C \uC2E4\uD328, \uC624\uB958 \uB85C\uADF8\uB97C \uD655\uC778\uD574\uC8FC\uC138\uC694.").then(function(success) {
+        }, "일괄 취소 실패, 오류 로그를 확인해주세요.", "cancel").then(function(success) {
             if (success) processed++;
             runNext(index + 1);
         }).catch(function() {
@@ -466,30 +529,30 @@ function editDate(date) {
                    : existingScCode !== null ? "schedule"
                    : null;
     if (cancelType) {
-        var label = { normal: "\uC77C\uBC18 \uD734\uBB34", petition: "\uCCAD\uC6D0 \uD734\uBB34", annual: "\uC5F0\uCC28", schedule: "\uC2A4\uCF00\uC904 \uCF54\uB4DC [" + existingScCode + "]" }[cancelType];
-        if (!confirm(parseInt(tm.month) + "\uC6D4 " + date + "\uC77C " + label + "\uB97C \uCDE8\uC18C\uD558\uC2DC\uACA0\uC2B5\uB2C8\uAE4C?")) return;
+        var label = { normal: "일반 휴무", petition: "청원 휴무", annual: "연차", schedule: "스케줄 코드 [" + existingScCode + "]" }[cancelType];
+        if (!confirm(parseInt(tm.month) + "월 " + date + "일 " + label + "를 취소하시겠습니까?")) return;
         _runDayRequest(dayStr, function() {
             return fn.cancelRequest({ deptId: currentDept, yyyymm: tm.fullStr, day: dayStr });
-        }, "\uC2E0\uCCAD \uC2E4\uD328").catch(function() {});
+        }, "신청 실패", "cancel").catch(function() {});
         return;
     }
     if (currentAppMode === "SCHEDULE_CODE") {
-        if (!currentScheduleCode) { alert("\uC2A4\uCF00\uC904 \uCF54\uB4DC\uAC00 \uC120\uD0DD\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4."); return; }
+        if (!currentScheduleCode) { alert("스케줄 코드가 선택되지 않았습니다."); return; }
         var codeObj = scList.find(function(c) { return c.name === currentScheduleCode; });
-        if (!codeObj) { alert("\uC120\uD0DD\uD55C \uCF54\uB4DC\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4."); return; }
+        if (!codeObj) { alert("선택한 코드를 찾을 수 없습니다."); return; }
         if (getMyScheduleCodeCount(currentScheduleCode) >= codeObj.limit) {
-            alert("[" + currentScheduleCode + "] \uCF54\uB4DC \uAC1C\uC778 \uD55C\uB3C4(" + codeObj.limit + "\uAC74) \uCD08\uACFC");
+            alert("[" + currentScheduleCode + "] 코드 개인 한도(" + codeObj.limit + "건) 초과");
             return;
         }
         _runDayRequest(dayStr, function() {
             return fn.submitRequest({ deptId: currentDept, yyyymm: tm.fullStr, day: dayStr, type: "schedule", scheduleCode: currentScheduleCode });
-        }, "\uC2E0\uCCAD \uC2E4\uD328").catch(function() {});
+        }, "신청 실패", "submit", "schedule", currentScheduleCode).catch(function() {});
         return;
     }
     if (currentAppMode === "PETITION") {
         _runDayRequest(dayStr, function() {
             return fn.submitRequest({ deptId: currentDept, yyyymm: tm.fullStr, day: dayStr, type: "petition" });
-        }, "\uCCAD\uC6D0 \uC2E0\uCCAD \uC2E4\uD328").catch(function() {});
+        }, "청원 신청 실패", "submit", "petition").catch(function() {});
         return;
     }
     if (currentAppMode === "ANNUAL") {
@@ -497,19 +560,19 @@ function editDate(date) {
         var personalQuota = getAnnualQuota(currentUser);
         var annualMax     = personalQuota !== null ? personalQuota : parseInt(getFirebaseItem("rq_config_annual_user_max", "15"));
         if (myAnnualCount >= annualMax) {
-            alert("\uC5F0\uCC28 \uD55C\uB3C4(" + annualMax + "\uAC74) \uCD08\uACFC");
+            alert("연차 한도(" + annualMax + "건) 초과");
             return;
         }
         _runDayRequest(dayStr, function() {
             return fn.submitRequest({ deptId: currentDept, yyyymm: tm.fullStr, day: dayStr, type: "annual" });
-        }, "\uC5F0\uCC28 \uC2E0\uCCAD \uC2E4\uD328").catch(function() {});
+        }, "연차 신청 실패", "submit", "annual").catch(function() {});
         return;
     }
     var specialLimit   = getFirebaseItem("rq_special_limit_" + tm.fullStr + "_" + dayStr, null);
     var configDayMax   = specialLimit !== null ? parseInt(specialLimit) : parseInt(getFirebaseItem("rq_config_day_max", "10"));
     var dayTotalCount  = getDayTotalCount(date);
     if (dayTotalCount >= configDayMax) {
-        alert(parseInt(tm.month) + "\uC6D4 " + date + "\uC77C\uC740 \uB9C8\uAC10\uB418\uC5C8\uC2B5\uB2C8\uB2E4 (" + configDayMax + "\uBA85 \uD55C\uB3C4)");
+        alert(parseInt(tm.month) + "월 " + date + "일은 마감되었습니다 (" + configDayMax + "명 한도)");
         return;
     }
     var myTotalCount  = getMyTotalCount();
@@ -517,7 +580,7 @@ function editDate(date) {
     var globalUserMax = parseInt(getFirebaseItem("rq_config_global_user_max", "4"));
     var myMax         = customLimit !== null ? parseInt(customLimit) : globalUserMax;
     if (myTotalCount >= myMax) {
-        alert("\uC774\uBC88 \uB2EC \uC2E0\uCCAD \uD55C\uB3C4(" + myMax + "\uAC74)\uB97C \uBAA8\uB450 \uC0AC\uC6A9\uD588\uC2B5\uB2C8\uB2E4");
+        alert("이번 달 신청 한도(" + myMax + "건)를 모두 사용했습니다");
         return;
     }
     var groups = ["A","B","C","D","E"];
@@ -527,13 +590,13 @@ function editDate(date) {
         if (!groupContainsCurrentUser(grp)) continue;
         var gMax = parseInt(getFirebaseItem("rq_config_group_max_" + g, "2"));
         if (getGroupCountByDate(grp, date) >= gMax) {
-            alert(g + "\uC870 \uC77C\uC790 \uD55C\uB3C4(" + gMax + "\uBA85) \uCD08\uACFC");
+            alert(g + "조 일자 한도(" + gMax + "명) 초과");
             return;
         }
     }
     _runDayRequest(dayStr, function() {
         return fn.submitRequest({ deptId: currentDept, yyyymm: tm.fullStr, day: dayStr, type: "normal" });
-    }, "\uC2E0\uCCAD \uC2E4\uD328").catch(function() {});
+    }, "신청 실패", "submit", "normal").catch(function() {});
 }
 
 // ── 관리자: 날짜 클릭 → 신청 삭제 ───────────────────────────────────────────

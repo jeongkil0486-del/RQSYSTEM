@@ -408,7 +408,7 @@ function _updateMyUserCells(changedDays) {
         var d = dayKey;
         var cell = document.getElementById("d-" + d);
         if (!cell) return;
-        var oldNotes = cell.querySelectorAll(".user-note:not(.processing)");
+        var oldNotes = cell.querySelectorAll(".user-note:not(.processing), .user-note.optimistic");
         oldNotes.forEach(function(node) { node.remove(); });
         var fragment = document.createDocumentFragment();
         if (liveDBData[prefix + d]) {
