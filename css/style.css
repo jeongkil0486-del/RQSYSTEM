@@ -1212,6 +1212,36 @@ body {
   box-sizing: border-box;
 }
 
+/* 다크 박스(.custom-floating-tooltip) 안 검색창 공통 스타일
+   — 직원 목록 검색(#empSearchInput)과 연차 현황 검색(#annualStatusSearchInput)
+     모두 이 클래스 안에 위치. 흰색 배경+어두운 글씨로 배경과 대비.
+     박스 패딩(16px)과 맞물려 자연스럽게 상단 정렬. */
+.emp-search-row {
+  margin: 0 0 10px 0;
+  padding: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.emp-search-row input.form-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #fff;
+  color: #1a1a2e;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 12px;
+  height: 32px;
+  line-height: 1;
+  display: block;
+  margin: 0;
+}
+.emp-search-row input.form-input:focus {
+  outline: none;
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 2px rgba(96,165,250,0.25);
+}
+
 /* 기존 직원 목록 — PC 3열 / 모바일 1열, 이름(사번)이 잘리지 않고 줄바꿈되도록 */
 .emp-list-grid {
   display: grid;
