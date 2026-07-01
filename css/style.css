@@ -1241,6 +1241,20 @@ body {
   border: 1px solid #ffe08a;
 }
 
+/* ─── Optimistic UI ─── */
+/* Optimistic 배지는 서버 확정 전 임시 상태를 나타낸다.
+   .processing 클래스를 함께 가지므로 onValue 콜백의 removeAll에서 보호되고,
+   서버 성공 시 onValue가 실제 데이터로 교체 (.optimistic 제거됨),
+   실패 시 _rollbackOptimistic()이 제거한다. */
+@keyframes optimistic-pulse {
+  0%   { opacity: 0.65; }
+  50%  { opacity: 0.40; }
+  100% { opacity: 0.65; }
+}
+.user-note.optimistic {
+  animation: optimistic-pulse 0.9s ease-in-out infinite;
+}
+
 /* ─── Password change modals ─── */
 #forcePasswordChangeModal > div,
 #superResetChoiceModal > div,
