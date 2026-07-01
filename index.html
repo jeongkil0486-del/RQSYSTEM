@@ -165,6 +165,20 @@
                 </div>
             </div>
 
+            <!-- 직원 전용 공지사항 영역 (달력 위 — rightPanel 밖에 배치해야 직원 모드에서 보임) -->
+            <div id="staffNoticeBanner" style="display:none; margin-bottom:10px;">
+                <div class="panel-card" style="border-left:3px solid var(--accent);">
+                    <div class="panel-card-header">
+                        <div class="panel-card-title">📢 공지사항</div>
+                    </div>
+                    <div class="panel-card-body">
+                        <div id="noticeMain" style="font-size:13px;color:var(--text-sub);line-height:1.6;">
+                            공지사항을 불러오는 중...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- 직원용 빠른 조회: 달력만, 새로고침 버튼만 -->
             <div class="filter-bar staff-action-bar" id="staffFilterBar" style="display:none;">
                 <!-- 직원 전용 신청 버튼들 (휴무/근무/초기화/새로고침 — 한 줄 고정) -->
@@ -214,19 +228,6 @@
                         </div>
                     </div>
 
-                    <!-- 공지사항 (직원: 자기 지점 미읽음 공지만 표시 / 관리자: 숨김) -->
-                    <div class="panel-card" id="staffNoticeCard">
-                        <div class="panel-card-header">
-                            <div class="panel-card-title">📢 공지사항</div>
-                        </div>
-                        <div class="panel-card-body">
-                            <div class="notice-list">
-                                <div id="noticeMain" style="font-size:13px;color:var(--text-sub);line-height:1.6;">
-                                    공지사항을 불러오는 중...
-                                </div>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>
@@ -368,22 +369,6 @@
                             <label class="form-label">현황</label>
                         </div>
                         <div class="custom-floating-tooltip" id="scGroupLimitTooltipBoard"></div>
-                    </div>
-                </div>
-
-                <!-- 공지사항 관리 (관리자/슈퍼관리자 전용 — 지점별 공지 작성/수정/삭제) -->
-                <div class="feature-card card-wide">
-                    <div class="feature-card-header">
-                        <div class="feature-icon" style="background:#fef9ec;">📢</div>
-                        <div>
-                            <div class="feature-card-title">공지사항 관리</div>
-                            <div class="feature-card-desc">지점 공지를 작성·수정·삭제합니다. 직원은 본인 지점 공지만 볼 수 있습니다.</div>
-                        </div>
-                    </div>
-                    <div class="feature-card-body">
-                        <div id="noticeAdminPanelContent" style="font-size:13px;">
-                            로딩중...
-                        </div>
                     </div>
                 </div>
 
@@ -593,6 +578,22 @@
                             <label class="form-label">현황</label>
                         </div>
                         <div class="custom-floating-tooltip" id="scheduleCodeTooltipBoard"></div>
+                    </div>
+                </div>
+
+                <!-- 공지사항 관리 (관리자/슈퍼관리자 전용) -->
+                <div class="feature-card card-wide">
+                    <div class="feature-card-header">
+                        <div class="feature-icon" style="background:#fef9ec;">📢</div>
+                        <div>
+                            <div class="feature-card-title">공지사항 관리</div>
+                            <div class="feature-card-desc">지점 공지를 작성·수정·삭제합니다. 직원은 본인 지점 공지만 볼 수 있습니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div id="noticeAdminPanelContent" style="font-size:13px;color:var(--text-sub);">
+                            설정 페이지를 열면 자동으로 로드됩니다.
+                        </div>
                     </div>
                 </div>
 
@@ -892,6 +893,11 @@ function showPage(page) {
     if (page === 'settings' && typeof window._fixDateTimeInputs === 'function') {
         setTimeout(window._fixDateTimeInputs, 30);
     }
+    // 설정 페이지 진입 시 공지 관리 패널 렌더링
+    // (로그인 시점이 아니라 페이지 진입 시점에 그려야 currentDept/isAdmin 값이 확실히 준비됨)
+    if (page === 'settings' && typeof drawNoticeAdminPanel === 'function' && (isAdmin || isSuperAdmin)) {
+        setTimeout(drawNoticeAdminPanel, 50);
+    }
 }
 
 // ── 모바일 햄버거 ──────────────────────────────────────
@@ -1141,22 +1147,18 @@ function applyRoleBasedUI() {
 
         showPage('dashboard');
 
-        // ── 공지사항 초기화 ──
-        // 직원: 자기 지점 공지 실시간 구독 시작 (신청/취소 로직과 완전 분리)
-        // 관리자: 신청관리 페이지 공지 관리 패널 로드
-        setTimeout(function() {
-            if (isStaffOnly && currentDept) {
+        // ── 직원 공지 구독 초기화 (신청/취소 로직과 완전 분리) ──
+        // 관리자 공지 패널은 설정(settings) 페이지 진입 시 showPage 훅에서 렌더링
+        if (isStaffOnly && currentDept) {
+            setTimeout(function() {
                 if (typeof initNoticeListener === "function") initNoticeListener(currentDept);
-                // 직원 모드에서 공지 카드 표시
-                var nc = document.getElementById("staffNoticeCard");
-                if (nc) nc.style.display = "";
-            } else if (isAdm) {
-                // 관리자 모드에서 직원용 공지 카드 숨김
-                var nc2 = document.getElementById("staffNoticeCard");
-                if (nc2) nc2.style.display = "none";
-                if (typeof drawNoticeAdminPanel === "function") drawNoticeAdminPanel();
-            }
-        }, 300);
+                var nb = document.getElementById("staffNoticeBanner");
+                if (nb) nb.style.display = "";
+            }, 300);
+        } else {
+            var nb2 = document.getElementById("staffNoticeBanner");
+            if (nb2) nb2.style.display = "none";
+        }
 
         // datetime input 보정 (관리자만 해당)
         if (isAdm) {
@@ -1279,6 +1281,22 @@ function closeRecentFeedModal() {
 })();
 
 </script>
+
+<!-- 중요 공지 팝업 모달 (직원 전용 — notices.js에서 제어) -->
+<div id="importantNoticeModal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.6); z-index:99990; justify-content:center; align-items:center;">
+    <div style="background:#fff; border-radius:14px; padding:28px 28px 22px; max-width:440px; width:90%; box-shadow:0 8px 40px rgba(0,0,0,.25); position:relative;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+            <span style="font-size:20px;">🔔</span>
+            <div style="font-size:16px; font-weight:700; color:#c62828;">중요 공지</div>
+        </div>
+        <div id="importantNoticeTitle" style="font-size:15px; font-weight:700; color:#1a1a2e; margin-bottom:10px;"></div>
+        <div id="importantNoticeContent" style="font-size:13px; color:#444; line-height:1.7; max-height:260px; overflow-y:auto; white-space:pre-wrap; margin-bottom:18px;"></div>
+        <div id="importantNoticeMeta" style="font-size:11px; color:#aaa; margin-bottom:16px;"></div>
+        <div style="display:flex; justify-content:flex-end;">
+            <button onclick="confirmImportantNotice()" style="background:#c62828; color:#fff; border:none; border-radius:8px; padding:10px 24px; font-size:14px; font-weight:700; cursor:pointer;">확인했습니다</button>
+        </div>
+    </div>
+</div>
 
 </body>
 </html>
