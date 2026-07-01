@@ -1206,8 +1206,11 @@ body {
   background: linear-gradient(to top, rgba(26,39,68,1) 60%, rgba(26,39,68,0));
 }
 
-/* 직원 검색 */
-.emp-search-row { margin-bottom: 10px; }
+/* 직원 공지 배너 — 달력 위 영역 (rightPanel 밖, 직원 모드에서만 표시) */
+#staffNoticeBanner {
+  width: 100%;
+  box-sizing: border-box;
+}
 
 /* 기존 직원 목록 — PC 3열 / 모바일 1열, 이름(사번)이 잘리지 않고 줄바꿈되도록 */
 .emp-list-grid {
