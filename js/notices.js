@@ -92,15 +92,15 @@ function _renderStaffNotices(notices, myReads, deptId) {
     unreadImportant.sort(byDateDesc);
     unreadNormal.sort(byDateDesc);
 
-    // 중요 공지 → 팝업 대기열
+    // 배너 렌더링 — 중요 + 일반 모두 표시 (팝업과 독립된 배열 복사본 사용)
+    var allUnread = unreadImportant.slice().concat(unreadNormal);
+    _renderNoticeBanner(allUnread, deptId);
+
+    // 중요 공지 팝업 — slice()로 복사해야 _importantQueue.shift()가 allUnread에 영향을 주지 않음
     if (unreadImportant.length > 0) {
-        _importantQueue = unreadImportant;
+        _importantQueue = unreadImportant.slice();
         _showNextImportantPopup();
     }
-
-    // 배너 렌더링 (일반 공지 + 중요 공지도 배너에도 표시)
-    var allUnread = unreadImportant.concat(unreadNormal);
-    _renderNoticeBanner(allUnread, deptId);
 }
 
 // ── 배너 렌더링 ────────────────────────────────────────────────────────────────

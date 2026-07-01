@@ -402,7 +402,7 @@ function drawAnnualStatusBoard() {
     var listEl = document.getElementById("annualStatusTooltipBoardList");
     if (!listEl) {
         container.innerHTML =
-            "<div class='emp-search-row'><input type='text' id='annualStatusSearchInput' class='form-input' placeholder='사번 또는 이름 검색' style='background:#fff;color:#222;'></div>" +
+            "<div class='emp-search-row'><input type='text' id='annualStatusSearchInput' class='form-input' placeholder='사번 또는 이름 검색'></div>" +
             "<div id='annualStatusTooltipBoardList'></div>";
         listEl = document.getElementById("annualStatusTooltipBoardList");
         var searchInput = document.getElementById("annualStatusSearchInput");
