@@ -776,3 +776,91 @@ exports.bulkDeleteEmployees = functions.runWith({ ...RUN_OPTS, timeoutSeconds: 3
     }
     return { results };
 });
+
+
+function validateNoticeDeptId(deptId) {
+    if (!deptId || !/^[A-Za-z0-9_-]+$/.test(deptId) || deptId.toUpperCase() === "ALL" || deptId.indexOf("__") === 0) {
+        throw new functions.https.HttpsError("invalid-argument", "유효하지 않은 지점 코드입니다");
+    }
+}
+
+async function assertNoticeDeptExists(deptId) {
+    validateNoticeDeptId(deptId);
+    const snap = await db.ref("departments/" + deptId).once("value");
+    if (!snap.exists()) {
+        throw new functions.https.HttpsError("not-found", "존재하지 않는 지점입니다");
+    }
+}
+
+// ── 20. saveNotice — 지점 공지 저장/수정 (관리자/슈퍼관리자 전용) ──────────────
+// 반드시 trinity_system/{deptId}/notices/{noticeId} 경로만 사용.
+// 전지점(ALL) 공지 경로는 존재하지 않으며 이 함수로도 만들 수 없음.
+// - 일반관리자(admin): 본인 deptId 외 저장 불가 (서버 강제)
+// - 슈퍼관리자(super_admin): 파라미터 deptId 지점 공지만 저장
+exports.saveNotice = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const callerProfile = await getCallerProfile(context.auth.uid);
+    if (!callerProfile) throw new functions.https.HttpsError("permission-denied", "프로필 없음");
+    const role = String(callerProfile.role || "").toLowerCase();
+    if (role !== "admin" && role !== "super_admin")
+        throw new functions.https.HttpsError("permission-denied", "관리자 권한 필요");
+
+    const deptId = String(data.deptId || "").trim();
+    if (!deptId)
+        throw new functions.https.HttpsError("invalid-argument", "deptId 필요");
+    await assertNoticeDeptExists(deptId);
+
+    // 일반관리자는 자기 지점만
+    if (role === "admin" && String(callerProfile.deptId || "").trim() !== deptId)
+        throw new functions.https.HttpsError("permission-denied", "다른 지점 공지 저장 불가");
+
+    const title   = String(data.title   || "").trim();
+    const content = String(data.content || "").trim();
+    if (!title || !content)
+        throw new functions.https.HttpsError("invalid-argument", "제목과 내용은 필수입니다");
+
+    const important = data.important === true;
+    const active    = data.active !== false; // 기본 true
+    const now       = Date.now();
+    const noticeId  = data.noticeId || null;
+    const path      = "trinity_system/" + deptId + "/notices/";
+
+    if (noticeId) {
+        // 수정: 기존 공지 존재 여부 확인
+        const existing = await db.ref(path + noticeId).once("value");
+        if (!existing.exists())
+            throw new functions.https.HttpsError("not-found", "공지가 존재하지 않습니다");
+        await db.ref(path + noticeId).update({ title, content, important, active, updatedAt: now });
+        return { ok: true, noticeId };
+    } else {
+        // 신규
+        const ref = db.ref(path).push();
+        await ref.set({ title, content, important, active,
+                        createdBy: context.auth.uid, createdAt: now, updatedAt: now });
+        return { ok: true, noticeId: ref.key };
+    }
+});
+
+// ── 21. deleteNotice — 지점 공지 삭제 (관리자/슈퍼관리자 전용) ────────────────
+exports.deleteNotice = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const callerProfile = await getCallerProfile(context.auth.uid);
+    if (!callerProfile) throw new functions.https.HttpsError("permission-denied", "프로필 없음");
+    const role = String(callerProfile.role || "").toLowerCase();
+    if (role !== "admin" && role !== "super_admin")
+        throw new functions.https.HttpsError("permission-denied", "관리자 권한 필요");
+
+    const deptId   = String(data.deptId   || "").trim();
+    const noticeId = String(data.noticeId || "").trim();
+    if (!deptId || !noticeId)
+        throw new functions.https.HttpsError("invalid-argument", "deptId, noticeId 필요");
+    await assertNoticeDeptExists(deptId);
+
+    // 일반관리자는 자기 지점만
+    if (role === "admin" && String(callerProfile.deptId || "").trim() !== deptId)
+        throw new functions.https.HttpsError("permission-denied", "다른 지점 공지 삭제 불가");
+
+    await db.ref("trinity_system/" + deptId + "/notices/"     + noticeId).remove();
+    await db.ref("trinity_system/" + deptId + "/noticeReads/" + noticeId).remove();
+    return { ok: true };
+});
