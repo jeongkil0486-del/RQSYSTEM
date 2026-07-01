@@ -509,20 +509,6 @@ exports.bulkCreateEmployees = functions.runWith({ ...RUN_OPTS, timeoutSeconds: 3
     const rows = Array.isArray(data.rows) ? data.rows : [];
     if (rows.length === 0) throw new functions.https.HttpsError("invalid-argument", "rows가 비어있음");
 
-    // 지점별 기존 sortOrder 최대값을 먼저 계산합니다.
-    // 같은 지점에 엑셀을 여러 번 업로드해도 A2=1이 다시 저장되어 순서가 중복되는 문제를 방지합니다.
-    const existingSnap = await db.ref("users").once("value");
-    const sortBaseByDept = {};
-    existingSnap.forEach(function(child) {
-        const p = child.val() || {};
-        const dept = String(p.deptId || "").trim();
-        if (!dept) return;
-        const n = Number(p.sortOrder);
-        if (Number.isFinite(n)) {
-            sortBaseByDept[dept] = Math.max(sortBaseByDept[dept] || 0, n);
-        }
-    });
-
     const results = [];
     let rowIndex = 0;
     for (const row of rows) {
@@ -550,7 +536,7 @@ exports.bulkCreateEmployees = functions.runWith({ ...RUN_OPTS, timeoutSeconds: 3
                 createdAt: Date.now(),
                 mustChangePassword: true,
                 passwordResetRequired: true,
-                sortOrder: (sortBaseByDept[deptId] || 0) + (Number.isFinite(Number(row.sortOrder)) ? Number(row.sortOrder) : rowIndex)
+                sortOrder: (row.sortOrder != null ? Number(row.sortOrder) : rowIndex)
             };
             if (recoveryEmail) profile.recoveryEmail = recoveryEmail;
             await db.ref("users/" + rec.uid).set(profile);
@@ -655,7 +641,7 @@ exports.listDeptEmployees = functions.runWith(RUN_OPTS).https.onCall(async (data
             name:      p.legacyName || p.name || "",
             role:      p.role  || "staff",
             deptId:    p.deptId || "",
-            sortOrder: (Number.isFinite(Number(p.sortOrder)) ? Number(p.sortOrder) : null)
+            sortOrder: (p.sortOrder != null ? Number(p.sortOrder) : null)
         });
     });
     return { employees };
@@ -717,4 +703,76 @@ exports.resyncDerivedData = functions.runWith(RUN_OPTS).https.onCall(async (data
     const counterPath = "departments/" + deptId + "/publicCounters/" + yyyymm;
     await db.ref(counterPath).set(Object.keys(dayCounts).length > 0 ? dayCounts : null);
     return { ok: true };
+});
+
+// ── 19. bulkDeleteEmployees — 직원 일괄 삭제 (슈퍼관리자 전용) ─────────────────
+// 클라이언트에서 엑셀로 업로드한 사번 목록을 받아 일괄 삭제한다.
+// 각 항목별로 성공/실패 사유를 반환하며, 중간 실패가 있어도 나머지 항목은 계속 처리한다.
+// 보호 조건(서버에서 강제):
+//   - 호출자가 super_admin이어야 함
+//   - sa001 삭제 불가
+//   - 호출자 본인 삭제 불가
+//   - role이 admin 또는 super_admin인 계정 삭제 불가
+exports.bulkDeleteEmployees = functions.runWith({ ...RUN_OPTS, timeoutSeconds: 300 }).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const callerProfile = await getCallerProfile(context.auth.uid);
+    if (!callerProfile || String(callerProfile.role || "").toLowerCase() !== "super_admin")
+        throw new functions.https.HttpsError("permission-denied", "슈퍼관리자 전용");
+
+    const empNos = Array.isArray(data.empNos) ? data.empNos : [];
+    if (empNos.length === 0) throw new functions.https.HttpsError("invalid-argument", "empNos가 비어있음");
+
+    const results = [];
+    for (const rawEmpNo of empNos) {
+        const empNo = normalizeEmpNo(rawEmpNo);
+        if (!empNo) {
+            results.push({ empNo: String(rawEmpNo || ""), ok: false, error: "사번이 비어있음" });
+            continue;
+        }
+        // sa001 보호
+        if (empNo === "sa001") {
+            results.push({ empNo, ok: false, error: "기본 슈퍼관리자 계정은 삭제할 수 없습니다" });
+            continue;
+        }
+        const email = empNoToEmail(empNo);
+        let uid, targetProfile;
+        try {
+            const rec = await auth.getUserByEmail(email);
+            uid = rec.uid;
+        } catch (e) {
+            results.push({ empNo, ok: false, error: "존재하지 않는 사번" });
+            continue;
+        }
+        // 호출자 본인 보호
+        if (uid === context.auth.uid) {
+            results.push({ empNo, ok: false, error: "현재 로그인한 슈퍼관리자 본인은 삭제할 수 없습니다" });
+            continue;
+        }
+        // 관리자/슈퍼관리자 계정 삭제 방지
+        try {
+            const snap = await db.ref("users/" + uid).once("value");
+            targetProfile = snap.exists() ? snap.val() : null;
+        } catch (e) {
+            targetProfile = null;
+        }
+        const targetRole = String((targetProfile && targetProfile.role) || "").toLowerCase();
+        if (targetRole === "admin" || targetRole === "super_admin") {
+            results.push({ empNo, ok: false, error: "관리자/슈퍼관리자 계정은 삭제할 수 없습니다 (role: " + targetRole + ")" });
+            continue;
+        }
+        try {
+            await auth.deleteUser(uid);
+            await db.ref("users/" + uid).remove();
+            results.push({
+                empNo,
+                ok: true,
+                uid,
+                name: (targetProfile && (targetProfile.legacyName || targetProfile.name)) || "",
+                deptId: (targetProfile && targetProfile.deptId) || ""
+            });
+        } catch (e) {
+            results.push({ empNo, ok: false, error: e.message || "삭제 실패" });
+        }
+    }
+    return { results };
 });
