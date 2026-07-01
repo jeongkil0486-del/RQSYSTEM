@@ -881,6 +881,13 @@ exports.listNotices = functions.runWith(RUN_OPTS).https.onCall(async (data, cont
     const notices = noticesSnap.val() || {};
     const noticeIds = Object.keys(notices);
 
+    console.log("[listNotices] uid:", context.auth.uid,
+        "| role:", role,
+        "| reqDept:", reqDept,
+        "| callerDept:", callerProfile.deptId || "(없음)",
+        "| noticesCount:", noticeIds.length,
+        "| noticeIds:", JSON.stringify(noticeIds));
+
     // ── 읽음 여부: noticeReads 전체 조회 금지 ────────────────────────────────
     // 각 noticeId 별로 호출자 uid 경로만 개별 읽기
     const myReads = {};
@@ -891,6 +898,7 @@ exports.listNotices = functions.runWith(RUN_OPTS).https.onCall(async (data, cont
         myReads[nid] = readSnap.val() === true;
     }));
 
+    console.log("[listNotices] myReads:", JSON.stringify(myReads));
     return { notices, myReads };
 });
 
