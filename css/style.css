@@ -879,6 +879,87 @@ body {
 .notice-text { flex: 1; color: var(--text-main); line-height: 1.4; }
 .notice-date { font-size: 11px; color: var(--text-light); white-space: nowrap; }
 
+/* ── 직원 공지 표시 (동적 렌더링, notices.js) ── */
+.notice-item { align-items: flex-start; }
+.notice-body { flex: 1; min-width: 0; }
+.notice-title-imp {
+  font-weight: 700; font-size: 13.5px; color: #c62828; margin-bottom: 3px;
+}
+.notice-title-normal {
+  font-weight: 600; font-size: 13px; color: var(--text-main); margin-bottom: 3px;
+}
+.notice-content-text {
+  font-size: 12px; color: var(--text-sub); line-height: 1.5;
+}
+.notice-content-collapsed {
+  max-height: 48px; overflow: hidden;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.notice-meta {
+  font-size: 11px; color: var(--text-light); margin-top: 4px;
+}
+/* 중요 공지 */
+.notice-important {
+  background: #fff5f5;
+  border: 1px solid #fca5a5 !important;
+  border-radius: 8px;
+  padding: 10px 12px !important;
+  margin-bottom: 8px;
+}
+/* 일반 공지 */
+.notice-normal {
+  padding: 8px 2px !important;
+}
+.notice-badge-important {
+  display: inline-block;
+  background: #dc2626; color: #fff;
+  font-size: 11px; font-weight: 700;
+  padding: 2px 7px; border-radius: 4px;
+  flex-shrink: 0; align-self: flex-start; margin-right: 4px; margin-top: 2px;
+}
+/* 확인 버튼 */
+.notice-read-btn {
+  flex-shrink: 0;
+  background: #f3f4f6; color: #374151;
+  border: 1px solid #d1d5db; border-radius: 6px;
+  font-size: 11px; font-weight: 600;
+  padding: 4px 10px; cursor: pointer; align-self: flex-start;
+  transition: background .15s;
+}
+.notice-read-btn:hover { background: #e5e7eb; }
+.notice-read-btn-imp {
+  background: #fee2e2; color: #c62828; border-color: #fca5a5;
+}
+.notice-read-btn-imp:hover { background: #fecaca; }
+
+/* ── 관리자 공지 관리 패널 ── */
+.notice-admin-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: #fafafa; border: 1px solid #e5e7eb;
+  border-radius: 8px; padding: 10px 12px;
+}
+.notice-admin-row-editing {
+  border-color: #2563eb; background: #eff6ff;
+}
+.notice-admin-badge-imp {
+  display: inline-block;
+  background: #dc2626; color: #fff;
+  font-size: 10px; font-weight: 700;
+  padding: 1px 6px; border-radius: 3px; margin-right: 3px;
+}
+.notice-admin-badge-active {
+  display: inline-block;
+  background: #d1fae5; color: #065f46;
+  font-size: 10px; font-weight: 600;
+  padding: 1px 6px; border-radius: 3px; margin-right: 3px;
+}
+.notice-admin-badge-off {
+  display: inline-block;
+  background: #f3f4f6; color: #6b7280;
+  font-size: 10px; font-weight: 600;
+  padding: 1px 6px; border-radius: 3px; margin-right: 3px;
+}
+
 /* =====================================================
    SECTION PAGES (신청관리 / 직원관리 / 설정 / 다운로드)
    ===================================================== */
