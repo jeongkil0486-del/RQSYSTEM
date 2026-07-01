@@ -67,80 +67,100 @@ function _setDayActionPending(day, pending) {
     else delete _pendingDayActions[key];
 }
 
-function _setDayProcessingIndicator(day, pending) {
+// ── 즉시 반응 UI 헬퍼 ────────────────────────────────────────────────────────
+// 사용자가 날짜를 누르는 순간 실제 배지처럼 바로 표시/제거한다.
+// 서버 성공 시 RTDB onValue가 실제 데이터로 다시 그려 확정하고,
+// 서버 실패 시 여기서 만든 임시 변경만 되돌린다.
+var _optimisticSnapshots = {};
+
+function _getOptimisticKey(day) {
+    return getTargetYearMonth().fullStr + ":" + String(day);
+}
+
+function _snapshotDayNotes(day) {
     var cell = document.getElementById("d-" + day);
     if (!cell) return;
+    var key = _getOptimisticKey(day);
+    _optimisticSnapshots[key] = [];
+    cell.querySelectorAll(".user-note").forEach(function(n) {
+        _optimisticSnapshots[key].push({
+            className: n.className,
+            text: n.innerText,
+            style: n.getAttribute("style") || ""
+        });
+    });
+}
 
-    var indicator = cell.querySelector(".user-note.processing");
-    if (pending) {
-        if (!indicator) {
-            indicator = document.createElement("div");
-            indicator.className = "user-note processing";
-            indicator.style.background = "#fff3cd";
-            indicator.style.color = "#8a6d3b";
-            indicator.style.border = "1px solid #ffe08a";
-            indicator.style.fontWeight = "bold";
-            cell.appendChild(indicator);
-        }
-        indicator.innerText = "처리중...";
-        cell.setAttribute("data-processing", "1");
-        return;
+function _restoreDayNotes(day) {
+    var cell = document.getElementById("d-" + day);
+    if (!cell) return;
+    var key = _getOptimisticKey(day);
+    var saved = _optimisticSnapshots[key];
+
+    cell.querySelectorAll(".user-note").forEach(function(n) { n.remove(); });
+
+    if (saved && saved.length) {
+        var fragment = document.createDocumentFragment();
+        saved.forEach(function(item) {
+            var note = document.createElement("div");
+            note.className = item.className;
+            note.innerText = item.text;
+            if (item.style) note.setAttribute("style", item.style);
+            fragment.appendChild(note);
+        });
+        cell.appendChild(fragment);
     }
 
-    if (indicator) indicator.remove();
+    delete _optimisticSnapshots[key];
     cell.removeAttribute("data-processing");
 }
 
-// ── Optimistic UI 헬퍼 ────────────────────────────────────────────────────────
-// 서버 응답 전에 즉시 셀 UI를 낙관적으로 변경한다.
-// - onValue 콜백은 ".user-note:not(.processing)" 만 지우므로,
-//   Optimistic 노트를 ".processing" 으로 표시하면 덮어쓰기 충돌이 없다.
-// - 서버 성공 시: onValue가 실제 데이터로 자연스럽게 교체(Optimistic 노트 사라짐)
-// - 서버 실패 시: _rollbackOptimistic()으로 노트 제거 후 원래 상태 복귀
-function _applyOptimistic(day, action, type, scheduleCode) {
+function _clearOptimisticSnapshot(day) {
+    delete _optimisticSnapshots[_getOptimisticKey(day)];
+    var cell = document.getElementById("d-" + day);
+    if (cell) cell.removeAttribute("data-processing");
+}
+
+function _applyInstantSubmit(day, type, scheduleCode) {
     var cell = document.getElementById("d-" + day);
     if (!cell) return;
-    // 기존 .optimistic 제거 후 새로 추가
-    cell.querySelectorAll(".user-note.optimistic").forEach(function(n) { n.remove(); });
-    if (action === "cancel") return; // 취소: 해당 배지만 즉시 회색 처리
+
+    _snapshotDayNotes(day);
+
+    // 중복 표시 방지: 기존 배지를 지우고, 누른 결과를 즉시 실제 배지처럼 표시한다.
+    cell.querySelectorAll(".user-note").forEach(function(n) { n.remove(); });
+
     var note = document.createElement("div");
-    var labels = { normal: "휴무", petition: "청원", annual: "연차", schedule: scheduleCode || "" };
-    var classMap = { normal: "user-note optimistic processing", petition: "user-note petition optimistic processing", annual: "user-note annual optimistic processing", schedule: "user-note schedule optimistic processing" };
-    note.className = classMap[type] || "user-note optimistic processing";
+    var labels = {
+        normal: "휴무",
+        petition: "청원",
+        annual: "연차",
+        schedule: scheduleCode || ""
+    };
+    var classMap = {
+        normal: "user-note optimistic",
+        petition: "user-note petition optimistic",
+        annual: "user-note annual optimistic",
+        schedule: "user-note schedule optimistic"
+    };
+    note.className = classMap[type] || "user-note optimistic";
     note.innerText = labels[type] || type;
-    note.style.opacity = "0.65";
     cell.appendChild(note);
-    // 취소 시: 기존 해당 타입 배지를 투명하게
-    cell.querySelectorAll(".user-note:not(.processing)").forEach(function(n) {
-        n.style.opacity = "";
-    });
+    cell.setAttribute("data-processing", "1");
 }
 
-function _applyOptimisticCancel(day) {
+function _applyInstantCancel(day) {
     var cell = document.getElementById("d-" + day);
     if (!cell) return;
-    // 취소 Optimistic: 기존 실제 배지는 삭제하지 않고 흐리게만 표시한다.
-    // 실패 시 원상복구해야 하므로 .optimistic(삭제 대상) 대신 .optimistic-cancel을 사용한다.
-    cell.querySelectorAll(".user-note:not(.processing)").forEach(function(n) {
-        n.style.opacity = "0.3";
-        n.classList.add("optimistic-cancel");
-    });
+
+    _snapshotDayNotes(day);
+
+    // 사용자가 원하는 체감: 취소 클릭 즉시 배지를 화면에서 제거한다.
+    cell.querySelectorAll(".user-note").forEach(function(n) { n.remove(); });
+    cell.setAttribute("data-processing", "1");
 }
 
-function _rollbackOptimistic(day) {
-    var cell = document.getElementById("d-" + day);
-    if (!cell) return;
-    // 신청 Optimistic으로 새로 만든 임시 배지만 제거한다.
-    cell.querySelectorAll(".user-note.optimistic").forEach(function(n) { n.remove(); });
-    // 취소 실패 시 기존 실제 배지를 원래 상태로 복구한다.
-    cell.querySelectorAll(".user-note.optimistic-cancel").forEach(function(n) {
-        n.classList.remove("optimistic-cancel");
-        n.style.opacity = "";
-    });
-    cell.querySelectorAll(".user-note").forEach(function(n) { n.style.opacity = ""; });
-}
-
-// ── _runDayRequest: 중복 방지 + Optimistic UI + 롤백 ────────────────────────
+// ── _runDayRequest: 중복 방지 + 즉시 UI 반영 + 실패 롤백 ─────────────────────
 // action : "submit" | "cancel"
 // type   : "normal" | "petition" | "annual" | "schedule"
 // scheduleCode: 스케줄 코드명 (type === "schedule" 일 때만 사용)
@@ -148,26 +168,25 @@ function _runDayRequest(day, requestFn, errorMessage, action, type, scheduleCode
     if (_isDayActionPending(day)) return Promise.resolve(false);
 
     _setDayActionPending(day, true);
-    _setDayProcessingIndicator(day, true);
 
-    // ── Optimistic UI: 서버 응답 전 즉시 셀 상태 반영 ──────────────────────
+    // 서버 호출 전에 먼저 화면부터 바꾼다. 별도 "처리중..." 배지는 표시하지 않는다.
     if (action === "cancel") {
-        _applyOptimisticCancel(day);
+        _applyInstantCancel(day);
     } else if (action === "submit" && type) {
-        _applyOptimistic(day, "submit", type, scheduleCode);
+        _applyInstantSubmit(day, type, scheduleCode);
     }
 
     return requestFn().then(function() {
-        // 성공: onValue가 실제 데이터로 덮어쓰므로 별도 처리 불필요
+        // 성공: RTDB onValue가 실제 데이터로 덮어쓰며 확정한다.
+        _clearOptimisticSnapshot(day);
         return true;
     }).catch(function(e) {
-        // 실패: Optimistic 롤백 후 에러 표시
-        _rollbackOptimistic(day);
+        // 실패: 클릭 전 배지 상태로 즉시 복구한다.
+        _restoreDayNotes(day);
         alert((e && e.message) || errorMessage);
         throw e;
     }).finally(function() {
         _setDayActionPending(day, false);
-        _setDayProcessingIndicator(day, false);
     });
 }
 
