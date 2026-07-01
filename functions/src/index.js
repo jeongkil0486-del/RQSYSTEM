@@ -637,11 +637,15 @@ exports.listDeptEmployees = functions.runWith(RUN_OPTS).https.onCall(async (data
     const employees = [];
     snap.forEach(function(child) {
         const p = child.val();
+        const role = String(p.role || "staff").toLowerCase();
+        // admin/super_admin 계정은 운영 직원 목록에서 제외.
+        // 비밀번호 초기화 등 별도 기능은 empNo→email 직접 조회를 사용하므로 영향 없음.
+        if (role !== "staff") return;
         employees.push({
             uid:       child.key,
             empNo:     p.empNo || "",
             name:      p.legacyName || p.name || "",
-            role:      p.role  || "staff",
+            role:      role,
             deptId:    p.deptId || "",
             sortOrder: (p.sortOrder != null ? Number(p.sortOrder) : null)
         });
