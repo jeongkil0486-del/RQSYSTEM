@@ -7,19 +7,22 @@ var _countersCache = {};
 var _deptConnectToken = 0;
 
 function _rebuildEmployeeMaps(rows) {
+    // role === "staff" 인 계정만 운영 직원으로 취급.
+    // admin/super_admin은 직원 목록·연차현황·조편성·다운로드 등 운영 화면에서 제외.
+    // 비밀번호 초기화 등 별도 기능은 empNo→email 직접 조회를 사용하므로 영향 없음.
     var sorted = (Array.isArray(rows) ? rows : []).filter(function(emp) {
-        return !!(emp && emp.uid && String(emp.empNo || "").trim());
+        if (!(emp && emp.uid && String(emp.empNo || "").trim())) return false;
+        var role = String(emp.role || "staff").toLowerCase();
+        return role === "staff";
     });
 
     // 엑셀 업로드 순서(sortOrder) 우선 → 없으면 empNo 사전순 fallback
     // 기존 직원(sortOrder 없음)과 신규 직원(sortOrder 있음)이 섞인 경우:
     //   sortOrder 있는 직원 먼저(오름차순), sortOrder 없는 직원 뒤(empNo순)
     sorted.sort(function(a, b) {
-        var aOrder = Number(a.sortOrder);
-        var bOrder = Number(b.sortOrder);
-        var aHas = Number.isFinite(aOrder);
-        var bHas = Number.isFinite(bOrder);
-        if (aHas && bHas && aOrder !== bOrder) return aOrder - bOrder;
+        var aHas = (a.sortOrder != null);
+        var bHas = (b.sortOrder != null);
+        if (aHas && bHas)  return Number(a.sortOrder) - Number(b.sortOrder);
         if (aHas && !bHas) return -1;
         if (!aHas && bHas) return 1;
         return String(a.empNo || "").localeCompare(String(b.empNo || ""), undefined, { numeric: true, sensitivity: "base" });
@@ -38,7 +41,7 @@ function _rebuildEmployeeMaps(rows) {
             empNo:     emp.empNo || "",
             name:      emp.name || emp.empNo || emp.uid,
             role:      emp.role || "staff",
-            sortOrder: (Number.isFinite(Number(emp.sortOrder)) ? Number(emp.sortOrder) : null)
+            sortOrder: (emp.sortOrder != null ? Number(emp.sortOrder) : null)
         };
         employeeByUid[clean.uid] = clean;
         if (clean.empNo) employeeByEmpNo[String(clean.empNo).toLowerCase()] = clean;
