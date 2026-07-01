@@ -12,7 +12,9 @@
 const functions = require("firebase-functions");
 const admin     = require("firebase-admin");
 
-admin.initializeApp();
+admin.initializeApp({
+    databaseURL: "https://taerq-67005-default-rtdb.firebaseio.com"
+});
 
 const db   = admin.database();
 const auth = admin.auth();
@@ -59,20 +61,6 @@ async function assertAdmin(callerUid, deptId) {
             throw new functions.https.HttpsError("permission-denied", "다른 지점 접근 불가");
     }
     return profile;
-}
-
-
-/** 공지 deptId 검증 — ALL/경로문자 차단, 실제 지점 존재 확인 */
-async function assertValidNoticeDept(deptId) {
-    const clean = String(deptId || "").trim();
-    if (!clean || clean.toUpperCase() === "ALL" || clean.indexOf("/") >= 0 || clean.indexOf(".") >= 0 || clean.indexOf("#") >= 0 || clean.indexOf("$") >= 0 || clean.indexOf("[") >= 0 || clean.indexOf("]") >= 0) {
-        throw new functions.https.HttpsError("invalid-argument", "유효하지 않은 지점입니다");
-    }
-    const snap = await db.ref("departments/" + clean).once("value");
-    if (!snap.exists()) {
-        throw new functions.https.HttpsError("not-found", "존재하지 않는 지점입니다");
-    }
-    return clean;
 }
 
 /** publicCounters 재계산 — adminView/{yyyymm} 전체 집계 */
@@ -804,7 +792,9 @@ exports.saveNotice = functions.runWith(RUN_OPTS).https.onCall(async (data, conte
     if (role !== "admin" && role !== "super_admin")
         throw new functions.https.HttpsError("permission-denied", "관리자 권한 필요");
 
-    const deptId = await assertValidNoticeDept(data.deptId);
+    const deptId = String(data.deptId || "").trim();
+    if (!deptId)
+        throw new functions.https.HttpsError("invalid-argument", "deptId 필요");
 
     // 일반관리자는 자기 지점만
     if (role === "admin" && String(callerProfile.deptId || "").trim() !== deptId)
@@ -846,10 +836,10 @@ exports.deleteNotice = functions.runWith(RUN_OPTS).https.onCall(async (data, con
     if (role !== "admin" && role !== "super_admin")
         throw new functions.https.HttpsError("permission-denied", "관리자 권한 필요");
 
-    const deptId   = await assertValidNoticeDept(data.deptId);
+    const deptId   = String(data.deptId   || "").trim();
     const noticeId = String(data.noticeId || "").trim();
-    if (!noticeId)
-        throw new functions.https.HttpsError("invalid-argument", "noticeId 필요");
+    if (!deptId || !noticeId)
+        throw new functions.https.HttpsError("invalid-argument", "deptId, noticeId 필요");
 
     // 일반관리자는 자기 지점만
     if (role === "admin" && String(callerProfile.deptId || "").trim() !== deptId)
@@ -869,8 +859,16 @@ exports.listNotices = functions.runWith(RUN_OPTS).https.onCall(async (data, cont
     const callerProfile = await getCallerProfile(context.auth.uid);
     if (!callerProfile) throw new functions.https.HttpsError("permission-denied", "프로필 없음");
 
-    const role   = String(callerProfile.role || "").toLowerCase();
-    const reqDept = await assertValidNoticeDept(data.deptId);
+    const role    = String(callerProfile.role || "").toLowerCase();
+    const reqDept = String(data.deptId || "").trim();
+
+    // ── deptId 검증 ──────────────────────────────────────────────────────────
+    if (!reqDept)
+        throw new functions.https.HttpsError("invalid-argument", "deptId 필요");
+    if (reqDept.toUpperCase() === "ALL")
+        throw new functions.https.HttpsError("invalid-argument", "전지점(ALL) 공지는 지원하지 않습니다");
+    if (/[/.#$[\]]/.test(reqDept))
+        throw new functions.https.HttpsError("invalid-argument", "deptId에 사용할 수 없는 문자가 포함되어 있습니다");
 
     // 직원/관리자는 자기 지점만 접근 가능
     if (role !== "super_admin") {
@@ -881,12 +879,16 @@ exports.listNotices = functions.runWith(RUN_OPTS).https.onCall(async (data, cont
 
     const noticesSnap = await db.ref("trinity_system/" + reqDept + "/notices").once("value");
     const notices = noticesSnap.val() || {};
+    const noticeIds = Object.keys(notices);
 
-    // 읽음 정보: 전체 직원 reads 조회 금지. 공지별로 호출자 uid 경로만 확인
+    // ── 읽음 여부: noticeReads 전체 조회 금지 ────────────────────────────────
+    // 각 noticeId 별로 호출자 uid 경로만 개별 읽기
     const myReads = {};
-    await Promise.all(Object.keys(notices).map(async function(nid) {
-        const readSnap = await db.ref("trinity_system/" + reqDept + "/noticeReads/" + nid + "/" + context.auth.uid).once("value");
-        myReads[nid] = readSnap.exists();
+    await Promise.all(noticeIds.map(async function(nid) {
+        const readSnap = await db.ref(
+            "trinity_system/" + reqDept + "/noticeReads/" + nid + "/" + context.auth.uid
+        ).once("value");
+        myReads[nid] = readSnap.val() === true;
     }));
 
     return { notices, myReads };
@@ -900,11 +902,19 @@ exports.markNoticeRead = functions.runWith(RUN_OPTS).https.onCall(async (data, c
     const callerProfile = await getCallerProfile(context.auth.uid);
     if (!callerProfile) throw new functions.https.HttpsError("permission-denied", "프로필 없음");
 
-    const role    = String(callerProfile.role || "").toLowerCase();
-    const deptId  = await assertValidNoticeDept(data.deptId);
+    const role     = String(callerProfile.role || "").toLowerCase();
+    const deptId   = String(data.deptId   || "").trim();
     const noticeId = String(data.noticeId || "").trim();
 
-    if (!noticeId) throw new functions.https.HttpsError("invalid-argument", "noticeId 필요");
+    // ── deptId / noticeId 검증 ────────────────────────────────────────────────
+    if (!deptId || !noticeId)
+        throw new functions.https.HttpsError("invalid-argument", "deptId, noticeId 필요");
+    if (deptId.toUpperCase() === "ALL")
+        throw new functions.https.HttpsError("invalid-argument", "전지점(ALL) 공지는 지원하지 않습니다");
+    if (/[/.#$[\]]/.test(deptId))
+        throw new functions.https.HttpsError("invalid-argument", "deptId에 사용할 수 없는 문자가 포함되어 있습니다");
+    if (/[/.#$[\]]/.test(noticeId))
+        throw new functions.https.HttpsError("invalid-argument", "noticeId에 사용할 수 없는 문자가 포함되어 있습니다");
 
     // 직원/관리자는 자기 지점 공지만 읽음 처리 가능
     if (role !== "super_admin") {
