@@ -61,6 +61,20 @@ async function assertAdmin(callerUid, deptId) {
     return profile;
 }
 
+
+/** 공지 deptId 검증 — ALL/경로문자 차단, 실제 지점 존재 확인 */
+async function assertValidNoticeDept(deptId) {
+    const clean = String(deptId || "").trim();
+    if (!clean || clean.toUpperCase() === "ALL" || clean.indexOf("/") >= 0 || clean.indexOf(".") >= 0 || clean.indexOf("#") >= 0 || clean.indexOf("$") >= 0 || clean.indexOf("[") >= 0 || clean.indexOf("]") >= 0) {
+        throw new functions.https.HttpsError("invalid-argument", "유효하지 않은 지점입니다");
+    }
+    const snap = await db.ref("departments/" + clean).once("value");
+    if (!snap.exists()) {
+        throw new functions.https.HttpsError("not-found", "존재하지 않는 지점입니다");
+    }
+    return clean;
+}
+
 /** publicCounters 재계산 — adminView/{yyyymm} 전체 집계 */
 async function recalcCounters(deptId, yyyymm, days) {
     const avSnap = await db.ref("departments/" + deptId + "/adminView/" + yyyymm).once("value");
@@ -777,21 +791,6 @@ exports.bulkDeleteEmployees = functions.runWith({ ...RUN_OPTS, timeoutSeconds: 3
     return { results };
 });
 
-
-function validateNoticeDeptId(deptId) {
-    if (!deptId || !/^[A-Za-z0-9_-]+$/.test(deptId) || deptId.toUpperCase() === "ALL" || deptId.indexOf("__") === 0) {
-        throw new functions.https.HttpsError("invalid-argument", "유효하지 않은 지점 코드입니다");
-    }
-}
-
-async function assertNoticeDeptExists(deptId) {
-    validateNoticeDeptId(deptId);
-    const snap = await db.ref("departments/" + deptId).once("value");
-    if (!snap.exists()) {
-        throw new functions.https.HttpsError("not-found", "존재하지 않는 지점입니다");
-    }
-}
-
 // ── 20. saveNotice — 지점 공지 저장/수정 (관리자/슈퍼관리자 전용) ──────────────
 // 반드시 trinity_system/{deptId}/notices/{noticeId} 경로만 사용.
 // 전지점(ALL) 공지 경로는 존재하지 않으며 이 함수로도 만들 수 없음.
@@ -805,10 +804,7 @@ exports.saveNotice = functions.runWith(RUN_OPTS).https.onCall(async (data, conte
     if (role !== "admin" && role !== "super_admin")
         throw new functions.https.HttpsError("permission-denied", "관리자 권한 필요");
 
-    const deptId = String(data.deptId || "").trim();
-    if (!deptId)
-        throw new functions.https.HttpsError("invalid-argument", "deptId 필요");
-    await assertNoticeDeptExists(deptId);
+    const deptId = await assertValidNoticeDept(data.deptId);
 
     // 일반관리자는 자기 지점만
     if (role === "admin" && String(callerProfile.deptId || "").trim() !== deptId)
@@ -850,11 +846,10 @@ exports.deleteNotice = functions.runWith(RUN_OPTS).https.onCall(async (data, con
     if (role !== "admin" && role !== "super_admin")
         throw new functions.https.HttpsError("permission-denied", "관리자 권한 필요");
 
-    const deptId   = String(data.deptId   || "").trim();
+    const deptId   = await assertValidNoticeDept(data.deptId);
     const noticeId = String(data.noticeId || "").trim();
-    if (!deptId || !noticeId)
-        throw new functions.https.HttpsError("invalid-argument", "deptId, noticeId 필요");
-    await assertNoticeDeptExists(deptId);
+    if (!noticeId)
+        throw new functions.https.HttpsError("invalid-argument", "noticeId 필요");
 
     // 일반관리자는 자기 지점만
     if (role === "admin" && String(callerProfile.deptId || "").trim() !== deptId)
@@ -862,5 +857,67 @@ exports.deleteNotice = functions.runWith(RUN_OPTS).https.onCall(async (data, con
 
     await db.ref("trinity_system/" + deptId + "/notices/"     + noticeId).remove();
     await db.ref("trinity_system/" + deptId + "/noticeReads/" + noticeId).remove();
+    return { ok: true };
+});
+
+// ── 22. listNotices — 지점 공지 목록 조회 ────────────────────────────────────
+// 직원은 자기 deptId 공지만, 관리자는 자기 deptId(또는 지정 deptId), 슈퍼관리자는 임의 deptId.
+// includeReads=true 이면 noticeReads/{noticeId}/{uid} 도 함께 반환해 클라이언트에서 읽음 여부 판단.
+exports.listNotices = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+
+    const callerProfile = await getCallerProfile(context.auth.uid);
+    if (!callerProfile) throw new functions.https.HttpsError("permission-denied", "프로필 없음");
+
+    const role   = String(callerProfile.role || "").toLowerCase();
+    const reqDept = await assertValidNoticeDept(data.deptId);
+
+    // 직원/관리자는 자기 지점만 접근 가능
+    if (role !== "super_admin") {
+        const callerDept = String(callerProfile.deptId || "").trim();
+        if (callerDept !== reqDept)
+            throw new functions.https.HttpsError("permission-denied", "다른 지점 공지 조회 불가");
+    }
+
+    const noticesSnap = await db.ref("trinity_system/" + reqDept + "/notices").once("value");
+    const notices = noticesSnap.val() || {};
+
+    // 읽음 정보: 전체 직원 reads 조회 금지. 공지별로 호출자 uid 경로만 확인
+    const myReads = {};
+    await Promise.all(Object.keys(notices).map(async function(nid) {
+        const readSnap = await db.ref("trinity_system/" + reqDept + "/noticeReads/" + nid + "/" + context.auth.uid).once("value");
+        myReads[nid] = readSnap.exists();
+    }));
+
+    return { notices, myReads };
+});
+
+// ── 23. markNoticeRead — 공지 읽음 처리 ──────────────────────────────────────
+// 호출자 uid 기준으로만 reads를 기록. 다른 직원 reads는 절대 수정하지 않음.
+exports.markNoticeRead = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+
+    const callerProfile = await getCallerProfile(context.auth.uid);
+    if (!callerProfile) throw new functions.https.HttpsError("permission-denied", "프로필 없음");
+
+    const role    = String(callerProfile.role || "").toLowerCase();
+    const deptId  = await assertValidNoticeDept(data.deptId);
+    const noticeId = String(data.noticeId || "").trim();
+
+    if (!noticeId) throw new functions.https.HttpsError("invalid-argument", "noticeId 필요");
+
+    // 직원/관리자는 자기 지점 공지만 읽음 처리 가능
+    if (role !== "super_admin") {
+        const callerDept = String(callerProfile.deptId || "").trim();
+        if (callerDept !== deptId)
+            throw new functions.https.HttpsError("permission-denied", "다른 지점 공지 접근 불가");
+    }
+
+    // 공지 존재 여부 확인
+    const snap = await db.ref("trinity_system/" + deptId + "/notices/" + noticeId).once("value");
+    if (!snap.exists()) throw new functions.https.HttpsError("not-found", "공지가 존재하지 않습니다");
+
+    // 호출자 본인 uid만 기록
+    await db.ref("trinity_system/" + deptId + "/noticeReads/" + noticeId + "/" + context.auth.uid).set(true);
     return { ok: true };
 });
