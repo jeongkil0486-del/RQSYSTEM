@@ -196,6 +196,7 @@ function _getGroupBoardTokenLabel(token) {
 function _buildGroupBoardState() {
     var state = { POOL: [], A: [], B: [], C: [], D: [], E: [] };
     var assigned = {};
+    var hasOrphan = false;
     var visibleEmployees = _getVisibleDeptEmployees();
 
     ["A", "B", "C", "D", "E"].forEach(function(group) {
@@ -203,7 +204,11 @@ function _buildGroupBoardState() {
             var raw = String(member || "").trim();
             if (!raw) return;
             var emp = employeeByUid[raw] || employeeByEmpNo[raw.toLowerCase()];
-            if (!emp) return; // 삭제된/존재하지 않는 직원 — 화면에 표시하지 않고 자동으로 무시
+            if (!emp) {
+                // orphan 토큰 감지 — 화면에 표시하지 않고 정리 플래그만 세움
+                hasOrphan = true;
+                return;
+            }
             var token = emp.uid || emp.empNo || raw;
             if (assigned[token]) return;
             assigned[token] = true;
@@ -220,6 +225,41 @@ function _buildGroupBoardState() {
 
     groupBoardState = state;
     groupBoardStateLoaded = true;
+
+    // orphan이 있으면 정리된 상태를 조용히 Firebase에 저장
+    // (alert 없이 saveGroupAssignment 직접 호출)
+    if (hasOrphan && (isAdmin || isSuperAdmin) && currentDept) {
+        _saveGroupsQuietly();
+    }
+}
+
+/**
+ * _saveGroupsQuietly()
+ * orphan uid 정리 후 alert 없이 Firebase에 조편성을 저장한다.
+ * groupBoardState가 이미 정리된 상태여야 한다.
+ * 실패해도 UI에는 영향 없음 (다음 저장 시 재시도됨).
+ */
+function _saveGroupsQuietly() {
+    if (!isAdmin && !isSuperAdmin) return;
+    if (!currentDept) return;
+    var groups = {};
+    ["A", "B", "C", "D", "E"].forEach(function(group) {
+        groups[group] = (groupBoardState[group] || []).slice();
+    });
+    fn.saveGroupAssignment({
+        deptId: currentDept,
+        groups: groups,
+        yyyymm: getTargetYearMonth().fullStr
+    }).then(function(result) {
+        // liveDBData 갱신 (다음 _buildGroupBoardState 호출 시 정리된 데이터를 읽음)
+        var saved = (result.data && result.data.groups) || groups;
+        Object.keys(saved).forEach(function(group) {
+            liveDBData["rq_live_group_" + group] = saved[group];
+        });
+    }).catch(function(e) {
+        // 자동 정리 저장 실패는 무시 (수동 저장 버튼으로 재시도 가능)
+        console.warn("[admin-users] _saveGroupsQuietly 실패:", e && e.message);
+    });
 }
 
 function _bindGroupBoardDropTarget(target, zone, indexResolver) {
