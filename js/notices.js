@@ -68,37 +68,52 @@ function initNoticeListener(deptId) {
 
 /**
  * _renderStaffNotices(notices, myReads, deptId)
- * - 중요(important=true) + 안 읽은 공지 → 팝업 대기열에 추가 후 순차 표시
- * - 일반 공지 + 안 읽은 공지 → 배너 영역에 카드로 표시
- * - 읽은 공지는 배너에도 팝업에도 표시 안 함
+ * - important=true + 안 읽은 공지 → 배너 + 팝업 둘 다
+ * - important=false + 안 읽은 공지 → 배너만
+ * - 읽은 공지(myReads[nid] === true) → 배너·팝업 모두 제외
  */
 function _renderStaffNotices(notices, myReads, deptId) {
-    var unreadImportant = [];
-    var unreadNormal    = [];
+    // ── 공지를 중요/일반으로 분류 ──────────────────────────────────────────────
+    var bannerImportant = [];  // 배너용 중요 공지 (팝업 큐와 완전히 분리)
+    var popupQueue      = [];  // 팝업 큐용 중요 공지
+    var bannerNormal    = [];  // 배너용 일반 공지
 
     Object.keys(notices).forEach(function(nid) {
         var n = notices[nid];
         if (!n || !n.active) return;
-        if (myReads[nid]) return;  // 이미 읽은 공지
-        if (n.important) {
-            unreadImportant.push({ id: nid, data: n, deptId: deptId });
+        // myReads[nid] 가 정확히 true 인 경우만 읽은 것으로 처리
+        if (myReads[nid] === true) return;
+
+        if (n.important === true) {
+            // 배너와 팝업에 각각 독립 객체로 추가 (공유 참조 없음)
+            bannerImportant.push({ id: nid, data: n, deptId: deptId });
+            popupQueue.push({ id: nid, data: n, deptId: deptId });
         } else {
-            unreadNormal.push({ id: nid, data: n, deptId: deptId });
+            bannerNormal.push({ id: nid, data: n, deptId: deptId });
         }
     });
 
-    // 최신순 정렬
+    // ── 디버그 로그 ────────────────────────────────────────────────────────────
+    console.log("[notices] 중요 공지:", bannerImportant.length + "건",
+        bannerImportant.map(function(x) { return x.data.title; }));
+    console.log("[notices] 일반 공지:", bannerNormal.length + "건");
+    console.log("[notices] myReads:", JSON.stringify(myReads));
+
+    // ── 최신순 정렬 ────────────────────────────────────────────────────────────
     var byDateDesc = function(a, b) { return (b.data.createdAt || 0) - (a.data.createdAt || 0); };
-    unreadImportant.sort(byDateDesc);
-    unreadNormal.sort(byDateDesc);
+    bannerImportant.sort(byDateDesc);
+    bannerNormal.sort(byDateDesc);
 
-    // 배너 렌더링 — 중요 + 일반 모두 표시 (팝업과 독립된 배열 복사본 사용)
-    var allUnread = unreadImportant.slice().concat(unreadNormal);
-    _renderNoticeBanner(allUnread, deptId);
+    // ── 배너 렌더링: 중요공지 먼저, 일반공지 뒤 ──────────────────────────────
+    // bannerImportant 와 popupQueue 는 서로 다른 배열이므로
+    // _showNextImportantPopup() 의 shift() 가 배너 데이터에 영향을 주지 않음
+    var bannerItems = bannerImportant.concat(bannerNormal);
+    console.log("[notices] 배너 렌더링 항목 수:", bannerItems.length);
+    _renderNoticeBanner(bannerItems, deptId);
 
-    // 중요 공지 팝업 — slice()로 복사해야 _importantQueue.shift()가 allUnread에 영향을 주지 않음
-    if (unreadImportant.length > 0) {
-        _importantQueue = unreadImportant.slice();
+    // ── 중요 공지 팝업 ────────────────────────────────────────────────────────
+    if (popupQueue.length > 0) {
+        _importantQueue = popupQueue;  // popupQueue 는 bannerImportant 와 별개 배열
         _showNextImportantPopup();
     }
 }
