@@ -123,6 +123,7 @@ function arFetchConfig(yyyymm) {
 function arWireButtonsOnce() {
     var applyBtn = document.getElementById("arApplyBtn");
     var clearBtn = document.getElementById("arClearBtn");
+    var deleteBtn = document.getElementById("arDeleteBtn");
     var saveBtn = document.getElementById("arSaveBtn");
 
     if (applyBtn && !applyBtn.dataset.arWired) {
@@ -132,6 +133,10 @@ function arWireButtonsOnce() {
     if (clearBtn && !clearBtn.dataset.arWired) {
         clearBtn.addEventListener("click", arClearSelection);
         clearBtn.dataset.arWired = "1";
+    }
+    if (deleteBtn && !deleteBtn.dataset.arWired) {
+        deleteBtn.addEventListener("click", arDeleteSelectedDaySettings);
+        deleteBtn.dataset.arWired = "1";
     }
     if (saveBtn && !saveBtn.dataset.arWired) {
         saveBtn.addEventListener("click", arSaveWholeMonth);
@@ -306,6 +311,25 @@ function arClearSelection() {
     });
     arUpdateSelectionCountLabel();
     arSetStatus("선택된 날짜를 해제했습니다.", "success");
+}
+
+function arDeleteSelectedDaySettings() {
+    if (!isAdmin && !isSuperAdmin) return;
+    if (arSelectedDays.length === 0) {
+        alert("먼저 날짜를 선택해주세요.");
+        arSetStatus("선택된 날짜가 없습니다.", "error");
+        return;
+    }
+
+    var selectedCount = arSelectedDays.length;
+    if (!confirm("선택한 " + selectedCount + "개 날짜의 필요인원 설정을 삭제할까요?")) return;
+
+    arSelectedDays.forEach(function(dayKey) {
+        delete arMonthState.dailyRequirements[dayKey];
+    });
+
+    arRenderCalendarGrid();
+    arSetStatus("선택한 날짜 설정을 삭제했습니다. 저장해야 최종 반영됩니다.", "success");
 }
 
 function arCollectDayDataFromForm() {
