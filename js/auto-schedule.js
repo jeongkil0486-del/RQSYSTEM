@@ -271,23 +271,18 @@ function arGetCodeLabel(codeName) {
     return match ? (match.displayName || match.name) : codeName;
 }
 
-function arGetGroupSummaryLine(dayData) {
+function arGetCodeGroupSummaryText(dayData, codeName) {
     var groupParts = [];
 
     arGetGroupLettersToRender().forEach(function(groupLetter) {
         var codeMap = (dayData.byGroupCode || {})[groupLetter];
-        var total = 0;
-
-        Object.keys(codeMap || {}).forEach(function(codeName) {
-            total += parseInt(codeMap[codeName], 10) || 0;
-        });
-
-        if (total > 0) {
-            groupParts.push(groupLetter + total);
+        var count = parseInt((codeMap || {})[codeName], 10);
+        if (Number.isFinite(count) && count > 0) {
+            groupParts.push(groupLetter + " " + count + "명");
         }
     });
 
-    return groupParts.length ? ("조 " + groupParts.join(" ")) : "";
+    return groupParts.length ? ("(" + groupParts.join(", ") + ")") : "";
 }
 
 function arGetSummaryHtml(dayData) {
@@ -297,18 +292,19 @@ function arGetSummaryHtml(dayData) {
     var codeKeys = Object.keys(dayData.byCode || {});
 
     if (dayData.totalRequired != null) {
-        lines.push(codeKeys.length > 0 ? ("총" + dayData.totalRequired) : (dayData.totalRequired + "명"));
+        lines.push("총 " + dayData.totalRequired + "명");
     }
 
     if (codeKeys.length > 0) {
-        lines.push(codeKeys.map(function(codeName) {
-            return arGetCodeLabel(codeName) + dayData.byCode[codeName];
-        }).join(" "));
-    }
+        codeKeys.forEach(function(codeName) {
+            var codeCount = parseInt(dayData.byCode[codeName], 10);
+            if (!Number.isFinite(codeCount) || codeCount <= 0) return;
 
-    var groupSummaryLine = arGetGroupSummaryLine(dayData);
-    if (groupSummaryLine) {
-        lines.push(groupSummaryLine);
+            var line = arGetCodeLabel(codeName) + " " + codeCount + "명";
+            var groupSummaryText = arGetCodeGroupSummaryText(dayData, codeName);
+            if (groupSummaryText) line += " " + groupSummaryText;
+            lines.push(line);
+        });
     }
 
     return lines.join("<br>");
@@ -366,7 +362,7 @@ function arRenderCalendarGrid() {
         dateDiv.appendChild(numDiv);
 
         var summaryDiv = document.createElement("div");
-        summaryDiv.className = "count-badge ar-day-summary" + (dayData ? " badge-safe" : "");
+        summaryDiv.className = "count-badge ar-day-summary";
         summaryDiv.innerHTML = arGetSummaryHtml(dayData);
         dateDiv.appendChild(summaryDiv);
 
