@@ -17,6 +17,7 @@ var arMonthState = {
 var arSelectedDays = [];
 var arPageReady = false;
 var arGroupLetters = ["A", "B", "C", "D", "E"];
+var arLastClickedDayKey = "";
 
 function arInitYearMonthSelects() {
     var selY = document.getElementById("arYear");
@@ -204,6 +205,24 @@ function arUpdateSelectionCountLabel() {
     label.textContent = "선택일 " + arSelectedDays.length + "개";
 }
 
+function arEnsureDetailPanel() {
+    var existing = document.getElementById("arDayDetailPanel");
+    if (existing) return existing;
+
+    var calendar = document.getElementById("arCalendarGrid");
+    if (!calendar || !calendar.parentNode) return null;
+
+    var panel = document.createElement("div");
+    panel.id = "arDayDetailPanel";
+    panel.className = "ar-day-detail-panel";
+    panel.innerHTML = ""
+        + "<div class='ar-day-detail-title'>날짜 상세</div>"
+        + "<div class='ar-day-detail-body'>달력에서 날짜를 클릭하면 조별 상세가 여기에 표시됩니다.</div>";
+
+    calendar.parentNode.insertBefore(panel, calendar.nextSibling);
+    return panel;
+}
+
 function arRenderRequirementTable() {
     var container = document.getElementById("arRequirementTable");
     if (!container) return;
@@ -271,7 +290,35 @@ function arGetCodeLabel(codeName) {
     return match ? (match.displayName || match.name) : codeName;
 }
 
-function arGetCodeGroupSummaryText(dayData, codeName) {
+function arGetCodeSummaryLine(dayData, codeName) {
+    var codeCount = parseInt((dayData.byCode || {})[codeName], 10);
+    if (!Number.isFinite(codeCount) || codeCount <= 0) return "";
+    return arGetCodeLabel(codeName) + " " + codeCount;
+}
+
+function arGetCompactSummaryHtml(dayData) {
+    if (!dayData) return "<span class='ar-day-empty-text'>미설정</span>";
+
+    var lines = [];
+    var codeParts = [];
+
+    if (dayData.totalRequired != null) {
+        lines.push("<span class='ar-day-total'>총 " + dayData.totalRequired + "명</span>");
+    }
+
+    Object.keys(dayData.byCode || {}).forEach(function(codeName) {
+        var line = arGetCodeSummaryLine(dayData, codeName);
+        if (line) codeParts.push(line);
+    });
+
+    if (codeParts.length > 0) {
+        lines.push("<span class='ar-day-codes'>" + codeParts.join(" / ") + "</span>");
+    }
+
+    return lines.join("<br>");
+}
+
+function arGetDetailGroupText(dayData, codeName) {
     var groupParts = [];
 
     arGetGroupLettersToRender().forEach(function(groupLetter) {
@@ -282,32 +329,56 @@ function arGetCodeGroupSummaryText(dayData, codeName) {
         }
     });
 
-    return groupParts.length ? ("(" + groupParts.join(", ") + ")") : "";
+    return groupParts.length ? groupParts.join(" / ") : "조별 설정 없음";
 }
 
-function arGetSummaryHtml(dayData) {
-    if (!dayData) return "<span class='ar-day-empty-text'>미설정</span>";
+function arGetDetailTitle(dayKey) {
+    if (!arMonthState.yyyymm || !dayKey) return "날짜 상세";
 
-    var lines = [];
-    var codeKeys = Object.keys(dayData.byCode || {});
+    var year = arMonthState.yyyymm.slice(0, 4);
+    var month = arMonthState.yyyymm.slice(4, 6);
+    return year + "." + month + "." + String(dayKey).padStart(2, "0") + " 상세";
+}
 
-    if (dayData.totalRequired != null) {
-        lines.push("총 " + dayData.totalRequired + "명");
+function arRenderDayDetailPanel(dayKey) {
+    var panel = arEnsureDetailPanel();
+    if (!panel) return;
+
+    var titleHtml = "<div class='ar-day-detail-title'>" + arGetDetailTitle(dayKey) + "</div>";
+    if (!dayKey) {
+        panel.innerHTML = titleHtml + "<div class='ar-day-detail-body'>달력에서 날짜를 클릭하면 조별 상세가 여기에 표시됩니다.</div>";
+        return;
     }
 
-    if (codeKeys.length > 0) {
+    var dayData = arMonthState.dailyRequirements[dayKey];
+    if (!dayData) {
+        panel.innerHTML = titleHtml + "<div class='ar-day-detail-body'>이 날짜는 아직 필요인원 설정이 없습니다.</div>";
+        return;
+    }
+
+    var codeKeys = Object.keys(dayData.byCode || {});
+    var html = titleHtml + "<div class='ar-day-detail-body'>";
+
+    if (dayData.totalRequired != null) {
+        html += "<div class='ar-day-detail-total'>총 " + dayData.totalRequired + "명</div>";
+    }
+
+    if (!codeKeys.length) {
+        html += "<div class='ar-day-detail-empty'>근무코드별 설정이 없습니다.</div>";
+    } else {
         codeKeys.forEach(function(codeName) {
             var codeCount = parseInt(dayData.byCode[codeName], 10);
             if (!Number.isFinite(codeCount) || codeCount <= 0) return;
 
-            var line = arGetCodeLabel(codeName) + " " + codeCount + "명";
-            var groupSummaryText = arGetCodeGroupSummaryText(dayData, codeName);
-            if (groupSummaryText) line += " " + groupSummaryText;
-            lines.push(line);
+            html += "<div class='ar-day-detail-code-block'>";
+            html += "<div class='ar-day-detail-code-title'>" + arGetCodeLabel(codeName) + " " + codeCount + "명</div>";
+            html += "<div class='ar-day-detail-code-groups'>" + arGetDetailGroupText(dayData, codeName) + "</div>";
+            html += "</div>";
         });
     }
 
-    return lines.join("<br>");
+    html += "</div>";
+    panel.innerHTML = html;
 }
 
 function arRenderCalendarGrid() {
@@ -346,6 +417,7 @@ function arRenderCalendarGrid() {
         var dayKey = String(day);
         var dayData = arMonthState.dailyRequirements[dayKey];
         var isSelected = arSelectedDays.indexOf(dayKey) >= 0;
+        var isDetailDay = arLastClickedDayKey === dayKey;
 
         var dateDiv = document.createElement("div");
         var className = "date";
@@ -353,6 +425,7 @@ function arRenderCalendarGrid() {
         if (dow === 6) className += " sat";
         if (isSelected) className += " ar-selected";
         if (dayData) className += " ar-has-data";
+        if (isDetailDay) className += " ar-detail-active";
         dateDiv.className = className;
         dateDiv.id = "ar-d-" + day;
 
@@ -363,19 +436,26 @@ function arRenderCalendarGrid() {
 
         var summaryDiv = document.createElement("div");
         summaryDiv.className = "count-badge ar-day-summary";
-        summaryDiv.innerHTML = arGetSummaryHtml(dayData);
+        summaryDiv.innerHTML = arGetCompactSummaryHtml(dayData);
         dateDiv.appendChild(summaryDiv);
 
-        (function(boundDay) {
+        (function(boundDayKey) {
             dateDiv.onclick = function() {
-                arToggleDaySelect(boundDay);
+                arHandleDayClick(boundDayKey);
             };
-        })(day);
+        })(dayKey);
 
         fragment.appendChild(dateDiv);
     }
 
     container.appendChild(fragment);
+}
+
+function arHandleDayClick(dayKey) {
+    arToggleDaySelect(dayKey);
+    arLastClickedDayKey = String(dayKey);
+    arRenderCalendarGrid();
+    arRenderDayDetailPanel(arLastClickedDayKey);
 }
 
 function arToggleDaySelect(day) {
@@ -385,19 +465,12 @@ function arToggleDaySelect(day) {
     if (idx >= 0) arSelectedDays.splice(idx, 1);
     else arSelectedDays.push(dayKey);
 
-    var cell = document.getElementById("ar-d-" + dayKey);
-    if (cell) cell.classList.toggle("ar-selected", idx < 0);
-
     arUpdateSelectionCountLabel();
 }
 
 function arClearSelection() {
     arSelectedDays = [];
-
-    document.querySelectorAll("#arCalendarGrid .date.ar-selected").forEach(function(el) {
-        el.classList.remove("ar-selected");
-    });
-
+    arRenderCalendarGrid();
     arUpdateSelectionCountLabel();
     arSetStatus("선택한 날짜를 해제했습니다.", "success");
 }
@@ -419,6 +492,7 @@ function arDeleteSelectedDaySettings() {
     });
 
     arRenderCalendarGrid();
+    arRenderDayDetailPanel(arLastClickedDayKey);
     arSetStatus("선택한 날짜 설정을 삭제했습니다. 저장해야 최종 반영됩니다.", "success");
 }
 
@@ -493,6 +567,7 @@ function arApplyToSelectedDays() {
     });
 
     arRenderCalendarGrid();
+    arRenderDayDetailPanel(arLastClickedDayKey);
     arSetStatus(arSelectedDays.length + "개 날짜에 적용했습니다. 달력에서 바로 확인한 뒤 저장해주세요.", "success");
 }
 
@@ -543,9 +618,12 @@ function arLoadMonth() {
         arMonthState.activeCodes = arGetActiveCodesFromConfig(cfg);
         arMonthState.dailyRequirements = arCloneDailyRequirements(cfg.dailyRequirements || {});
         arSelectedDays = [];
+        arLastClickedDayKey = "";
 
+        arEnsureDetailPanel();
         arRenderRequirementTable();
         arRenderCalendarGrid();
+        arRenderDayDetailPanel("");
         arUpdateSelectionCountLabel();
         arSetStatus("", "");
     }).catch(function(e) {
@@ -568,6 +646,7 @@ function arInitAutoSchedulePage() {
 
     arInitYearMonthSelects();
     arWireButtonsOnce();
+    arEnsureDetailPanel();
     if (!arPageReady) arPageReady = true;
     arLoadMonth();
 }

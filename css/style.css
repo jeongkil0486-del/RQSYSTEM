@@ -1679,13 +1679,14 @@ body {
    선택된 날짜 셀에만 이 클래스를 추가로 붙여 강조 표시한다. */
 .date.ar-selected { background: #e0f2fe; box-shadow: inset 0 0 0 2px #0284c7; }
 .date.ar-has-data { background: #eff6ff; }
+.date.ar-detail-active { box-shadow: inset 0 0 0 2px #1d4ed8; }
 
 /* 자동스케줄 달력만 더 작게 (대시보드 메인 달력 .date 기본 스타일은 그대로 둠 —
    #arCalendarGrid 안쪽으로만 범위를 좁혀 다른 화면에는 영향 없음) */
-#arCalendarGrid.calendar-grid { grid-auto-rows: 108px; }
+#arCalendarGrid.calendar-grid { grid-auto-rows: 112px; }
 #arCalendarGrid .date {
-  height: 108px;
-  max-height: 108px;
+  height: 112px;
+  max-height: 112px;
   padding: 4px 6px;
   overflow: hidden;
   display: flex;
@@ -1694,9 +1695,8 @@ body {
   align-items: center;
   text-align: center;
 }
-#arCalendarGrid .date-num { font-size: 12px; margin-bottom: 4px; }
+#arCalendarGrid .date-num { font-size: 12px; margin-bottom: 6px; }
 #arCalendarGrid .count-badge {
-  font-size: 10px;
   padding: 0;
   display: block;
   width: 100%;
@@ -1707,11 +1707,24 @@ body {
 }
 #arCalendarGrid .ar-day-summary {
   display: block;
-  line-height: 1.25;
-  min-height: 68px;
+  line-height: 1.35;
+  min-height: 72px;
   white-space: normal;
   word-break: break-word;
   text-align: center;
+}
+#arCalendarGrid .ar-day-total {
+  display: block;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+#arCalendarGrid .ar-day-codes {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
 }
 #arRequirementTable .ar-req-table th,
 #arRequirementTable .ar-req-table td {
@@ -1719,4 +1732,44 @@ body {
 }
 #arCalendarGrid .ar-day-empty-text {
   color: #94a3b8;
+}
+.ar-day-detail-panel {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  padding: 14px 16px;
+}
+.ar-day-detail-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 10px;
+}
+.ar-day-detail-body {
+  font-size: 13px;
+  color: var(--text-sub);
+  line-height: 1.6;
+}
+.ar-day-detail-total {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 10px;
+}
+.ar-day-detail-code-block + .ar-day-detail-code-block {
+  margin-top: 12px;
+}
+.ar-day-detail-code-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.ar-day-detail-code-groups {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--text-sub);
+}
+.ar-day-detail-empty {
+  color: var(--text-light);
 }
