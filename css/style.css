@@ -1682,16 +1682,20 @@ body {
 
 /* 자동스케줄 달력만 더 작게 (대시보드 메인 달력 .date 기본 스타일은 그대로 둠 —
    #arCalendarGrid 안쪽으로만 범위를 좁혀 다른 화면에는 영향 없음) */
-#arCalendarGrid.calendar-grid { grid-auto-rows: 64px; }
-#arCalendarGrid .date { height: 64px; max-height: 64px; padding: 4px 6px; overflow: hidden; }
+#arCalendarGrid.calendar-grid { grid-auto-rows: 78px; }
+#arCalendarGrid .date { height: 78px; max-height: 78px; padding: 4px 6px; overflow: hidden; }
 #arCalendarGrid .date-num { font-size: 12px; margin-bottom: 2px; }
 #arCalendarGrid .count-badge { font-size: 10px; padding: 1px 4px; }
 #arCalendarGrid .ar-day-summary {
   display: block;
   line-height: 1.25;
-  min-height: 28px;
+  min-height: 42px;
   white-space: normal;
   word-break: break-word;
+}
+#arRequirementTable .ar-req-table th,
+#arRequirementTable .ar-req-table td {
+  white-space: nowrap;
 }
 #arCalendarGrid .ar-day-empty-text {
   color: #94a3b8;

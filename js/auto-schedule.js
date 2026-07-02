@@ -5,7 +5,7 @@
  * Scope for this step:
  * - Keep all persistence in departments/{deptId}/configs/{yyyymm}/dailyRequirements
  * - Do not change Functions, saveDeptConfig, or shared request system logic
- * - Make apply/save behavior visible immediately in the autoschedule calendar UI
+ * - Extend dailyRequirements with byGroupCode for per-group minimum staffing
  */
 
 var arMonthState = {
@@ -16,6 +16,7 @@ var arMonthState = {
 
 var arSelectedDays = [];
 var arPageReady = false;
+var arGroupLetters = ["A", "B", "C", "D", "E"];
 
 function arInitYearMonthSelects() {
     var selY = document.getElementById("arYear");
@@ -52,9 +53,11 @@ function arGetSelectedYyyymm() {
     var selY = document.getElementById("arYear");
     var selM = document.getElementById("arMonth");
     if (!selY || !selM) return "";
+
     var y = String(selY.value || "").trim();
     var m = String(selM.value || "").trim().padStart(2, "0");
     if (!y || !m) return "";
+
     return y + m;
 }
 
@@ -62,12 +65,42 @@ function arGetMonthMeta(yyyymm) {
     var year = parseInt(String(yyyymm).slice(0, 4), 10);
     var month = parseInt(String(yyyymm).slice(4, 6), 10);
     var firstDay = new Date(year, month - 1, 1);
+
     return {
         year: year,
         month: month,
         startDow: firstDay.getDay(),
         totalDays: new Date(year, month, 0).getDate()
     };
+}
+
+function arGetGroupLettersToRender() {
+    return arGroupLetters.slice();
+}
+
+function arNormalizeByCodeMap(source) {
+    var next = {};
+    Object.keys(source || {}).forEach(function(codeName) {
+        var count = parseInt(source[codeName], 10);
+        if (Number.isFinite(count) && count > 0) {
+            next[codeName] = count;
+        }
+    });
+    return next;
+}
+
+function arNormalizeByGroupCodeMap(source) {
+    var next = {};
+    Object.keys(source || {}).forEach(function(groupLetter) {
+        var codeMap = source[groupLetter];
+        if (!codeMap || typeof codeMap !== "object") return;
+
+        var normalizedCodeMap = arNormalizeByCodeMap(codeMap);
+        if (Object.keys(normalizedCodeMap).length > 0) {
+            next[groupLetter] = normalizedCodeMap;
+        }
+    });
+    return next;
 }
 
 function arNormalizeDayData(raw) {
@@ -80,17 +113,26 @@ function arNormalizeDayData(raw) {
 
     var codeSource = raw.byCode;
     if (!codeSource || typeof codeSource !== "object") codeSource = raw.codes;
-    var byCode = {};
-    Object.keys(codeSource || {}).forEach(function(codeName) {
-        var count = parseInt(codeSource[codeName], 10);
-        if (Number.isFinite(count) && count > 0) byCode[codeName] = count;
-    });
+    var byCode = arNormalizeByCodeMap(codeSource);
+    var byGroupCode = arNormalizeByGroupCodeMap(raw.byGroupCode);
 
-    if (totalRequired === null && Object.keys(byCode).length === 0) return null;
+    if (totalRequired === null && Object.keys(byCode).length === 0 && Object.keys(byGroupCode).length === 0) {
+        return null;
+    }
+
     return {
         totalRequired: totalRequired,
-        byCode: byCode
+        byCode: byCode,
+        byGroupCode: byGroupCode
     };
+}
+
+function arCloneGroupCodeMap(source) {
+    var next = {};
+    Object.keys(source || {}).forEach(function(groupLetter) {
+        next[groupLetter] = Object.assign({}, source[groupLetter]);
+    });
+    return next;
 }
 
 function arCloneDailyRequirements(source) {
@@ -98,9 +140,11 @@ function arCloneDailyRequirements(source) {
     Object.keys(source || {}).forEach(function(dayKey) {
         var normalized = arNormalizeDayData(source[dayKey]);
         if (!normalized) return;
+
         next[String(parseInt(dayKey, 10))] = {
             totalRequired: normalized.totalRequired,
-            byCode: Object.assign({}, normalized.byCode)
+            byCode: Object.assign({}, normalized.byCode),
+            byGroupCode: arCloneGroupCodeMap(normalized.byGroupCode)
         };
     });
     return next;
@@ -115,6 +159,7 @@ function arGetActiveCodesFromConfig(cfg) {
 
 function arFetchConfig(yyyymm) {
     if (!currentDept) return Promise.reject(new Error("지점 정보가 없습니다."));
+
     return db.ref("departments/" + currentDept + "/configs/" + yyyymm).once("value").then(function(snap) {
         return snap.val() || {};
     });
@@ -147,6 +192,7 @@ function arWireButtonsOnce() {
 function arSetStatus(message, tone) {
     var el = document.getElementById("arLoadStatus");
     if (!el) return;
+
     el.textContent = message || "";
     el.style.color = tone === "error" ? "#dc2626" : tone === "success" ? "#059669" : "";
 }
@@ -154,7 +200,8 @@ function arSetStatus(message, tone) {
 function arUpdateSelectionCountLabel() {
     var label = document.getElementById("arSelectionCount");
     if (!label) return;
-    label.textContent = "선택일 " + arSelectedDays.length + "일";
+
+    label.textContent = "선택일 " + arSelectedDays.length + "개";
 }
 
 function arRenderRequirementTable() {
@@ -167,7 +214,8 @@ function arRenderRequirementTable() {
     var helpHtml = "<div style='font-size:12px; line-height:1.55; color:var(--text-sub); margin-bottom:10px;'>"
         + "필요인원 설정에는 <strong>근무코드 관리에서 사용중(active=true)인 코드만</strong> 표시됩니다.<br>"
         + "예를 들어 근무코드 관리에서 <strong>오전 / 오후 / 종일</strong>을 생성하고 사용중으로 두면, 이 표에도 각각 한 줄씩 나타납니다.<br>"
-        + "화면 표시는 코드명(name)보다 <strong>표시명(displayName)</strong>을 우선 사용합니다."
+        + "화면 표시는 코드명(name)보다 <strong>표시명(displayName)</strong>을 우선 사용합니다.<br>"
+        + "조별 최소 필요인원은 <strong>dailyRequirements/{day}/byGroupCode</strong>에 함께 저장됩니다."
         + "</div>";
 
     if (!arMonthState.activeCodes.length) {
@@ -181,25 +229,35 @@ function arRenderRequirementTable() {
     var activeCodeNames = arMonthState.activeCodes.map(function(code) {
         return code.displayName || code.name;
     }).join(", ");
+    var groupLetters = arGetGroupLettersToRender();
 
     var html = helpHtml
         + "<div style='font-size:11px; color:var(--text-light); margin-bottom:8px;'>"
         + "현재 표시 중인 근무코드: " + activeCodeNames
         + "</div>"
         + "<table class='ar-req-table' style='width:100%; border-collapse:collapse; font-size:12px;'>";
+
     html += "<tr>"
-          + "<th style='text-align:left; padding:4px 6px; border-bottom:1px solid var(--border);'>근무코드</th>"
-          + "<th style='text-align:center; padding:4px 6px; border-bottom:1px solid var(--border);'>필요인원</th>"
-          + "</tr>";
+        + "<th style='text-align:left; padding:4px 6px; border-bottom:1px solid var(--border);'>근무코드</th>"
+        + "<th style='text-align:center; padding:4px 6px; border-bottom:1px solid var(--border);'>전체</th>";
+
+    groupLetters.forEach(function(groupLetter) {
+        html += "<th style='text-align:center; padding:4px 6px; border-bottom:1px solid var(--border);'>" + groupLetter + "조</th>";
+    });
+
+    html += "</tr>";
 
     arMonthState.activeCodes.forEach(function(code) {
         var label = code.displayName || code.name;
-        html += "<tr>"
-             + "<td style='padding:4px 6px;'>" + label + "</td>"
-             + "<td style='padding:4px 6px; text-align:center;'>"
-             + "<input type='number' min='0' class='form-input small small-num-input ar-code-input' data-code='" + code.name + "' value='' style='width:56px; text-align:center;'>"
-             + "</td>"
-             + "</tr>";
+        html += "<tr>";
+        html += "<td style='padding:4px 6px;'>" + label + "</td>";
+        html += "<td style='padding:4px 6px; text-align:center;'><input type='number' min='0' class='form-input small small-num-input ar-code-input' data-code='" + code.name + "' value='' style='width:56px; text-align:center;'></td>";
+
+        groupLetters.forEach(function(groupLetter) {
+            html += "<td style='padding:4px 6px; text-align:center;'><input type='number' min='0' class='form-input small small-num-input ar-group-input' data-code='" + code.name + "' data-group='" + groupLetter + "' value='' style='width:56px; text-align:center;'></td>";
+        });
+
+        html += "</tr>";
     });
 
     html += "</table>";
@@ -207,8 +265,29 @@ function arRenderRequirementTable() {
 }
 
 function arGetCodeLabel(codeName) {
-    var match = arMonthState.activeCodes.find(function(item) { return item.name === codeName; });
+    var match = arMonthState.activeCodes.find(function(item) {
+        return item.name === codeName;
+    });
     return match ? (match.displayName || match.name) : codeName;
+}
+
+function arGetGroupSummaryLine(dayData) {
+    var groupParts = [];
+
+    arGetGroupLettersToRender().forEach(function(groupLetter) {
+        var codeMap = (dayData.byGroupCode || {})[groupLetter];
+        var total = 0;
+
+        Object.keys(codeMap || {}).forEach(function(codeName) {
+            total += parseInt(codeMap[codeName], 10) || 0;
+        });
+
+        if (total > 0) {
+            groupParts.push(groupLetter + total);
+        }
+    });
+
+    return groupParts.length ? ("조 " + groupParts.join(" ")) : "";
 }
 
 function arGetSummaryHtml(dayData) {
@@ -216,14 +295,22 @@ function arGetSummaryHtml(dayData) {
 
     var lines = [];
     var codeKeys = Object.keys(dayData.byCode || {});
+
     if (dayData.totalRequired != null) {
         lines.push(codeKeys.length > 0 ? ("총" + dayData.totalRequired) : (dayData.totalRequired + "명"));
     }
+
     if (codeKeys.length > 0) {
         lines.push(codeKeys.map(function(codeName) {
             return arGetCodeLabel(codeName) + dayData.byCode[codeName];
         }).join(" "));
     }
+
+    var groupSummaryLine = arGetGroupSummaryLine(dayData);
+    if (groupSummaryLine) {
+        lines.push(groupSummaryLine);
+    }
+
     return lines.join("<br>");
 }
 
@@ -284,7 +371,9 @@ function arRenderCalendarGrid() {
         dateDiv.appendChild(summaryDiv);
 
         (function(boundDay) {
-            dateDiv.onclick = function() { arToggleDaySelect(boundDay); };
+            dateDiv.onclick = function() {
+                arToggleDaySelect(boundDay);
+            };
         })(day);
 
         fragment.appendChild(dateDiv);
@@ -296,25 +385,30 @@ function arRenderCalendarGrid() {
 function arToggleDaySelect(day) {
     var dayKey = String(day);
     var idx = arSelectedDays.indexOf(dayKey);
+
     if (idx >= 0) arSelectedDays.splice(idx, 1);
     else arSelectedDays.push(dayKey);
 
     var cell = document.getElementById("ar-d-" + dayKey);
     if (cell) cell.classList.toggle("ar-selected", idx < 0);
+
     arUpdateSelectionCountLabel();
 }
 
 function arClearSelection() {
     arSelectedDays = [];
+
     document.querySelectorAll("#arCalendarGrid .date.ar-selected").forEach(function(el) {
         el.classList.remove("ar-selected");
     });
+
     arUpdateSelectionCountLabel();
-    arSetStatus("선택된 날짜를 해제했습니다.", "success");
+    arSetStatus("선택한 날짜를 해제했습니다.", "success");
 }
 
 function arDeleteSelectedDaySettings() {
     if (!isAdmin && !isSuperAdmin) return;
+
     if (arSelectedDays.length === 0) {
         alert("먼저 날짜를 선택해주세요.");
         arSetStatus("선택된 날짜가 없습니다.", "error");
@@ -335,6 +429,7 @@ function arDeleteSelectedDaySettings() {
 function arCollectDayDataFromForm() {
     var totalEl = document.getElementById("arTotalRequired");
     var totalRaw = totalEl ? String(totalEl.value || "").trim() : "";
+
     if (!totalRaw) {
         alert("전체 필요인원을 입력해주세요.");
         arSetStatus("전체 필요인원을 입력해야 적용할 수 있습니다.", "error");
@@ -353,18 +448,37 @@ function arCollectDayDataFromForm() {
         var code = input.getAttribute("data-code");
         var raw = String(input.value || "").trim();
         if (!raw) return;
+
         var count = parseInt(raw, 10);
-        if (Number.isFinite(count) && count > 0) byCode[code] = count;
+        if (Number.isFinite(count) && count > 0) {
+            byCode[code] = count;
+        }
+    });
+
+    var byGroupCode = {};
+    document.querySelectorAll(".ar-group-input").forEach(function(input) {
+        var code = input.getAttribute("data-code");
+        var groupLetter = input.getAttribute("data-group");
+        var raw = String(input.value || "").trim();
+        if (!raw) return;
+
+        var count = parseInt(raw, 10);
+        if (!Number.isFinite(count) || count <= 0) return;
+
+        if (!byGroupCode[groupLetter]) byGroupCode[groupLetter] = {};
+        byGroupCode[groupLetter][code] = count;
     });
 
     return {
         totalRequired: totalRequired,
-        byCode: byCode
+        byCode: byCode,
+        byGroupCode: byGroupCode
     };
 }
 
 function arApplyToSelectedDays() {
     if (!isAdmin && !isSuperAdmin) return;
+
     if (arSelectedDays.length === 0) {
         alert("먼저 날짜를 선택해주세요.");
         arSetStatus("선택된 날짜가 없습니다.", "error");
@@ -377,7 +491,8 @@ function arApplyToSelectedDays() {
     arSelectedDays.forEach(function(dayKey) {
         arMonthState.dailyRequirements[dayKey] = {
             totalRequired: newDayData.totalRequired,
-            byCode: Object.assign({}, newDayData.byCode)
+            byCode: Object.assign({}, newDayData.byCode),
+            byGroupCode: arCloneGroupCodeMap(newDayData.byGroupCode)
         };
     });
 
@@ -387,6 +502,7 @@ function arApplyToSelectedDays() {
 
 function arSaveWholeMonth() {
     if (!isAdmin && !isSuperAdmin) return;
+
     if (!arMonthState.yyyymm) {
         alert("먼저 월을 선택해주세요.");
         return;
@@ -421,6 +537,7 @@ function arSaveWholeMonth() {
 
 function arLoadMonth() {
     if (!isAdmin && !isSuperAdmin) return;
+
     var yyyymm = arGetSelectedYyyymm();
     if (!yyyymm) return;
 
@@ -438,6 +555,7 @@ function arLoadMonth() {
     }).catch(function(e) {
         console.error("[auto-schedule] load failed:", e);
         arSetStatus("불러오기에 실패했습니다.", "error");
+
         var container = document.getElementById("arCalendarGrid");
         if (container) {
             container.innerHTML = "<div style='color:#dc2626;font-size:12px;padding:8px 0;'>월 설정을 불러오지 못했습니다.</div>";
@@ -451,6 +569,7 @@ function arOnMonthChange() {
 
 function arInitAutoSchedulePage() {
     if (!isAdmin && !isSuperAdmin) return;
+
     arInitYearMonthSelects();
     arWireButtonsOnce();
     if (!arPageReady) arPageReady = true;
