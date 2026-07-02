@@ -94,6 +94,7 @@
             <button class="nav-item" id="navBtn-employees" onclick="showPage('employees')">직원관리</button>
             <button class="nav-item" id="navBtn-settings" onclick="showPage('settings')">설정</button>
             <button class="nav-item" id="navBtn-downloads" onclick="showPage('downloads')">다운로드</button>
+            <button class="nav-item" id="navBtn-autoschedule" onclick="showPage('autoschedule')">자동스케줄</button>
             <button class="nav-item" id="navBtn-orgadmin" onclick="showPage('orgadmin')" style="display:none;">지점관리</button>
         </div>
 
@@ -114,6 +115,7 @@
         <button class="nav-item" id="drawerBtn-employees" onclick="showPage('employees'); closeMobileNav()">직원관리</button>
         <button class="nav-item" id="drawerBtn-settings" onclick="showPage('settings'); closeMobileNav()">설정</button>
         <button class="nav-item" id="drawerBtn-downloads" onclick="showPage('downloads'); closeMobileNav()">다운로드</button>
+        <button class="nav-item" id="drawerBtn-autoschedule" onclick="showPage('autoschedule'); closeMobileNav()">자동스케줄</button>
         <button class="nav-item" id="drawerBtn-orgadmin" onclick="showPage('orgadmin'); closeMobileNav()" style="display:none;">지점관리</button>
         <button class="nav-item" onclick="closeCalendar(); closeMobileNav()">로그아웃</button>
     </div>
@@ -561,75 +563,6 @@
                     </div>
                 </div>
 
-                <!-- 근무코드 관리 (기존 "스케줄 코드"에 표시명/색상/사용여부 확장 —
-                     자동 월간 스케줄 기능의 근무코드 정의로도 그대로 재사용됨) -->
-                <div class="feature-card card-wide">
-                    <div class="feature-card-header">
-                        <div class="feature-icon purple" style="background:#faf5ff;">🗓️</div>
-                        <div>
-                            <div class="feature-card-title">근무코드 관리</div>
-                            <div class="feature-card-desc">근무 코드를 등록/수정합니다. (코드명은 저장 후 변경 불가)</div>
-                        </div>
-                    </div>
-                    <div class="feature-card-body">
-                        <div class="form-row form-row-nowrap form-row-compact">
-                            <input type="text" id="scheduleCodeInput" placeholder="코드명" class="form-input" style="max-width:90px;">
-                            <input type="text" id="scheduleCodeDisplayName" placeholder="표시명" class="form-input" style="max-width:90px;">
-                            <input type="color" id="scheduleCodeColor" value="#e91e8c" class="form-input" style="max-width:40px; padding:2px; height:34px;" title="색상">
-                            <input type="number" id="scheduleCodeLimit" min="1" max="999" class="form-input small small-num-input" placeholder="제한">
-                        </div>
-                        <div class="form-row form-row-nowrap form-row-compact">
-                            <label style="display:flex; align-items:center; gap:5px; font-size:12px; color:var(--text-sub); min-width:auto;">
-                                <input type="checkbox" id="scheduleCodeActive" checked style="width:auto;"> 사용함
-                            </label>
-                            <button class="btn btn-primary-sm" id="scheduleCodeSaveBtn" onclick="createScheduleCode()">생성</button>
-                            <button class="btn btn-secondary" id="scheduleCodeCancelEditBtn" onclick="cancelScheduleCodeEdit()" style="display:none;">취소</button>
-                        </div>
-                        <div class="form-row">
-                            <label class="form-label">현황</label>
-                        </div>
-                        <div class="custom-floating-tooltip" id="scheduleCodeTooltipBoard"></div>
-                    </div>
-                </div>
-
-                <!-- 일별 필요인원 설정 (자동 월간 스케줄 기능 — 2단계)
-                     ⚠️ 여기서 설정하는 값은 향후 자동 스케줄 생성 알고리즘의 기준으로만
-                     사용된다. 근무코드 관리의 '제한'(limit)과는 완전히 별개이며,
-                     직원의 신청 가능 여부에는 아무 영향을 주지 않는다. -->
-                <div class="feature-card card-wide">
-                    <div class="feature-card-header">
-                        <div class="feature-icon blue" style="background:#eff6ff;">📐</div>
-                        <div>
-                            <div class="feature-card-title">일별 필요인원 설정</div>
-                            <div class="feature-card-desc">자동 스케줄 생성 시 기준이 되는 날짜별 필요인원을 설정합니다. (직원 신청과는 무관)</div>
-                        </div>
-                    </div>
-                    <div class="feature-card-body">
-                        <div class="form-row form-row-nowrap form-row-compact">
-                            <select id="arYear" class="form-select" style="max-width:80px;" onchange="arOnMonthChange()"></select>
-                            <label class="form-label" style="min-width:auto;">년</label>
-                            <select id="arMonth" class="form-select" style="max-width:64px;" onchange="arOnMonthChange()"></select>
-                            <label class="form-label" style="min-width:auto;">월</label>
-                            <input type="number" id="arDay" min="1" max="31" value="1" class="form-input small small-num-input" style="max-width:56px;" onchange="arLoadDayRequirement()">
-                            <label class="form-label" style="min-width:auto;">일</label>
-                            <span id="arLoadStatus" style="font-size:11px; color:var(--text-light);"></span>
-                        </div>
-                        <div class="form-row">
-                            <label class="form-label">전체 필요인원</label>
-                            <input type="number" id="arTotalRequired" min="0" max="999" class="form-input small small-num-input" placeholder="예: 18">
-                        </div>
-                        <div class="form-row">
-                            <label class="form-label">코드별 / 조별</label>
-                        </div>
-                        <div id="arRequirementTable" style="overflow-x:auto;">
-                            <div style="color:#aaa; font-style:italic; font-size:12px; padding:8px 0;">불러오는 중... (계속 이 문구만 보이면 페이지를 새로고침해주세요)</div>
-                        </div>
-                        <div class="form-row" style="margin-top:8px;">
-                            <button class="btn btn-primary-sm" onclick="arSaveDayRequirement()">이 날짜 저장</button>
-                        </div>
-                    </div>
-                </div>
-
                 <!-- 공지사항 관리 (관리자/슈퍼관리자 전용) -->
                 <div class="feature-card card-wide">
                     <div class="feature-card-header">
@@ -698,6 +631,94 @@
                     </div>
                     <div class="feature-card-body">
                         <button class="btn btn-warning btn-full" onclick="downloadExcelTemplate()">📥 직원 양식 다운로드</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ════════ 자동스케줄 페이지 (관리자 전용) ════════
+             설정 페이지에 있던 "근무코드 관리"와 "일별 필요인원 설정"을 이곳으로 이동. -->
+        <div id="page-autoschedule" class="section-page">
+            <div class="page-header">
+                <div class="breadcrumb">홈 &rsaquo; <span>자동스케줄</span></div>
+                <div class="page-title">자동스케줄</div>
+                <div class="page-desc">근무코드를 관리하고, 자동 스케줄 생성에 사용할 날짜별 필요인원을 설정합니다. (직원 신청과는 무관)</div>
+            </div>
+
+            <div class="cards-grid">
+
+                <!-- 근무코드 관리 (기존 "스케줄 코드"에 표시명/색상/사용여부 확장 —
+                     설정 페이지에서 이동됨. 카드 내부 로직은 변경 없음) -->
+                <div class="feature-card card-wide">
+                    <div class="feature-card-header">
+                        <div class="feature-icon purple" style="background:#faf5ff;">🗓️</div>
+                        <div>
+                            <div class="feature-card-title">근무코드 관리</div>
+                            <div class="feature-card-desc">근무 코드를 등록/수정합니다. (코드명은 저장 후 변경 불가)</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div class="form-row form-row-nowrap form-row-compact">
+                            <input type="text" id="scheduleCodeInput" placeholder="코드명" class="form-input" style="max-width:90px;">
+                            <input type="text" id="scheduleCodeDisplayName" placeholder="표시명" class="form-input" style="max-width:90px;">
+                            <input type="color" id="scheduleCodeColor" value="#e91e8c" class="form-input" style="max-width:40px; padding:2px; height:34px;" title="색상">
+                            <input type="number" id="scheduleCodeLimit" min="1" max="999" class="form-input small small-num-input" placeholder="제한">
+                        </div>
+                        <div class="form-row form-row-nowrap form-row-compact">
+                            <label style="display:flex; align-items:center; gap:5px; font-size:12px; color:var(--text-sub); min-width:auto;">
+                                <input type="checkbox" id="scheduleCodeActive" checked style="width:auto;"> 사용함
+                            </label>
+                            <button class="btn btn-primary-sm" id="scheduleCodeSaveBtn" onclick="createScheduleCode()">생성</button>
+                            <button class="btn btn-secondary" id="scheduleCodeCancelEditBtn" onclick="cancelScheduleCodeEdit()" style="display:none;">취소</button>
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">현황</label>
+                        </div>
+                        <div class="custom-floating-tooltip" id="scheduleCodeTooltipBoard"></div>
+                    </div>
+                </div>
+
+                <!-- 필요인원 설정 (달력형 다중 선택 — 3단계 개편)
+                     ⚠️ 여기서 설정하는 값은 향후 자동 스케줄 생성 알고리즘의 기준으로만
+                     사용된다. 근무코드 관리의 '제한'(limit)과는 완전히 별개이며,
+                     직원의 신청 가능 여부에는 아무 영향을 주지 않는다. -->
+                <div class="feature-card card-wide">
+                    <div class="feature-card-header">
+                        <div class="feature-icon blue" style="background:#eff6ff;">📐</div>
+                        <div>
+                            <div class="feature-card-title">필요인원 설정</div>
+                            <div class="feature-card-desc">달력에서 날짜를 여러 개 선택한 뒤, 입력 패널에 값을 작성하고 한 번에 적용하세요.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div class="form-row form-row-nowrap form-row-compact">
+                            <select id="arYear" class="form-select" style="max-width:80px;" onchange="arOnMonthChange()"></select>
+                            <label class="form-label" style="min-width:auto;">년</label>
+                            <select id="arMonth" class="form-select" style="max-width:64px;" onchange="arOnMonthChange()"></select>
+                            <label class="form-label" style="min-width:auto;">월</label>
+                            <span id="arLoadStatus" style="font-size:11px; color:var(--text-light);"></span>
+                            <span id="arSelectionCount" style="font-size:12px; color:var(--text-sub); font-weight:600; margin-left:auto;">선택됨: 0일</span>
+                        </div>
+
+                        <div id="arCalendarGrid" class="calendar-grid" style="margin:10px 0;">
+                            <div style="color:#aaa; font-style:italic; font-size:12px; padding:8px 0;">불러오는 중... (계속 이 문구만 보이면 페이지를 새로고침해주세요)</div>
+                        </div>
+
+                        <div class="form-row">
+                            <label class="form-label">전체 필요인원</label>
+                            <input type="number" id="arTotalRequired" min="0" max="999" class="form-input small small-num-input" placeholder="예: 18">
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">코드별 / 조별</label>
+                        </div>
+                        <div id="arRequirementTable" style="overflow-x:auto;"></div>
+
+                        <div class="form-row" style="margin-top:8px;">
+                            <button class="btn btn-primary-sm" onclick="arApplyToSelectedDays()">선택 날짜에 적용</button>
+                            <button class="btn btn-secondary" onclick="arClearSelection()">선택 해제</button>
+                            <button class="btn btn-success" onclick="arSaveWholeMonth()" style="margin-left:auto;">이 월 전체 저장</button>
+                        </div>
                     </div>
                 </div>
 
@@ -948,9 +969,9 @@ function showPage(page) {
     if (page === 'settings' && typeof drawNoticeAdminPanel === 'function' && (isAdmin || isSuperAdmin)) {
         setTimeout(drawNoticeAdminPanel, 50);
     }
-    // 일별 필요인원 설정 UI 초기화 (자동 월간 스케줄 기능 — 2단계, 기존 로직과 무관)
-    if (page === 'settings' && typeof arInitDailyRequirementsUI === 'function' && (isAdmin || isSuperAdmin)) {
-        setTimeout(arInitDailyRequirementsUI, 60);
+    // 자동스케줄 페이지 초기화 (근무코드 관리 + 필요인원 설정 달력 — 설정 페이지에서 이동됨)
+    if (page === 'autoschedule' && typeof arInitAutoSchedulePage === 'function' && (isAdmin || isSuperAdmin)) {
+        setTimeout(arInitAutoSchedulePage, 60);
     }
 }
 
@@ -1122,7 +1143,7 @@ function applyRoleBasedUI() {
 
         // ── 슈퍼관리자: 대시보드/지점관리만 노출, 나머지 메뉴 숨김 ──
         if (isSup) {
-            ['requests','employees','settings','downloads'].forEach(function(p) {
+            ['requests','employees','settings','downloads','autoschedule'].forEach(function(p) {
                 var nb = document.getElementById('navBtn-' + p);
                 var db = document.getElementById('drawerBtn-' + p);
                 if (nb) nb.style.display = 'none';
@@ -1148,7 +1169,7 @@ function applyRoleBasedUI() {
         }
 
         // ── 관리자/직원: 메뉴 모두 노출, 지점관리만 숨김 ──
-        ['requests','employees','settings','downloads'].forEach(function(p) {
+        ['requests','employees','settings','downloads','autoschedule'].forEach(function(p) {
             var nb = document.getElementById('navBtn-' + p);
             var db = document.getElementById('drawerBtn-' + p);
             if (nb) nb.style.display = '';
@@ -1160,7 +1181,7 @@ function applyRoleBasedUI() {
         if (orgDb2) orgDb2.style.display = 'none';
 
         // ── 관리자 전용 메뉴는 직원에게 숨김 ──
-        ['requests','employees','settings','downloads'].forEach(function(p) {
+        ['requests','employees','settings','downloads','autoschedule'].forEach(function(p) {
             var nb = document.getElementById('navBtn-' + p);
             var db = document.getElementById('drawerBtn-' + p);
             if (nb) nb.style.display = isStaffOnly ? 'none' : '';
