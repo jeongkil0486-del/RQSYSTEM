@@ -610,7 +610,8 @@
                             <label class="form-label" style="min-width:auto;">년</label>
                             <select id="arMonth" class="form-select" style="max-width:64px;" onchange="arOnMonthChange()"></select>
                             <label class="form-label" style="min-width:auto;">월</label>
-                            <select id="arDay" class="form-select" style="max-width:70px;" onchange="arLoadDayRequirement()"></select>
+                            <input type="number" id="arDay" min="1" max="31" value="1" class="form-input small small-num-input" style="max-width:56px;" onchange="arLoadDayRequirement()">
+                            <label class="form-label" style="min-width:auto;">일</label>
                             <span id="arLoadStatus" style="font-size:11px; color:var(--text-light);"></span>
                         </div>
                         <div class="form-row">
@@ -620,7 +621,9 @@
                         <div class="form-row">
                             <label class="form-label">코드별 / 조별</label>
                         </div>
-                        <div id="arRequirementTable" style="overflow-x:auto;"></div>
+                        <div id="arRequirementTable" style="overflow-x:auto;">
+                            <div style="color:#aaa; font-style:italic; font-size:12px; padding:8px 0;">불러오는 중... (계속 이 문구만 보이면 페이지를 새로고침해주세요)</div>
+                        </div>
                         <div class="form-row" style="margin-top:8px;">
                             <button class="btn btn-primary-sm" onclick="arSaveDayRequirement()">이 날짜 저장</button>
                         </div>
