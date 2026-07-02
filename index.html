@@ -561,22 +561,29 @@
                     </div>
                 </div>
 
-                <!-- 스케줄 코드 -->
-                <div class="feature-card">
+                <!-- 근무코드 관리 (기존 "스케줄 코드"에 표시명/색상/사용여부 확장 —
+                     자동 월간 스케줄 기능의 근무코드 정의로도 그대로 재사용됨) -->
+                <div class="feature-card card-wide">
                     <div class="feature-card-header">
                         <div class="feature-icon purple" style="background:#faf5ff;">🗓️</div>
                         <div>
-                            <div class="feature-card-title">스케줄 코드</div>
-                            <div class="feature-card-desc">근무 스케줄 코드를 등록하고 관리합니다.</div>
+                            <div class="feature-card-title">근무코드 관리</div>
+                            <div class="feature-card-desc">근무 코드를 등록/수정합니다. (코드명은 저장 후 변경 불가)</div>
                         </div>
                     </div>
                     <div class="feature-card-body">
-                        <div class="form-row">
-                            <label class="form-label">코드</label>
-                            <input type="text" id="scheduleCodeInput" placeholder="코드" class="form-input" style="max-width:100px;">
-                            <label class="form-label" style="min-width:auto;">제한</label>
+                        <div class="form-row form-row-nowrap form-row-compact">
+                            <input type="text" id="scheduleCodeInput" placeholder="코드명" class="form-input" style="max-width:90px;">
+                            <input type="text" id="scheduleCodeDisplayName" placeholder="표시명" class="form-input" style="max-width:90px;">
+                            <input type="color" id="scheduleCodeColor" value="#e91e8c" class="form-input" style="max-width:40px; padding:2px; height:34px;" title="색상">
                             <input type="number" id="scheduleCodeLimit" min="1" max="999" class="form-input small small-num-input" placeholder="제한">
-                            <button class="btn btn-primary-sm" onclick="createScheduleCode()">생성</button>
+                        </div>
+                        <div class="form-row form-row-nowrap form-row-compact">
+                            <label style="display:flex; align-items:center; gap:5px; font-size:12px; color:var(--text-sub); min-width:auto;">
+                                <input type="checkbox" id="scheduleCodeActive" checked style="width:auto;"> 사용함
+                            </label>
+                            <button class="btn btn-primary-sm" id="scheduleCodeSaveBtn" onclick="createScheduleCode()">생성</button>
+                            <button class="btn btn-secondary" id="scheduleCodeCancelEditBtn" onclick="cancelScheduleCodeEdit()" style="display:none;">취소</button>
                         </div>
                         <div class="form-row">
                             <label class="form-label">현황</label>
