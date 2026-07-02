@@ -159,12 +159,29 @@ function arRenderRequirementTable() {
     var totalEl = document.getElementById("arTotalRequired");
     if (totalEl) totalEl.value = "";
 
+    var helpHtml = "<div style='font-size:12px; line-height:1.55; color:var(--text-sub); margin-bottom:10px;'>"
+        + "필요인원 설정에는 <strong>근무코드 관리에서 사용중(active=true)인 코드만</strong> 표시됩니다.<br>"
+        + "예를 들어 근무코드 관리에서 <strong>오전 / 오후 / 종일</strong>을 생성하고 사용중으로 두면, 이 표에도 각각 한 줄씩 나타납니다.<br>"
+        + "화면 표시는 코드명(name)보다 <strong>표시명(displayName)</strong>을 우선 사용합니다."
+        + "</div>";
+
     if (!arMonthState.activeCodes.length) {
-        container.innerHTML = "<div style='color:#94a3b8;font-size:12px;line-height:1.5;padding:8px 0;'>등록된 사용중 근무코드가 없습니다. 전체 필요인원만 먼저 적용할 수 있습니다.</div>";
+        container.innerHTML = helpHtml
+            + "<div style='color:#94a3b8;font-size:12px;line-height:1.5;padding:8px 0;'>"
+            + "등록된 사용중 근무코드가 없습니다. 먼저 근무코드 관리에서 오전/오후/종일 같은 코드를 생성한 뒤 다시 확인해주세요."
+            + "</div>";
         return;
     }
 
-    var html = "<table class='ar-req-table' style='width:100%; border-collapse:collapse; font-size:12px;'>";
+    var activeCodeNames = arMonthState.activeCodes.map(function(code) {
+        return code.displayName || code.name;
+    }).join(", ");
+
+    var html = helpHtml
+        + "<div style='font-size:11px; color:var(--text-light); margin-bottom:8px;'>"
+        + "현재 표시 중인 근무코드: " + activeCodeNames
+        + "</div>"
+        + "<table class='ar-req-table' style='width:100%; border-collapse:collapse; font-size:12px;'>";
     html += "<tr>"
           + "<th style='text-align:left; padding:4px 6px; border-bottom:1px solid var(--border);'>근무코드</th>"
           + "<th style='text-align:center; padding:4px 6px; border-bottom:1px solid var(--border);'>필요인원</th>"
