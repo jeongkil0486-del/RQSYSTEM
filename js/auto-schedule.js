@@ -117,10 +117,45 @@ function arInitAutoSchedulePage() {
     try {
         if (!isAdmin && !isSuperAdmin) return;
         arInitYearMonthSelects();
+        arWireButtonsOnce();
         arLoadMonth();
     } catch (e) {
         console.error("[auto-schedule] arInitAutoSchedulePage 초기화 실패:", e);
         _arShowCalendarError("화면 초기화 중 오류가 발생했습니다. 새로고침 후 다시 시도해주세요.");
+    }
+}
+
+// 버튼 3개를 addEventListener로 연결 (inline onclick 대신 — 페이지 재진입 시
+// 여러 번 호출돼도 중복 연결되지 않도록 data-ar-wired 플래그로 1회만 연결)
+function arWireButtonsOnce() {
+    var applyBtn = document.getElementById("arApplyBtn");
+    var clearBtn = document.getElementById("arClearBtn");
+    var saveBtn  = document.getElementById("arSaveBtn");
+
+    if (applyBtn && !applyBtn.dataset.arWired) {
+        applyBtn.addEventListener("click", function() {
+            console.log("[auto-schedule] arApplyBtn 클릭됨");
+            arApplyToSelectedDays();
+        });
+        applyBtn.dataset.arWired = "1";
+    }
+    if (clearBtn && !clearBtn.dataset.arWired) {
+        clearBtn.addEventListener("click", function() {
+            console.log("[auto-schedule] arClearBtn 클릭됨");
+            arClearSelection();
+        });
+        clearBtn.dataset.arWired = "1";
+    }
+    if (saveBtn && !saveBtn.dataset.arWired) {
+        saveBtn.addEventListener("click", function() {
+            console.log("[auto-schedule] arSaveBtn 클릭됨");
+            arSaveWholeMonth();
+        });
+        saveBtn.dataset.arWired = "1";
+    }
+
+    if (!applyBtn || !clearBtn || !saveBtn) {
+        console.error("[auto-schedule] 버튼 요소를 찾지 못함:", { applyBtn: !!applyBtn, clearBtn: !!clearBtn, saveBtn: !!saveBtn });
     }
 }
 
@@ -234,6 +269,7 @@ function arToggleDaySelect(day) {
     var key = String(day);
     if (arSelectedDays[key]) delete arSelectedDays[key];
     else arSelectedDays[key] = true;
+    console.log("[auto-schedule] arToggleDaySelect(" + key + ") → arSelectedDays =", JSON.stringify(arSelectedDays));
 
     var cell = document.getElementById("ar-d-" + day);
     if (cell) cell.classList.toggle("ar-selected", !!arSelectedDays[key]);
@@ -286,9 +322,9 @@ function arRenderPanelTable() {
     html += "<table class='ar-req-table' style='width:100%; border-collapse:collapse; font-size:12px;'>";
     html += "<tr>"
           + "<th style='text-align:left; padding:4px 6px; border-bottom:1px solid var(--border);'>근무코드</th>"
-          + "<th style='padding:4px 6px; border-bottom:1px solid var(--border);'>코드별 필요</th>";
+          + "<th style='text-align:center; padding:4px 6px; border-bottom:1px solid var(--border);'>코드별 필요</th>";
     groups.forEach(function(g) {
-        html += "<th style='padding:4px 6px; border-bottom:1px solid var(--border);'>" + g + "조</th>";
+        html += "<th style='text-align:center; padding:4px 6px; border-bottom:1px solid var(--border);'>" + g + "조</th>";
     });
     html += "</tr>";
 
@@ -296,14 +332,14 @@ function arRenderPanelTable() {
         var label = c.displayName || c.name;
         html += "<tr>"
               + "<td style='padding:4px 6px;'>" + label + "</td>"
-              + "<td style='padding:4px 6px;'>"
+              + "<td style='padding:4px 6px; text-align:center;'>"
               + "<input type='number' min='0' max='99' class='form-input small small-num-input ar-code-input' "
-              + "data-code='" + c.name + "' value='' style='width:56px;'>"
+              + "data-code='" + c.name + "' value='' style='width:56px; text-align:center;'>"
               + "</td>";
         groups.forEach(function(g) {
-            html += "<td style='padding:4px 6px;'>"
+            html += "<td style='padding:4px 6px; text-align:center;'>"
                   + "<input type='number' min='0' max='99' class='form-input small small-num-input ar-group-input' "
-                  + "data-code='" + c.name + "' data-group='" + g + "' value='' style='width:48px;'>"
+                  + "data-code='" + c.name + "' data-group='" + g + "' value='' style='width:48px; text-align:center;'>"
                   + "</td>";
         });
         html += "</tr>";
@@ -344,30 +380,37 @@ function arCollectDayDataFromForm() {
 // ══════════════════════════════════════════════════════════════════════════
 
 function arApplyToSelectedDays() {
-    if (!isAdmin && !isSuperAdmin) return;
-    var days = Object.keys(arSelectedDays);
-    if (days.length === 0) { alert("❌ 먼저 달력에서 날짜를 선택해주세요."); return; }
+    try {
+        if (!isAdmin && !isSuperAdmin) return;
+        var days = Object.keys(arSelectedDays);
+        console.log("[auto-schedule] arApplyToSelectedDays 실행, 선택된 날짜:", days);
+        if (days.length === 0) { alert("❌ 먼저 달력에서 날짜를 선택해주세요."); return; }
 
-    var newDayData = arCollectDayDataFromForm();
-    if (Object.keys(newDayData).length === 0) {
-        if (!confirm("입력한 값이 없습니다. 선택된 " + days.length + "일의 설정을 모두 삭제할까요?")) return;
-    }
-
-    days.forEach(function(day) {
+        var newDayData = arCollectDayDataFromForm();
+        console.log("[auto-schedule] 적용할 값:", JSON.stringify(newDayData));
         if (Object.keys(newDayData).length === 0) {
-            delete arMonthState.dailyRequirements[day];
-        } else {
-            // 날짜마다 독립된 객체가 되도록 매번 새로 복사 (참조 공유로 인한 오염 방지)
-            arMonthState.dailyRequirements[day] = JSON.parse(JSON.stringify(newDayData));
+            if (!confirm("입력한 값이 없습니다. 선택된 " + days.length + "일의 설정을 모두 삭제할까요?")) return;
         }
-    });
 
-    arRenderCalendarGrid(); // 요약 갱신 (선택 표시도 그대로 유지됨)
+        days.forEach(function(day) {
+            if (Object.keys(newDayData).length === 0) {
+                delete arMonthState.dailyRequirements[day];
+            } else {
+                // 날짜마다 독립된 객체가 되도록 매번 새로 복사 (참조 공유로 인한 오염 방지)
+                arMonthState.dailyRequirements[day] = JSON.parse(JSON.stringify(newDayData));
+            }
+        });
 
-    var statusEl = document.getElementById("arLoadStatus");
-    if (statusEl) {
-        statusEl.innerText = days.length + "일에 적용됨 (아직 저장 전)";
-        setTimeout(function() { if (statusEl.innerText.indexOf("적용됨") >= 0) statusEl.innerText = ""; }, 2500);
+        arRenderCalendarGrid(); // 요약 갱신 (선택 표시도 그대로 유지됨)
+
+        var statusEl = document.getElementById("arLoadStatus");
+        if (statusEl) {
+            statusEl.innerText = days.length + "일에 적용됨 (아직 저장 전)";
+            setTimeout(function() { if (statusEl.innerText.indexOf("적용됨") >= 0) statusEl.innerText = ""; }, 2500);
+        }
+    } catch (e) {
+        console.error("[auto-schedule] arApplyToSelectedDays 오류:", e);
+        alert("적용 중 오류가 발생했습니다: " + (e && e.message ? e.message : e));
     }
 }
 
