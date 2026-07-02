@@ -135,8 +135,9 @@ function deleteScheduleCode() {
 }
 
 function drawScheduleCodeBoard() {
-    // page-settings가 active가 아니면 dirty 플래그만 세우고 건너뜀
-    if (typeof _isPageActive === "function" && !_isPageActive("settings")) {
+    // page-autoschedule가 active가 아니면 dirty 플래그만 세우고 건너뜀
+    // (근무코드 관리 카드가 설정 페이지에서 자동스케줄 페이지로 이동됨)
+    if (typeof _isPageActive === "function" && !_isPageActive("autoschedule")) {
         _dirtyScheduleCodeBoard = true;
         return;
     }

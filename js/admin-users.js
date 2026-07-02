@@ -509,11 +509,13 @@ document.addEventListener("DOMContentLoaded", function() {
                 if (typeof drawScGroupLimitBoard === "function") drawScGroupLimitBoard();
             }
         } else if (page === "settings") {
-            if (_dirtyScheduleCodeBoard) {
-                if (typeof drawScheduleCodeBoard === "function") drawScheduleCodeBoard();
-            }
             if (_dirtyScGroupLimitBoard) {
                 if (typeof drawScGroupLimitBoard === "function") drawScGroupLimitBoard();
+            }
+        } else if (page === "autoschedule") {
+            // 근무코드 관리 카드가 설정 페이지에서 이곳으로 이동됨
+            if (_dirtyScheduleCodeBoard) {
+                if (typeof drawScheduleCodeBoard === "function") drawScheduleCodeBoard();
             }
         }
     };
