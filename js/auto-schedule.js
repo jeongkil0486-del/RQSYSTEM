@@ -319,6 +319,7 @@ function arWireButtonsOnce() {
     var clearBtn = document.getElementById("arClearBtn");
     var deleteBtn = document.getElementById("arDeleteBtn");
     var saveBtn = document.getElementById("arSaveBtn");
+    var applyAllDaysBtn = document.getElementById("arApplyAllDaysBtn");
     var draftGenerateTopBtn = document.getElementById("arDraftGenerateTopBtn");
     var draftGenerateBtn = document.getElementById("arDraftGenerateBtn");
     var draftResetBtn = document.getElementById("arDraftResetBtn");
@@ -338,6 +339,10 @@ function arWireButtonsOnce() {
     if (saveBtn && !saveBtn.dataset.arWired) {
         saveBtn.addEventListener("click", arSaveWholeMonth);
         saveBtn.dataset.arWired = "1";
+    }
+    if (applyAllDaysBtn && !applyAllDaysBtn.dataset.arWired) {
+        applyAllDaysBtn.addEventListener("click", arApplyHolidayCapToAllDays);
+        applyAllDaysBtn.dataset.arWired = "1";
     }
     if (draftGenerateTopBtn && !draftGenerateTopBtn.dataset.arWired) {
         draftGenerateTopBtn.addEventListener("click", function() {
@@ -365,6 +370,7 @@ function arRenderRequirementTable() {
 
     var totalEl = document.getElementById("arTotalRequired");
     if (totalEl) totalEl.value = "";
+    if (totalEl && totalEl.closest(".form-row")) totalEl.closest(".form-row").style.display = "none";
     var monthTargetEl = document.getElementById("arMonthlyHolidayTarget");
     if (monthTargetEl) monthTargetEl.value = arGetMonthlyHolidayTargetValue() || "";
     var dayCapEl = document.getElementById("arDailyHolidayCap");
@@ -752,6 +758,151 @@ function arApplyToSelectedDays() {
     arRenderDayDetailPanel(arLastClickedDayKey);
     arSyncHolidayConfigInputs();
     arSetStatus(arSelectedDays.length + "개 날짜에 적용했습니다. 달력에서 바로 확인한 뒤 저장해주세요.", "success");
+}
+
+function arCollectDayDataFromForm() {
+    var dailyCapEl = document.getElementById("arDailyHolidayCap");
+    var dailyCapRaw = dailyCapEl ? String(dailyCapEl.value || "").trim() : "";
+    var monthTargetEl = document.getElementById("arMonthlyHolidayTarget");
+    var monthTargetRaw = monthTargetEl ? String(monthTargetEl.value || "").trim() : "";
+
+    var monthTarget = null;
+    if (monthTargetRaw) {
+        monthTarget = parseInt(monthTargetRaw, 10);
+        if (!Number.isFinite(monthTarget) || monthTarget < 1) {
+            alert("월 목표 휴무 개수는 1 이상이어야 합니다.");
+            arSetStatus("월 목표 휴무 개수를 확인해주세요.", "error");
+            return null;
+        }
+    }
+
+    var dailyHolidayCap = null;
+    if (dailyCapRaw) {
+        dailyHolidayCap = parseInt(dailyCapRaw, 10);
+        if (!Number.isFinite(dailyHolidayCap) || dailyHolidayCap < 1) {
+            alert("일별 최대 휴무 개수는 1 이상이어야 합니다.");
+            arSetStatus("일별 최대 휴무 개수를 확인해주세요.", "error");
+            return null;
+        }
+    }
+
+    var byCode = {};
+    document.querySelectorAll(".ar-code-input").forEach(function(input) {
+        var code = input.getAttribute("data-code");
+        var raw = String(input.value || "").trim();
+        if (!raw) return;
+
+        var count = parseInt(raw, 10);
+        if (Number.isFinite(count) && count > 0) byCode[code] = count;
+    });
+
+    var byGroupCode = {};
+    document.querySelectorAll(".ar-group-input").forEach(function(input) {
+        var code = input.getAttribute("data-code");
+        var groupLetter = input.getAttribute("data-group");
+        var raw = String(input.value || "").trim();
+        if (!raw) return;
+
+        var count = parseInt(raw, 10);
+        if (!Number.isFinite(count) || count <= 0) return;
+
+        if (!byGroupCode[groupLetter]) byGroupCode[groupLetter] = {};
+        byGroupCode[groupLetter][code] = count;
+    });
+
+    var hasRequirementInputs = Object.keys(byCode).length > 0 || Object.keys(byGroupCode).length > 0;
+    if (!hasRequirementInputs && dailyHolidayCap == null && monthTarget == null) {
+        alert("휴무 설정값 또는 조별 최소 근무 인원을 입력해주세요.");
+        arSetStatus("적용할 값이 없습니다.", "error");
+        return null;
+    }
+
+    return {
+        monthlyHolidayTarget: monthTarget,
+        dailyHolidayCap: dailyHolidayCap,
+        requirementData: hasRequirementInputs ? {
+            totalRequired: null,
+            byCode: byCode,
+            byGroupCode: byGroupCode
+        } : null
+    };
+}
+
+function arApplyToSelectedDays() {
+    if (!isAdmin && !isSuperAdmin) return;
+    if (arSelectedDays.length === 0) {
+        alert("먼저 날짜를 선택해주세요.");
+        arSetStatus("선택된 날짜가 없습니다.", "error");
+        return;
+    }
+
+    var newDayData = arCollectDayDataFromForm();
+    if (!newDayData) return;
+
+    if (newDayData.monthlyHolidayTarget != null) {
+        arMonthState.monthlyHolidayTarget = newDayData.monthlyHolidayTarget;
+    }
+
+    arSelectedDays.forEach(function(dayKey) {
+        if (newDayData.requirementData) {
+            arMonthState.dailyRequirements[dayKey] = {
+                totalRequired: null,
+                byCode: Object.assign({}, newDayData.requirementData.byCode),
+                byGroupCode: arCloneGroupCodeMap(newDayData.requirementData.byGroupCode)
+            };
+        }
+        if (newDayData.dailyHolidayCap != null) {
+            arMonthState.dailyHolidayCaps[String(dayKey)] = newDayData.dailyHolidayCap;
+        }
+    });
+
+    console.log("[auto-schedule:draft] daily holiday caps after selected apply:", Object.assign({}, arMonthState.dailyHolidayCaps || {}));
+    arRenderCalendarGrid();
+    arRenderDayDetailPanel(arLastClickedDayKey);
+    arSyncHolidayConfigInputs();
+    arSetStatus(arSelectedDays.length + "개 날짜에 적용했습니다. 달력과 상세에서 최대 휴무 개수를 확인해주세요.", "success");
+}
+
+function arApplyHolidayCapToAllDays() {
+    if (!isAdmin && !isSuperAdmin) return;
+    if (!arMonthState.yyyymm) return;
+
+    var dayCapEl = document.getElementById("arDailyHolidayCap");
+    var raw = dayCapEl ? String(dayCapEl.value || "").trim() : "";
+    if (!raw) {
+        alert("먼저 일별 최대 휴무 개수를 입력해주세요.");
+        arSetStatus("일별 최대 휴무 개수를 입력해주세요.", "error");
+        return;
+    }
+
+    var cap = parseInt(raw, 10);
+    if (!Number.isFinite(cap) || cap < 1) {
+        alert("일별 최대 휴무 개수는 1 이상이어야 합니다.");
+        arSetStatus("일별 최대 휴무 개수를 확인해주세요.", "error");
+        return;
+    }
+
+    var meta = arGetMonthMeta(arMonthState.yyyymm);
+    for (var day = 1; day <= meta.totalDays; day++) {
+        arMonthState.dailyHolidayCaps[String(day)] = cap;
+    }
+
+    var monthTargetEl = document.getElementById("arMonthlyHolidayTarget");
+    if (monthTargetEl) {
+        var monthTargetRaw = String(monthTargetEl.value || "").trim();
+        if (monthTargetRaw) {
+            var monthTarget = parseInt(monthTargetRaw, 10);
+            if (Number.isFinite(monthTarget) && monthTarget > 0) {
+                arMonthState.monthlyHolidayTarget = monthTarget;
+            }
+        }
+    }
+
+    console.log("[auto-schedule:draft] daily holiday caps after all-days apply:", Object.assign({}, arMonthState.dailyHolidayCaps || {}));
+    arRenderCalendarGrid();
+    arRenderDayDetailPanel(arLastClickedDayKey);
+    arSyncHolidayConfigInputs();
+    arSetStatus("이번 달 전체 날짜에 최대 휴무 " + cap + "명을 적용했습니다.", "success");
 }
 
 function arSaveWholeMonth() {
