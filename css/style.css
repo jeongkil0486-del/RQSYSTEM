@@ -2005,6 +2005,9 @@ body {
   margin-top: 2px;
   font-size: 10px;
   color: var(--text-light);
+  line-height: 1.45;
+  white-space: normal;
+  min-width: 180px;
 }
 .ar-draft-cell-empty {
   color: var(--text-light);
