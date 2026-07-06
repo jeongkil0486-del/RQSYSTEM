@@ -1230,6 +1230,51 @@ function arGetRemainingGroupNeed(draftState, dayKey, groupLetter) {
     return total;
 }
 
+function arGetRequestGroupHolidayLimit(groupLetter) {
+    if (!groupLetter || groupLetter === "POOL") return null;
+    var raw = null;
+    if (typeof getFirebaseItem === "function") {
+        raw = getFirebaseItem("rq_config_group_max_" + groupLetter, null);
+    } else if (typeof liveDBData === "object" && liveDBData) {
+        raw = liveDBData["rq_config_group_max_" + groupLetter];
+    }
+
+    var parsed = parseInt(raw, 10);
+    if (!Number.isFinite(parsed) || parsed < 0) return 2;
+    return parsed;
+}
+
+function arCountGroupOffEntries(draftState, dayKey, groupLetter) {
+    if (!groupLetter || groupLetter === "POOL") return 0;
+
+    var total = 0;
+    Object.keys(draftState.assignmentsByDay[dayKey] || {}).forEach(function(uid) {
+        var employee = draftState.employeesByUid[uid] || {};
+        if ((employee.group || "POOL") !== groupLetter) return;
+        if (arIsOffEntry(draftState.assignmentsByDay[dayKey][uid])) total += 1;
+    });
+    return total;
+}
+
+function arGetGroupHolidayLimitUsage(draftState, dayKey, groupLetter) {
+    var limit = arGetRequestGroupHolidayLimit(groupLetter);
+    var used = arCountGroupOffEntries(draftState, dayKey, groupLetter);
+    var remaining = limit == null ? null : Math.max(0, limit - used);
+
+    return {
+        groupLetter: groupLetter,
+        limit: limit,
+        used: used,
+        remaining: remaining
+    };
+}
+
+function arGetDayGroupHolidayLimitSummary(draftState, dayKey) {
+    return arGetGroupLettersToRender().map(function(groupLetter) {
+        return arGetGroupHolidayLimitUsage(draftState, dayKey, groupLetter);
+    });
+}
+
 function arEvaluateAutoOffDay(draftState, employee, dayKey) {
     var existingEntry = arGetDraftAssignment(draftState, employee.uid, dayKey);
     if (existingEntry) {
@@ -1289,20 +1334,16 @@ function arEvaluateAutoOffDay(draftState, employee, dayKey) {
 
     var groupLetter = employee.group || "POOL";
     if (groupLetter !== "POOL") {
-        var remainingGroupNeed = arGetRemainingGroupNeed(draftState, dayKey, groupLetter);
-        if (remainingGroupNeed > 0) {
-            var groupSize = draftState.groupSizeMap[groupLetter] || 0;
-            var remainingGroupEmptyAfterOff = groupSize - (arCountDayAssignedEntriesForGroup(draftState, dayKey, groupLetter) + 1);
-            if (remainingGroupEmptyAfterOff < remainingGroupNeed) {
-                return {
-                    allowed: false,
-                    reason: "group_min_risk",
-                    dayKey: dayKey,
-                    groupLetter: groupLetter,
-                    remainingGroupNeed: remainingGroupNeed,
-                    remainingGroupEmptyAfterOff: remainingGroupEmptyAfterOff
-                };
-            }
+        var groupUsage = arGetGroupHolidayLimitUsage(draftState, dayKey, groupLetter);
+        if (groupUsage.limit != null && groupUsage.used >= groupUsage.limit) {
+            return {
+                allowed: false,
+                reason: "group_day_limit",
+                dayKey: dayKey,
+                groupLetter: groupLetter,
+                groupHolidayLimit: groupUsage.limit,
+                groupHolidayUsed: groupUsage.used
+            };
         }
     }
 
@@ -1325,8 +1366,8 @@ function arGetHolidayBlockReasonLabel(info) {
     if (info.reason === "day_off_limit") {
         return dayText + "일별 최대 휴무 초과";
     }
-    if (info.reason === "group_min_risk") {
-        return dayText + (info.groupLetter || "-") + "조 최소 근무 인원 부족";
+    if (info.reason === "group_day_limit") {
+        return dayText + (info.groupLetter || "-") + "조 휴무 신청한도 초과";
     }
     if (info.reason === "required_work_risk") {
         return dayText + "전체 필요 근무 인원 부족";
@@ -1923,7 +1964,7 @@ function arBuildDaySummaries(draftState) {
         var riskCount = 0;
         (draftState.warningsByDay[dayKey] || []).forEach(function(warning) {
             if (warning.kind === "holiday_shortage") holidayMissingCount += parseInt(warning.missing, 10) || 0;
-            if (warning.kind === "group_off_risk" || warning.kind === "day_off_limit") riskCount += 1;
+            if (warning.kind === "group_off_risk" || warning.kind === "group_day_limit" || warning.kind === "day_off_limit") riskCount += 1;
         });
 
         draftState.daySummaries[dayKey] = {
@@ -2636,6 +2677,154 @@ function arGetHolidaySummaryLine(draftState, employee) {
         : "";
 
     return baseLine + (reasonLine ? "<br>" + reasonLine : "");
+}
+
+function arGetWarningKindLabel(kind) {
+    if (kind === "holiday_shortage") return "휴무 부족";
+    if (kind === "group_day_limit") return "조별 신청한도";
+    if (kind === "group_off_risk") return "조별 신청한도";
+    if (kind === "day_off_limit") return "일별 휴무 상한";
+    if (kind === "consecutive_work") return "연속근무";
+    if (kind === "pm_to_am") return "오후→오전";
+    return "경고";
+}
+
+function arRenderDayDetailPanel(dayKey) {
+    var panel = arEnsureDetailPanel();
+    if (!panel) return;
+
+    var title = "날짜 상세";
+    if (arMonthState.yyyymm && dayKey) {
+        title = arMonthState.yyyymm.slice(0, 4) + "." + arMonthState.yyyymm.slice(4, 6) + "." + String(dayKey).padStart(2, "0") + " 상세";
+    }
+
+    if (!dayKey) {
+        panel.innerHTML = "<div class='ar-day-detail-title'>" + title + "</div><div class='ar-day-detail-body'>달력에서 날짜를 클릭하면 필요인원, 휴무 초안, 조별 신청한도 사용량, 경고를 여기에서 확인할 수 있습니다.</div>";
+        return;
+    }
+
+    var requirement = arMonthState.dailyRequirements[dayKey];
+    var dayCap = arGetDailyHolidayCap(dayKey);
+    var html = "<div class='ar-day-detail-title'>" + title + "</div><div class='ar-day-detail-body'>";
+
+    html += "<div class='ar-day-detail-draft-summary'>월 목표 휴무 " + arGetMonthlyHolidayTargetValue() + "일 / 이 날짜 최대 휴무 " + (dayCap != null ? dayCap + "명" : "제한 없음") + "</div>";
+
+    if (!requirement) {
+        html += "<div class='ar-day-detail-empty'>이 날짜에는 저장된 필요인원 설정이 없습니다.</div>";
+    } else {
+        if (requirement.totalRequired != null) {
+            html += "<div class='ar-day-detail-total'>총 " + requirement.totalRequired + "명</div>";
+        }
+        Object.keys(requirement.byCode || {}).forEach(function(codeName) {
+            var codeCount = parseInt(requirement.byCode[codeName], 10);
+            if (!Number.isFinite(codeCount) || codeCount <= 0) return;
+
+            html += "<div class='ar-day-detail-code-block'>";
+            html += "<div class='ar-day-detail-code-title'>" + arGetCodeLabel(codeName) + " " + codeCount + "명</div>";
+            html += "<div class='ar-day-detail-code-groups'>" + arGetDetailGroupText(requirement, codeName) + "</div>";
+            html += "</div>";
+        });
+    }
+
+    if (arDraftState) {
+        var assignments = arDraftState.assignmentsByDay[dayKey] || {};
+        var fixedItems = [];
+        var autoItems = [];
+
+        Object.keys(assignments).forEach(function(uid) {
+            var entry = assignments[uid];
+            var emp = arDraftState.employeesByUid[uid] || {};
+            var line = (emp.name || uid) + " - " + (entry.label || arGetCodeLabel(entry.code));
+            if (entry.type === "fixed" && entry.source === "fixed_request") {
+                fixedItems.push(arGetDayDetailEntryHtml("ar-day-detail-entry-fixed-request-off", line));
+            } else if (entry.type === "fixed") {
+                fixedItems.push(arGetDayDetailEntryHtml("ar-day-detail-entry-fixed-work", line));
+            } else if (entry.type === "auto" && entry.source === "auto_off") {
+                autoItems.push(arGetDayDetailEntryHtml("ar-day-detail-entry-auto-generated-off", line));
+            } else if (entry.type === "auto") {
+                autoItems.push(arGetDayDetailEntryHtml("ar-day-detail-entry-auto", line));
+            }
+        });
+
+        var summary = (arDraftState.daySummaries || {})[dayKey] || {};
+        var groupLimitLines = arGetDayGroupHolidayLimitSummary(arDraftState, dayKey).map(function(item) {
+            return item.groupLetter + "조 한도 " + (item.limit != null ? item.limit : "-") + "명 / 사용 " + item.used + "명 / 남은 가능 " + (item.remaining != null ? item.remaining : "-") + "명";
+        });
+
+        html += "<hr class='ar-day-detail-divider'>";
+        html += "<div class='ar-day-detail-section-title'>휴무 초안 결과</div>";
+        html += "<div class='ar-day-detail-draft-summary'>고정 휴무 " + (summary.fixedOffCount || 0) + " / 자동 휴무 " + (summary.autoOffCount || 0) + " / 경고 " + (summary.warningCount || 0) + "</div>";
+        html += "<div class='ar-day-detail-subtitle'>조별 신청한도</div>";
+        html += groupLimitLines.length ? "<div class='ar-day-detail-list'>" + groupLimitLines.join("<br>") + "</div>" : "<div class='ar-day-detail-empty'>조별 신청한도 정보 없음</div>";
+        html += "<div class='ar-day-detail-subtitle'>고정값</div>";
+        html += fixedItems.length ? "<div class='ar-day-detail-list'>" + fixedItems.join("<br>") + "</div>" : "<div class='ar-day-detail-empty'>고정값 없음</div>";
+        html += "<div class='ar-day-detail-subtitle'>자동 휴무</div>";
+        html += autoItems.length ? "<div class='ar-day-detail-list'>" + autoItems.join("<br>") + "</div>" : "<div class='ar-day-detail-empty'>자동 휴무 없음</div>";
+
+        var warnings = (arDraftState.warningsByDay || {})[dayKey] || [];
+        html += "<div class='ar-day-detail-subtitle'>경고</div>";
+        html += warnings.length ? "<div class='ar-day-detail-list'>" + warnings.map(function(item) { return item.message; }).join("<br>") + "</div>" : "<div class='ar-day-detail-empty'>경고 없음</div>";
+    }
+
+    html += "</div>";
+    panel.innerHTML = html;
+}
+
+function arBuildHolidayShortageWarnings(draftState) {
+    var riskMap = {};
+
+    draftState.employees.forEach(function(employee) {
+        var summary = draftState.holidaySummaryByUid[employee.uid];
+        if (!summary || summary.shortage <= 0) return;
+
+        var reasonText = (summary.blockedReasons || []).length
+            ? " / 실패 사유: " + summary.blockedReasons.join(", ")
+            : "";
+
+        arAddDraftWarning(draftState, {
+            kind: "holiday_shortage",
+            dayKey: summary.warningDayKey || "",
+            uid: employee.uid,
+            employeeName: employee.name,
+            missing: summary.shortage,
+            message: employee.name + ": 목표 " + summary.target + " / 고정 " + summary.fixedOff + " / 자동 " + summary.autoOff + " / 부족 " + summary.shortage + reasonText
+        });
+
+        (draftState.holidayBlockReasonsByUid[employee.uid] || []).forEach(function(info) {
+            if (!info || !info.dayKey) return;
+
+            var riskKey = [info.reason, info.groupLetter || "", info.dayKey].join("|");
+            if (riskMap[riskKey]) return;
+            riskMap[riskKey] = true;
+
+            if (info.reason === "group_day_limit") {
+                arAddDraftWarning(draftState, {
+                    kind: "group_day_limit",
+                    dayKey: info.dayKey,
+                    groupLetter: info.groupLetter,
+                    message: info.groupLetter + "조 " + arMonthState.yyyymm.slice(4, 6) + "월 " + info.dayKey + "일: 조별 휴무 신청한도 도달"
+                });
+                return;
+            }
+
+            if (info.reason === "day_off_limit") {
+                arAddDraftWarning(draftState, {
+                    kind: "day_off_limit",
+                    dayKey: info.dayKey,
+                    message: arMonthState.yyyymm.slice(4, 6) + "월 " + info.dayKey + "일: 일별 최대 휴무 제한"
+                });
+                return;
+            }
+
+            if (info.reason === "required_work_risk") {
+                arAddDraftWarning(draftState, {
+                    kind: "day_off_limit",
+                    dayKey: info.dayKey,
+                    message: arMonthState.yyyymm.slice(4, 6) + "월 " + info.dayKey + "일: 전체 필요 근무 인원 부족 위험"
+                });
+            }
+        });
+    });
 }
 
 function arLoadMonth() {
