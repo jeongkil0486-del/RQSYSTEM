@@ -1680,6 +1680,9 @@ body {
 .date.ar-selected { background: #e0f2fe; box-shadow: inset 0 0 0 2px #0284c7; }
 .date.ar-has-data { background: #eff6ff; }
 .date.ar-detail-active { box-shadow: inset 0 0 0 2px #1d4ed8; }
+.date.ar-draft-ok { border-color: #bbf7d0; }
+.date.ar-draft-warning { border-color: #fde68a; }
+.date.ar-draft-shortage { border-color: #fecaca; }
 
 /* 자동스케줄 달력만 더 작게 (대시보드 메인 달력 .date 기본 스타일은 그대로 둠 —
    #arCalendarGrid 안쪽으로만 범위를 좁혀 다른 화면에는 영향 없음) */
@@ -1726,6 +1729,14 @@ body {
   font-weight: 600;
   line-height: 1.35;
 }
+#arCalendarGrid .ar-draft-cell-badge {
+  margin-top: 6px;
+  font-size: 10px;
+  font-weight: 700;
+}
+#arCalendarGrid .ar-draft-cell-badge-ok { color: #15803d; }
+#arCalendarGrid .ar-draft-cell-badge-warn { color: #b45309; }
+#arCalendarGrid .ar-draft-cell-badge-short { color: #b91c1c; }
 #arRequirementTable .ar-req-table th,
 #arRequirementTable .ar-req-table td {
   white-space: nowrap;
@@ -1757,6 +1768,34 @@ body {
   color: var(--text-main);
   margin-bottom: 10px;
 }
+.ar-day-detail-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 14px 0 12px;
+}
+.ar-day-detail-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 8px;
+}
+.ar-day-detail-draft-summary {
+  font-size: 12px;
+  color: var(--text-sub);
+  margin-bottom: 10px;
+}
+.ar-day-detail-subtitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+.ar-day-detail-list {
+  font-size: 12px;
+  color: var(--text-sub);
+  line-height: 1.6;
+}
 .ar-day-detail-code-block + .ar-day-detail-code-block {
   margin-top: 12px;
 }
@@ -1772,4 +1811,221 @@ body {
 }
 .ar-day-detail-empty {
   color: var(--text-light);
+}
+.ar-draft-panel {
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  padding: 16px;
+}
+.ar-draft-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.ar-draft-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.ar-draft-desc {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-sub);
+}
+.ar-draft-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ar-draft-status-row {
+  margin-top: 10px;
+  min-height: 18px;
+  font-size: 12px;
+  color: var(--text-sub);
+}
+.ar-draft-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.ar-legend-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.ar-legend-fixed-off {
+  background: #eef2ff;
+  color: #4338ca;
+}
+.ar-legend-fixed-work {
+  background: #ecfeff;
+  color: #0f766e;
+}
+.ar-legend-auto {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.ar-draft-day-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.ar-draft-day-chip {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-sub);
+  cursor: pointer;
+}
+.ar-draft-day-chip.is-ok {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #15803d;
+}
+.ar-draft-day-chip.is-warn {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #b45309;
+}
+.ar-draft-day-chip.is-short {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+.ar-draft-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 16px;
+  margin-top: 14px;
+  align-items: start;
+}
+.ar-draft-grid-wrap,
+.ar-draft-warning-wrap {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fafcff;
+  padding: 12px;
+}
+.ar-draft-grid-empty,
+.ar-draft-warning-empty {
+  font-size: 12px;
+  color: var(--text-light);
+  line-height: 1.6;
+}
+.ar-draft-warning-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 8px;
+}
+.ar-draft-warning-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ar-draft-warning-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 9px 10px;
+}
+.ar-draft-warning-kind {
+  font-size: 11px;
+  font-weight: 700;
+  color: #b45309;
+}
+.ar-draft-warning-msg {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-sub);
+  line-height: 1.5;
+}
+.ar-draft-grid-scroll {
+  overflow: auto;
+}
+.ar-draft-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+}
+.ar-draft-table th,
+.ar-draft-table td {
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  min-width: 44px;
+  text-align: center;
+  padding: 6px 4px;
+  background: #fff;
+}
+.ar-draft-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f8fafc;
+  font-weight: 700;
+}
+.ar-draft-table .is-sticky {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  min-width: 116px;
+  text-align: left;
+  background: #f8fafc;
+}
+.ar-draft-table tbody .is-sticky {
+  background: #fff;
+  z-index: 1;
+}
+.ar-draft-table tr:first-child th {
+  border-top: 1px solid var(--border);
+}
+.ar-draft-table th:first-child,
+.ar-draft-table td:first-child {
+  border-left: 1px solid var(--border);
+}
+.ar-draft-emp-name {
+  font-weight: 700;
+  color: var(--text-main);
+}
+.ar-draft-emp-meta {
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--text-light);
+}
+.ar-draft-cell-empty {
+  color: var(--text-light);
+}
+.ar-draft-cell-fixed-off {
+  background: #eef2ff !important;
+  color: #4338ca;
+  font-weight: 700;
+}
+.ar-draft-cell-fixed-work {
+  background: #ecfeff !important;
+  color: #0f766e;
+  font-weight: 700;
+}
+.ar-draft-cell-auto {
+  background: #eff6ff !important;
+  color: #1d4ed8;
+  font-weight: 700;
+}
+@media (max-width: 1024px) {
+  .ar-draft-layout {
+    grid-template-columns: 1fr;
+  }
 }
