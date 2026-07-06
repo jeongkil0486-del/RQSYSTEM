@@ -273,11 +273,17 @@ function arWireButtonsOnce() {
         saveBtn.dataset.arWired = "1";
     }
     if (draftGenerateTopBtn && !draftGenerateTopBtn.dataset.arWired) {
-        draftGenerateTopBtn.addEventListener("click", arGenerateDraft);
+        draftGenerateTopBtn.addEventListener("click", function() {
+            console.log("[auto-schedule:draft] button clicked");
+            arGenerateDraft();
+        });
         draftGenerateTopBtn.dataset.arWired = "1";
     }
     if (draftGenerateBtn && !draftGenerateBtn.dataset.arWired) {
-        draftGenerateBtn.addEventListener("click", arGenerateDraft);
+        draftGenerateBtn.addEventListener("click", function() {
+            console.log("[auto-schedule:draft] button clicked");
+            arGenerateDraft();
+        });
         draftGenerateBtn.dataset.arWired = "1";
     }
     if (draftResetBtn && !draftResetBtn.dataset.arWired) {
@@ -1090,6 +1096,77 @@ function arBuildDaySummaries(draftState) {
     });
 }
 
+function arGetDraftCandidateCodeNames() {
+    var nameSet = {};
+
+    Object.keys(arMonthState.dailyRequirements || {}).forEach(function(dayKey) {
+        var requirement = arMonthState.dailyRequirements[dayKey];
+        if (!requirement) return;
+
+        Object.keys(requirement.byCode || {}).forEach(function(codeName) {
+            if ((parseInt(requirement.byCode[codeName], 10) || 0) > 0) nameSet[codeName] = true;
+        });
+
+        Object.keys(requirement.byGroupCode || {}).forEach(function(groupLetter) {
+            Object.keys((requirement.byGroupCode || {})[groupLetter] || {}).forEach(function(codeName) {
+                if ((parseInt(requirement.byGroupCode[groupLetter][codeName], 10) || 0) > 0) nameSet[codeName] = true;
+            });
+        });
+    });
+
+    return Object.keys(nameSet);
+}
+
+function arBuildDraftRequirementLogMap() {
+    var logMap = {};
+
+    Object.keys(arMonthState.dailyRequirements || {}).forEach(function(dayKey) {
+        var requirement = arMonthState.dailyRequirements[dayKey];
+        if (!requirement) return;
+
+        logMap[dayKey] = {
+            totalRequired: requirement.totalRequired,
+            byCode: Object.assign({}, requirement.byCode || {}),
+            byGroupCode: arCloneGroupCodeMap(requirement.byGroupCode || {})
+        };
+    });
+
+    return logMap;
+}
+
+function arCollectDraftResultCounts(draftState) {
+    var totalAssignedCells = 0;
+    var fixedAssignedCells = 0;
+    var autoAssignedCells = 0;
+    var unassignedCellCount = 0;
+    var groupShortageCount = 0;
+
+    Object.keys(draftState.assignmentsByDay || {}).forEach(function(dayKey) {
+        Object.keys(draftState.assignmentsByDay[dayKey] || {}).forEach(function(uid) {
+            var entry = draftState.assignmentsByDay[dayKey][uid];
+            if (!arIsWorkEntry(entry)) return;
+
+            totalAssignedCells += 1;
+            if (entry.type === "fixed") fixedAssignedCells += 1;
+            if (entry.type === "auto") autoAssignedCells += 1;
+        });
+    });
+
+    Object.keys(draftState.daySummaries || {}).forEach(function(dayKey) {
+        var summary = draftState.daySummaries[dayKey] || {};
+        unassignedCellCount += parseInt(summary.codeMissingCount, 10) || 0;
+        groupShortageCount += parseInt(summary.groupMissingCount, 10) || 0;
+    });
+
+    return {
+        totalAssignedCells: totalAssignedCells,
+        fixedAssignedCells: fixedAssignedCells,
+        autoAssignedCells: autoAssignedCells,
+        unassignedCellCount: unassignedCellCount,
+        groupShortageCount: groupShortageCount
+    };
+}
+
 function arRenderDraftDaySummary() {
     var container = document.getElementById("arDraftDaySummary");
     if (!container) return;
@@ -1235,6 +1312,7 @@ function arResetDraftState() {
 }
 
 function arGenerateDraft() {
+    console.log("[auto-schedule:draft] arGenerateDraft started");
     if (!isAdmin && !isSuperAdmin) return;
     if (!arMonthState.yyyymm) return;
 
@@ -1259,6 +1337,21 @@ function arGenerateDraft() {
             var employees = arBuildDraftEmployees();
             if (!employees.length) throw new Error("초안 생성 대상 직원이 없습니다.");
 
+            var loadedCodeList = (arMonthState.activeCodes || []).map(function(code) {
+                return {
+                    name: code.name,
+                    displayName: code.displayName || "",
+                    active: code.active !== false
+                };
+            });
+            var candidateCodeNames = arGetDraftCandidateCodeNames();
+            var requirementLogMap = arBuildDraftRequirementLogMap();
+
+            console.log("[auto-schedule:draft] loaded schedule codes:", loadedCodeList);
+            console.log("[auto-schedule:draft] auto assignment candidate codes:", candidateCodeNames);
+            console.log("[auto-schedule:draft] employee count:", employees.length);
+            console.log("[auto-schedule:draft] daily requirements:", requirementLogMap);
+
             var fixedAssignments = arBuildFixedAssignments(arMonthState.yyyymm, employees);
             var draftState = arCreateDraftState(arMonthState.yyyymm, employees, fixedAssignments);
 
@@ -1271,6 +1364,11 @@ function arGenerateDraft() {
             arBuildShortageWarnings(draftState);
             arBuildPatternWarnings(draftState);
             arBuildDaySummaries(draftState);
+
+            var draftCounts = arCollectDraftResultCounts(draftState);
+            console.log("[auto-schedule:draft] assigned cell counts:", draftCounts);
+            console.log("[auto-schedule:draft] actual assigned cells:", draftCounts.autoAssignedCells);
+            console.log("[auto-schedule:draft] unassigned cells:", draftCounts.unassignedCellCount);
 
             arDraftState = draftState;
             arRenderCalendarGrid();
