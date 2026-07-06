@@ -1136,6 +1136,7 @@ function arCreateDraftState(yyyymm, employees, fixedAssignments) {
         daySummaries: {},
         holidayPolicy: arBuildHolidayPolicy(yyyymm, employees),
         holidaySummaryByUid: {},
+        holidayBlockReasonsByUid: {},
         warnings: [],
         warningsByDay: {}
     };
@@ -1230,11 +1231,14 @@ function arGetRemainingGroupNeed(draftState, dayKey, groupLetter) {
 }
 
 function arEvaluateAutoOffDay(draftState, employee, dayKey) {
-    if (arGetDraftAssignment(draftState, employee.uid, dayKey)) {
+    var existingEntry = arGetDraftAssignment(draftState, employee.uid, dayKey);
+    if (existingEntry) {
         return {
             allowed: false,
-            reason: "fixed_exists",
-            dayKey: dayKey
+            reason: arIsOffEntry(existingEntry) ? "existing_off" : "fixed_exists",
+            dayKey: dayKey,
+            entryType: existingEntry.valueType || "",
+            entrySource: existingEntry.source || ""
         };
     }
 
@@ -1276,7 +1280,7 @@ function arEvaluateAutoOffDay(draftState, employee, dayKey) {
     if (remainingEmptyAfterOff < remainingWorkNeed) {
         return {
             allowed: false,
-            reason: "day_off_limit",
+            reason: "required_work_risk",
             dayKey: dayKey,
             remainingWorkNeed: remainingWorkNeed,
             remainingEmptyAfterOff: remainingEmptyAfterOff
@@ -1311,20 +1315,118 @@ function arEvaluateAutoOffDay(draftState, employee, dayKey) {
     };
 }
 
-function arBuildAutoOffDayCandidates(draftState, employee) {
+function arIsEffectiveWorkdayForHoliday(entry) {
+    return !arIsOffEntry(entry);
+}
+
+function arGetHolidayBlockReasonLabel(info) {
+    if (!info) return "";
+    var dayText = (info.dayKey || "") ? (parseInt(info.dayKey, 10) + "일 ") : "";
+    if (info.reason === "day_off_limit") {
+        return dayText + "일별 최대 휴무 초과";
+    }
+    if (info.reason === "group_min_risk") {
+        return dayText + (info.groupLetter || "-") + "조 최소 근무 인원 부족";
+    }
+    if (info.reason === "required_work_risk") {
+        return dayText + "전체 필요 근무 인원 부족";
+    }
+    if (info.reason === "fixed_exists") {
+        return dayText + "고정값 존재";
+    }
+    if (info.reason === "existing_off") {
+        return dayText + "이미 휴무성 값 존재";
+    }
+    return dayText + "배정 불가";
+}
+
+function arPushHolidayBlockReason(draftState, uid, info) {
+    if (!info || !info.reason) return;
+    if (!draftState.holidayBlockReasonsByUid[uid]) draftState.holidayBlockReasonsByUid[uid] = [];
+
+    var reasonKey = [info.reason || "", info.dayKey || "", info.groupLetter || ""].join("|");
+    var reasonList = draftState.holidayBlockReasonsByUid[uid];
+    var exists = reasonList.some(function(item) {
+        return item.reasonKey === reasonKey;
+    });
+    if (exists) return;
+
+    reasonList.push({
+        reasonKey: reasonKey,
+        reason: info.reason || "",
+        dayKey: info.dayKey || "",
+        groupLetter: info.groupLetter || "",
+        message: arGetHolidayBlockReasonLabel(info)
+    });
+}
+
+function arGetHolidayWorkSpanMeta(draftState, uid, dayNum) {
+    var meta = arGetMonthMeta(draftState.yyyymm);
+    var prev = dayNum - 1;
+    var next = dayNum + 1;
+    var before = 0;
+    var after = 0;
+
+    while (prev >= 1) {
+        if (!arIsEffectiveWorkdayForHoliday(arGetDraftAssignment(draftState, uid, String(prev)))) break;
+        before += 1;
+        prev -= 1;
+    }
+
+    while (next <= meta.totalDays) {
+        if (!arIsEffectiveWorkdayForHoliday(arGetDraftAssignment(draftState, uid, String(next)))) break;
+        after += 1;
+        next += 1;
+    }
+
+    var span = before + 1 + after;
+    var position = before + 1;
+    var center = (span + 1) / 2;
+
+    return {
+        before: before,
+        after: after,
+        span: span,
+        position: position,
+        centerDistance: Math.abs(position - center)
+    };
+}
+
+function arGetNearestOffDistance(draftState, uid, dayNum) {
+    var meta = arGetMonthMeta(draftState.yyyymm);
+    var best = null;
+
+    for (var scan = 1; scan <= meta.totalDays; scan++) {
+        if (scan === dayNum) continue;
+        var entry = arGetDraftAssignment(draftState, uid, String(scan));
+        if (!arIsOffEntry(entry)) continue;
+
+        var distance = Math.abs(scan - dayNum);
+        if (best === null || distance < best) best = distance;
+    }
+
+    return best;
+}
+
+function arBuildAutoOffDayCandidates(draftState, employee, passName) {
     var meta = arGetMonthMeta(draftState.yyyymm);
     var candidates = [];
 
     for (var dayNum = 1; dayNum <= meta.totalDays; dayNum++) {
         var dayKey = String(dayNum);
         var evaluation = arEvaluateAutoOffDay(draftState, employee, dayKey);
-        if (!evaluation.allowed) continue;
+        if (!evaluation.allowed) {
+            arPushHolidayBlockReason(draftState, employee.uid, evaluation);
+            continue;
+        }
 
         var requirement = (arMonthState.dailyRequirements || {})[dayKey];
         var requiredWork = arGetRequiredWorkCount(requirement);
         var assignedCount = arCountDayAssignedEntries(draftState, dayKey);
         var slack = draftState.employees.length - assignedCount - requiredWork;
         var score = 0;
+        var spanMeta = arGetHolidayWorkSpanMeta(draftState, employee.uid, dayNum);
+        var nearestOffDistance = arGetNearestOffDistance(draftState, employee.uid, dayNum);
 
         if (new Date(meta.year, meta.month - 1, dayNum).getDay() === 0) score += 100;
         if (!requirement) score += 60;
@@ -1337,9 +1439,23 @@ function arBuildAutoOffDayCandidates(draftState, employee) {
             score += Math.max(0, groupSlack) * 4;
         }
 
+        if (passName === "break_streak") {
+            if (spanMeta.span >= 5) score += 600 + (spanMeta.span * 30);
+            score += Math.max(0, 120 - Math.round(spanMeta.centerDistance * 30));
+        } else if (passName === "balance_gap") {
+            score += Math.min(nearestOffDistance == null ? 12 : nearestOffDistance, 12) * 18;
+            score += Math.max(0, spanMeta.span - 2) * 12;
+            score += Math.max(0, 60 - Math.round(spanMeta.centerDistance * 16));
+        } else {
+            score += Math.min(nearestOffDistance == null ? 10 : nearestOffDistance, 10) * 10;
+            score += Math.max(0, 40 - Math.round(spanMeta.centerDistance * 12));
+        }
+
         candidates.push({
             dayKey: dayKey,
-            score: score
+            score: score,
+            spanMeta: spanMeta,
+            nearestOffDistance: nearestOffDistance
         });
     }
 
@@ -1351,36 +1467,47 @@ function arBuildAutoOffDayCandidates(draftState, employee) {
     return candidates;
 }
 
-function arGetPreferredHolidayWarningInfo(draftState, employee) {
-    var meta = arGetMonthMeta(draftState.yyyymm);
-    var ranked = [];
+function arGetHolidayShortageReasonTexts(draftState, employee, limit) {
+    var items = (draftState.holidayBlockReasonsByUid[employee.uid] || []).slice();
+    items.sort(function(a, b) {
+        var dayA = parseInt(a.dayKey || "999", 10);
+        var dayB = parseInt(b.dayKey || "999", 10);
+        if (dayA !== dayB) return dayA - dayB;
+        return String(a.reason || "").localeCompare(String(b.reason || ""));
+    });
+    return items.slice(0, limit || 6).map(function(item) {
+        return item.message;
+    });
+}
 
-    for (var dayNum = 1; dayNum <= meta.totalDays; dayNum++) {
-        var dayKey = String(dayNum);
-        if (arGetDraftAssignment(draftState, employee.uid, dayKey)) continue;
+function arHasHolidayShortage(draftState, employee) {
+    var target = draftState.holidayPolicy.targetsByUid[employee.uid] || 0;
+    return arCountAssignedOffDays(draftState, employee.uid) < target;
+}
 
-        var evaluation = arEvaluateAutoOffDay(draftState, employee, dayKey);
-        if (evaluation.allowed || evaluation.reason === "fixed_exists") continue;
+function arRunHolidayAssignmentPass(draftState, passName) {
+    var madeProgress = false;
+    var pending = draftState.employees.slice();
 
-        var score = 0;
-        if (new Date(meta.year, meta.month - 1, dayNum).getDay() === 0) score += 100;
-        if (!(arMonthState.dailyRequirements || {})[dayKey]) score += 40;
-        if (evaluation.reason === "group_min_risk") score += 20;
-
-        ranked.push({
-            dayKey: dayKey,
-            score: score,
-            reason: evaluation.reason,
-            groupLetter: evaluation.groupLetter || ""
-        });
-    }
-
-    ranked.sort(function(a, b) {
-        if (b.score !== a.score) return b.score - a.score;
-        return parseInt(a.dayKey, 10) - parseInt(b.dayKey, 10);
+    pending.sort(function(a, b) {
+        var targetA = draftState.holidayPolicy.targetsByUid[a.uid] || 0;
+        var targetB = draftState.holidayPolicy.targetsByUid[b.uid] || 0;
+        var currentA = arCountAssignedOffDays(draftState, a.uid);
+        var currentB = arCountAssignedOffDays(draftState, b.uid);
+        return (targetB - currentB) - (targetA - currentA);
     });
 
-    return ranked.length ? ranked[0] : null;
+    pending.forEach(function(employee) {
+        if (!arHasHolidayShortage(draftState, employee)) return;
+
+        var candidates = arBuildAutoOffDayCandidates(draftState, employee, passName);
+        if (!candidates.length) return;
+
+        arApplyAutoOffAssignment(draftState, candidates[0].dayKey, employee);
+        madeProgress = true;
+    });
+
+    return madeProgress;
 }
 
 function arCountDayCoverage(draftState, dayKey) {
@@ -1470,7 +1597,7 @@ function arGetMaxWorkStreak(draftState, uid) {
 
     for (var dayNum = 1; dayNum <= meta.totalDays; dayNum++) {
         var entry = arGetDraftAssignment(draftState, uid, String(dayNum));
-        if (arIsWorkEntry(entry)) {
+        if (arIsEffectiveWorkdayForHoliday(entry)) {
             current += 1;
             if (current > best) best = current;
         } else {
@@ -1543,55 +1670,34 @@ function arApplyAutoOffAssignment(draftState, dayKey, employee) {
 }
 
 function arAssignHolidayGuarantees(draftState) {
-    var pending = draftState.employees.map(function(employee) {
-        return {
-            employee: employee,
-            blockedInfo: null
-        };
+    var passNames = ["break_streak", "balance_gap", "fill_remaining"];
+
+    passNames.forEach(function(passName) {
+        var keepRunning = true;
+        while (keepRunning) {
+            keepRunning = arRunHolidayAssignmentPass(draftState, passName);
+        }
     });
 
-    var madeProgress = true;
+    draftState.employees.forEach(function(employee) {
+        if (arHasHolidayShortage(draftState, employee)) {
+            arBuildAutoOffDayCandidates(draftState, employee, "fill_remaining");
+        }
 
-    pending.sort(function(a, b) {
-        var targetA = draftState.holidayPolicy.targetsByUid[a.employee.uid] || 0;
-        var targetB = draftState.holidayPolicy.targetsByUid[b.employee.uid] || 0;
-        return targetB - targetA;
-    });
-
-    while (madeProgress) {
-        madeProgress = false;
-
-        pending.forEach(function(item) {
-            var employee = item.employee;
-            var target = draftState.holidayPolicy.targetsByUid[employee.uid] || 0;
-            var currentOff = arCountAssignedOffDays(draftState, employee.uid);
-            if (currentOff >= target) return;
-
-            var candidates = arBuildAutoOffDayCandidates(draftState, employee);
-            if (!candidates.length) {
-                if (!item.blockedInfo) item.blockedInfo = arGetPreferredHolidayWarningInfo(draftState, employee);
-                return;
-            }
-
-            arApplyAutoOffAssignment(draftState, candidates[0].dayKey, employee);
-            madeProgress = true;
-        });
-    }
-
-    pending.forEach(function(item) {
-        var employee = item.employee;
         var target = draftState.holidayPolicy.targetsByUid[employee.uid] || 0;
         var fixedOff = arCountAssignedOffDays(draftState, employee.uid, "fixed");
         var autoOff = arCountAssignedOffDays(draftState, employee.uid, "auto");
         var shortage = Math.max(0, target - (fixedOff + autoOff));
+        var reasonTexts = arGetHolidayShortageReasonTexts(draftState, employee, 6);
 
         draftState.holidaySummaryByUid[employee.uid] = {
             target: target,
             fixedOff: fixedOff,
             autoOff: autoOff,
             shortage: shortage,
-            warningDayKey: item.blockedInfo ? item.blockedInfo.dayKey : "",
-            warningInfo: item.blockedInfo || null
+            blockedReasons: reasonTexts,
+            warningDayKey: reasonTexts.length ? ((draftState.holidayBlockReasonsByUid[employee.uid] || [])[0] || {}).dayKey || "" : "",
+            warningInfo: reasonTexts.length ? ((draftState.holidayBlockReasonsByUid[employee.uid] || [])[0] || null) : null
         };
     });
 }
@@ -1744,14 +1850,14 @@ function arBuildPatternWarnings(draftState) {
         for (var dayNum = 1; dayNum <= meta.totalDays; dayNum++) {
             var dayKey = String(dayNum);
             var entry = arGetDraftAssignment(draftState, employee.uid, dayKey);
-            if (arIsWorkEntry(entry)) {
+            if (arIsEffectiveWorkdayForHoliday(entry)) {
                 if (streakStart === null) streakStart = dayNum;
                 streakCount += 1;
 
                 var prevEntry = arGetDraftAssignment(draftState, employee.uid, String(dayNum - 1));
                 var prevSlot = arInferCodeSlot(arGetEntryCode(prevEntry));
                 var curSlot = arInferCodeSlot(arGetEntryCode(entry));
-                if (prevSlot === "afternoon" && curSlot === "morning") {
+                if (arIsWorkEntry(prevEntry) && arIsWorkEntry(entry) && prevSlot === "afternoon" && curSlot === "morning") {
                     arAddDraftWarning(draftState, {
                         kind: "pm_to_am",
                         dayKey: dayKey,
@@ -2456,6 +2562,80 @@ function arRenderDayDetailPanel(dayKey) {
 
     html += "</div>";
     panel.innerHTML = html;
+}
+
+function arBuildHolidayShortageWarnings(draftState) {
+    var riskMap = {};
+
+    draftState.employees.forEach(function(employee) {
+        var summary = draftState.holidaySummaryByUid[employee.uid];
+        if (!summary || summary.shortage <= 0) return;
+
+        var reasonText = (summary.blockedReasons || []).length
+            ? " / 실패 사유: " + summary.blockedReasons.join(", ")
+            : "";
+
+        arAddDraftWarning(draftState, {
+            kind: "holiday_shortage",
+            dayKey: summary.warningDayKey || "",
+            uid: employee.uid,
+            employeeName: employee.name,
+            missing: summary.shortage,
+            message: employee.name + ": 목표 " + summary.target + " / 고정 " + summary.fixedOff + " / 자동 " + summary.autoOff + " / 부족 " + summary.shortage + reasonText
+        });
+
+        (draftState.holidayBlockReasonsByUid[employee.uid] || []).forEach(function(info) {
+            if (!info || !info.dayKey) return;
+
+            var riskKey = [info.reason, info.groupLetter || "", info.dayKey].join("|");
+            if (riskMap[riskKey]) return;
+            riskMap[riskKey] = true;
+
+            if (info.reason === "group_min_risk") {
+                arAddDraftWarning(draftState, {
+                    kind: "group_off_risk",
+                    dayKey: info.dayKey,
+                    groupLetter: info.groupLetter,
+                    message: info.groupLetter + "조 " + arMonthState.yyyymm.slice(4, 6) + "월 " + info.dayKey + "일 조별 최소 근무 인원 부족 위험"
+                });
+                return;
+            }
+
+            if (info.reason === "day_off_limit") {
+                arAddDraftWarning(draftState, {
+                    kind: "day_off_limit",
+                    dayKey: info.dayKey,
+                    message: arMonthState.yyyymm.slice(4, 6) + "월 " + info.dayKey + "일 일별 최대 휴무 제한"
+                });
+                return;
+            }
+
+            if (info.reason === "required_work_risk") {
+                arAddDraftWarning(draftState, {
+                    kind: "day_off_limit",
+                    dayKey: info.dayKey,
+                    message: arMonthState.yyyymm.slice(4, 6) + "월 " + info.dayKey + "일 전체 필요 근무 인원 부족 위험"
+                });
+            }
+        });
+    });
+}
+
+function arGetHolidaySummaryLine(draftState, employee) {
+    var summary = (draftState.holidaySummaryByUid || {})[employee.uid] || {};
+    var groupLabel = employee.group === "POOL" ? "미지정조" : employee.group + "조";
+    var maxStreak = arGetMaxWorkStreak(draftState, employee.uid);
+    var baseLine = groupLabel
+        + " | 목표 " + (summary.target || 0)
+        + " | 고정 " + (summary.fixedOff || 0)
+        + " | 자동 " + (summary.autoOff || 0)
+        + " | 부족 " + (summary.shortage || 0)
+        + " | 최대연속 " + maxStreak + "일";
+    var reasonLine = (summary.blockedReasons || []).length
+        ? "<span class='ar-draft-emp-reasons'>사유: " + summary.blockedReasons.join(", ") + "</span>"
+        : "";
+
+    return baseLine + (reasonLine ? "<br>" + reasonLine : "");
 }
 
 function arLoadMonth() {

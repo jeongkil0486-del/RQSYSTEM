@@ -2028,6 +2028,10 @@ body {
   white-space: normal;
   min-width: 180px;
 }
+.ar-draft-emp-reasons {
+  color: #b45309;
+  font-weight: 600;
+}
 .ar-draft-cell-empty {
   color: var(--text-light);
 }
