@@ -11,7 +11,9 @@
 var arMonthState = {
     yyyymm: "",
     activeCodes: [],
-    dailyRequirements: {}
+    dailyRequirements: {},
+    monthlyHolidayTarget: null,
+    dailyHolidayCaps: {}
 };
 
 var arSelectedDays = [];
@@ -167,6 +169,35 @@ function arCloneDailyRequirements(source) {
     return next;
 }
 
+function arCloneDailyHolidayCaps(source) {
+    var next = {};
+    Object.keys(source || {}).forEach(function(dayKey) {
+        var count = parseInt(source[dayKey], 10);
+        if (Number.isFinite(count) && count > 0) {
+            next[String(parseInt(dayKey, 10))] = count;
+        }
+    });
+    return next;
+}
+
+function arGetDefaultMonthlyHolidayTarget(yyyymm) {
+    var configured = parseInt(arGetConfigValue("rq_config_global_user_max", ""), 10);
+    if (Number.isFinite(configured) && configured > 0) return configured;
+    return arCountMonthSundays(yyyymm || arMonthState.yyyymm || arGetSelectedYyyymm());
+}
+
+function arGetMonthlyHolidayTargetValue() {
+    var val = parseInt(arMonthState.monthlyHolidayTarget, 10);
+    if (Number.isFinite(val) && val > 0) return val;
+    return arGetDefaultMonthlyHolidayTarget(arMonthState.yyyymm);
+}
+
+function arGetDailyHolidayCap(dayKey) {
+    var raw = arMonthState.dailyHolidayCaps[String(dayKey)];
+    var val = parseInt(raw, 10);
+    return Number.isFinite(val) && val > 0 ? val : null;
+}
+
 function arGetActiveCodesFromConfig(cfg) {
     var list = Array.isArray((cfg || {}).scheduleCodes) ? cfg.scheduleCodes : [];
     return list.filter(function(item) {
@@ -200,6 +231,24 @@ function arUpdateSelectionCountLabel() {
     var label = document.getElementById("arSelectionCount");
     if (!label) return;
     label.textContent = "선택일 " + arSelectedDays.length + "개";
+}
+
+function arSyncHolidayConfigInputs() {
+    var monthTargetEl = document.getElementById("arMonthlyHolidayTarget");
+    if (monthTargetEl) monthTargetEl.value = arGetMonthlyHolidayTargetValue() || "";
+
+    var dayCapEl = document.getElementById("arDailyHolidayCap");
+    if (!dayCapEl) return;
+    if (!arSelectedDays.length) {
+        dayCapEl.value = "";
+        return;
+    }
+
+    var firstCap = arGetDailyHolidayCap(arSelectedDays[0]);
+    var same = arSelectedDays.every(function(dayKey) {
+        return arGetDailyHolidayCap(dayKey) === firstCap;
+    });
+    dayCapEl.value = same && firstCap != null ? String(firstCap) : "";
 }
 
 function arEnsureDetailPanel() {
@@ -244,6 +293,7 @@ function arEnsureDraftPanel() {
         + "<div class='ar-draft-status-row'>"
         + "  <span id='arDraftStatus'></span>"
         + "</div>"
+        + "<div id='arDraftConfigSummary' class='ar-draft-config-summary'></div>"
         + "<div class='ar-draft-legend'>"
         + "  <span class='ar-legend-chip ar-legend-fixed-off'>고정 신청값</span>"
         + "  <span class='ar-legend-chip ar-legend-fixed-work'>고정 근무값</span>"
@@ -315,6 +365,10 @@ function arRenderRequirementTable() {
 
     var totalEl = document.getElementById("arTotalRequired");
     if (totalEl) totalEl.value = "";
+    var monthTargetEl = document.getElementById("arMonthlyHolidayTarget");
+    if (monthTargetEl) monthTargetEl.value = arGetMonthlyHolidayTargetValue() || "";
+    var dayCapEl = document.getElementById("arDailyHolidayCap");
+    if (dayCapEl) dayCapEl.value = "";
 
     var helpHtml = "<div style='font-size:12px; line-height:1.55; color:var(--text-sub); margin-bottom:10px;'>"
         + "필요인원 설정에는 <strong>근무코드 관리에서 사용중(active=true)인 코드만</strong> 표시됩니다.<br>"
@@ -500,12 +554,14 @@ function arToggleDaySelect(day) {
     if (idx >= 0) arSelectedDays.splice(idx, 1);
     else arSelectedDays.push(dayKey);
     arUpdateSelectionCountLabel();
+    arSyncHolidayConfigInputs();
 }
 
 function arClearSelection() {
     arSelectedDays = [];
     arRenderCalendarGrid();
     arUpdateSelectionCountLabel();
+    arSyncHolidayConfigInputs();
     arSetStatus("선택한 날짜를 해제했습니다.", "success");
 }
 
@@ -522,10 +578,12 @@ function arDeleteSelectedDaySettings() {
 
     arSelectedDays.forEach(function(dayKey) {
         delete arMonthState.dailyRequirements[dayKey];
+        delete arMonthState.dailyHolidayCaps[dayKey];
     });
 
     arRenderCalendarGrid();
     arRenderDayDetailPanel(arLastClickedDayKey);
+    arSyncHolidayConfigInputs();
     arSetStatus("선택한 날짜 설정을 삭제했습니다. 저장해야 최종 반영됩니다.", "success");
 }
 
@@ -577,6 +635,91 @@ function arCollectDayDataFromForm() {
     };
 }
 
+function arCollectDayDataFromForm() {
+    var totalEl = document.getElementById("arTotalRequired");
+    var totalRaw = totalEl ? String(totalEl.value || "").trim() : "";
+    var dailyCapEl = document.getElementById("arDailyHolidayCap");
+    var dailyCapRaw = dailyCapEl ? String(dailyCapEl.value || "").trim() : "";
+    var monthTargetEl = document.getElementById("arMonthlyHolidayTarget");
+    var monthTargetRaw = monthTargetEl ? String(monthTargetEl.value || "").trim() : "";
+
+    var totalRequired = null;
+    if (totalRaw) {
+        totalRequired = parseInt(totalRaw, 10);
+        if (!Number.isFinite(totalRequired) || totalRequired < 1) {
+            alert("전체 필요인원은 1명 이상이어야 합니다.");
+            arSetStatus("전체 필요인원을 확인해주세요.", "error");
+            return null;
+        }
+    }
+
+    var monthTarget = null;
+    if (monthTargetRaw) {
+        monthTarget = parseInt(monthTargetRaw, 10);
+        if (!Number.isFinite(monthTarget) || monthTarget < 1) {
+            alert("월 목표 휴무 개수는 1 이상이어야 합니다.");
+            arSetStatus("월 목표 휴무 개수를 확인해주세요.", "error");
+            return null;
+        }
+    }
+
+    var dailyHolidayCap = null;
+    if (dailyCapRaw) {
+        dailyHolidayCap = parseInt(dailyCapRaw, 10);
+        if (!Number.isFinite(dailyHolidayCap) || dailyHolidayCap < 1) {
+            alert("일별 최대 휴무 개수는 1 이상이어야 합니다.");
+            arSetStatus("일별 최대 휴무 개수를 확인해주세요.", "error");
+            return null;
+        }
+    }
+
+    var byCode = {};
+    document.querySelectorAll(".ar-code-input").forEach(function(input) {
+        var code = input.getAttribute("data-code");
+        var raw = String(input.value || "").trim();
+        if (!raw) return;
+
+        var count = parseInt(raw, 10);
+        if (Number.isFinite(count) && count > 0) byCode[code] = count;
+    });
+
+    var byGroupCode = {};
+    document.querySelectorAll(".ar-group-input").forEach(function(input) {
+        var code = input.getAttribute("data-code");
+        var groupLetter = input.getAttribute("data-group");
+        var raw = String(input.value || "").trim();
+        if (!raw) return;
+
+        var count = parseInt(raw, 10);
+        if (!Number.isFinite(count) || count <= 0) return;
+
+        if (!byGroupCode[groupLetter]) byGroupCode[groupLetter] = {};
+        byGroupCode[groupLetter][code] = count;
+    });
+
+    var hasRequirementInputs = totalRequired != null || Object.keys(byCode).length > 0 || Object.keys(byGroupCode).length > 0;
+    if (!hasRequirementInputs && dailyHolidayCap == null && monthTarget == null) {
+        alert("필요인원 또는 휴무 설정값을 입력해주세요.");
+        arSetStatus("적용할 값이 없습니다.", "error");
+        return null;
+    }
+    if (hasRequirementInputs && totalRequired == null) {
+        alert("필요인원을 적용하려면 전체 필요인원을 입력해주세요.");
+        arSetStatus("전체 필요인원이 있어야 필요인원 설정을 적용할 수 있습니다.", "error");
+        return null;
+    }
+
+    return {
+        monthlyHolidayTarget: monthTarget,
+        dailyHolidayCap: dailyHolidayCap,
+        requirementData: hasRequirementInputs ? {
+            totalRequired: totalRequired,
+            byCode: byCode,
+            byGroupCode: byGroupCode
+        } : null
+    };
+}
+
 function arApplyToSelectedDays() {
     if (!isAdmin && !isSuperAdmin) return;
     if (arSelectedDays.length === 0) {
@@ -588,16 +731,26 @@ function arApplyToSelectedDays() {
     var newDayData = arCollectDayDataFromForm();
     if (!newDayData) return;
 
+    if (newDayData.monthlyHolidayTarget != null) {
+        arMonthState.monthlyHolidayTarget = newDayData.monthlyHolidayTarget;
+    }
+
     arSelectedDays.forEach(function(dayKey) {
-        arMonthState.dailyRequirements[dayKey] = {
-            totalRequired: newDayData.totalRequired,
-            byCode: Object.assign({}, newDayData.byCode),
-            byGroupCode: arCloneGroupCodeMap(newDayData.byGroupCode)
-        };
+        if (newDayData.requirementData) {
+            arMonthState.dailyRequirements[dayKey] = {
+                totalRequired: newDayData.requirementData.totalRequired,
+                byCode: Object.assign({}, newDayData.requirementData.byCode),
+                byGroupCode: arCloneGroupCodeMap(newDayData.requirementData.byGroupCode)
+            };
+        }
+        if (newDayData.dailyHolidayCap != null) {
+            arMonthState.dailyHolidayCaps[dayKey] = newDayData.dailyHolidayCap;
+        }
     });
 
     arRenderCalendarGrid();
     arRenderDayDetailPanel(arLastClickedDayKey);
+    arSyncHolidayConfigInputs();
     arSetStatus(arSelectedDays.length + "개 날짜에 적용했습니다. 달력에서 바로 확인한 뒤 저장해주세요.", "success");
 }
 
@@ -706,7 +859,9 @@ function arIsOffEntry(entry) {
 function arBuildHolidayPolicy(yyyymm, employees) {
     var sundayCount = arCountMonthSundays(yyyymm);
     var configuredGlobalTarget = parseInt(arGetConfigValue("rq_config_global_user_max", ""), 10);
-    var defaultTarget = Number.isFinite(configuredGlobalTarget) && configuredGlobalTarget > 0 ? configuredGlobalTarget : sundayCount;
+    var monthTarget = arGetMonthlyHolidayTargetValue();
+    var defaultTarget = Number.isFinite(monthTarget) && monthTarget > 0 ? monthTarget
+        : (Number.isFinite(configuredGlobalTarget) && configuredGlobalTarget > 0 ? configuredGlobalTarget : sundayCount);
     var targetsByUid = {};
 
     employees.forEach(function(employee) {
@@ -726,6 +881,7 @@ function arBuildHolidayPolicy(yyyymm, employees) {
 
     return {
         sundayCount: sundayCount,
+        monthInputTarget: Number.isFinite(monthTarget) && monthTarget > 0 ? monthTarget : null,
         configuredGlobalTarget: Number.isFinite(configuredGlobalTarget) && configuredGlobalTarget > 0 ? configuredGlobalTarget : null,
         defaultTarget: defaultTarget,
         targetsByUid: targetsByUid
@@ -836,6 +992,14 @@ function arCountAssignedOffDays(draftState, uid, mode) {
     return total;
 }
 
+function arCountDayOffEntries(draftState, dayKey) {
+    var total = 0;
+    Object.keys(draftState.assignmentsByDay[dayKey] || {}).forEach(function(uid) {
+        if (arIsOffEntry(draftState.assignmentsByDay[dayKey][uid])) total += 1;
+    });
+    return total;
+}
+
 function arGetRequiredWorkCount(requirement) {
     var byCodeTotal = 0;
     Object.keys((requirement || {}).byCode || {}).forEach(function(codeName) {
@@ -887,13 +1051,28 @@ function arEvaluateAutoOffDay(draftState, employee, dayKey) {
         };
     }
 
+    var dayCap = arGetDailyHolidayCap(dayKey);
+    if (dayCap != null) {
+        var currentOffCount = arCountDayOffEntries(draftState, dayKey);
+        if (currentOffCount >= dayCap) {
+            return {
+                allowed: false,
+                reason: "day_off_limit",
+                dayKey: dayKey,
+                dailyHolidayCap: dayCap,
+                currentOffCount: currentOffCount
+            };
+        }
+    }
+
     var requirement = (arMonthState.dailyRequirements || {})[dayKey];
     if (!requirement) {
         return {
             allowed: true,
             reason: "",
             dayKey: dayKey,
-            slack: draftState.employees.length - arCountDayAssignedEntries(draftState, dayKey)
+            slack: draftState.employees.length - arCountDayAssignedEntries(draftState, dayKey),
+            dailyHolidayCap: dayCap
         };
     }
 
@@ -940,7 +1119,8 @@ function arEvaluateAutoOffDay(draftState, employee, dayKey) {
         allowed: true,
         reason: "",
         dayKey: dayKey,
-        slack: remainingEmptyAfterOff - remainingWorkNeed
+        slack: remainingEmptyAfterOff - remainingWorkNeed,
+        dailyHolidayCap: dayCap
     };
 }
 
@@ -1361,7 +1541,7 @@ function arBuildHolidayShortageWarnings(draftState) {
             arAddDraftWarning(draftState, {
                 kind: "day_off_limit",
                 dayKey: info.dayKey,
-                message: arMonthState.yyyymm.slice(4, 6) + "월 " + info.dayKey + "일: 하루 전체 휴무 인원 상한 도달 위험"
+                message: arMonthState.yyyymm.slice(4, 6) + "월 " + info.dayKey + "일: 하루 최대 휴무 " + (info.dailyHolidayCap || "-") + "명 제한"
             });
         }
     });
@@ -1774,9 +1954,26 @@ function arGetWarningKindLabel(kind) {
     return "경고";
 }
 
+function arRenderDraftConfigSummary() {
+    var el = document.getElementById("arDraftConfigSummary");
+    if (!el) return;
+
+    var monthTarget = arGetMonthlyHolidayTargetValue();
+    var capDays = Object.keys(arMonthState.dailyHolidayCaps || {}).length;
+    var defaultCapText = capDays ? (capDays + "개 날짜 개별 제한") : "개별 제한 없음";
+
+    if (!arDraftState) {
+        el.innerHTML = "월 목표 휴무 " + monthTarget + "일 / 일별 최대 휴무 " + defaultCapText;
+        return;
+    }
+
+    el.innerHTML = "월 목표 휴무 " + monthTarget + "일 / 일별 최대 휴무 " + defaultCapText + " / 직원별 개인 override 우선 적용";
+}
+
 function arRenderDraftUi() {
     arEnsureDraftPanel();
     arWireButtonsOnce();
+    arRenderDraftConfigSummary();
     arRenderDraftDaySummary();
     arRenderDraftGrid();
     arRenderDraftWarnings();
@@ -1794,6 +1991,19 @@ function arGenerateDraft() {
     console.log("[auto-schedule:draft] arGenerateDraft started");
     if (!isAdmin && !isSuperAdmin) return;
     if (!arMonthState.yyyymm) return;
+
+    var monthTargetEl = document.getElementById("arMonthlyHolidayTarget");
+    if (monthTargetEl) {
+        var monthTargetRaw = String(monthTargetEl.value || "").trim();
+        if (monthTargetRaw) {
+            var monthTarget = parseInt(monthTargetRaw, 10);
+            if (!Number.isFinite(monthTarget) || monthTarget < 1) {
+                arSetDraftStatus("월 목표 휴무 개수를 확인해주세요.", "error");
+                return;
+            }
+            arMonthState.monthlyHolidayTarget = monthTarget;
+        }
+    }
 
     var generateTopBtn = document.getElementById("arDraftGenerateTopBtn");
     var generateBtn = document.getElementById("arDraftGenerateBtn");
@@ -1828,6 +2038,8 @@ function arGenerateDraft() {
             console.log("[auto-schedule:draft] loaded schedule codes:", loadedCodeList);
             console.log("[auto-schedule:draft] employee count:", employees.length);
             console.log("[auto-schedule:draft] daily requirements:", requirementLogMap);
+            console.log("[auto-schedule:draft] monthly holiday target:", arGetMonthlyHolidayTargetValue());
+            console.log("[auto-schedule:draft] daily holiday caps:", Object.assign({}, arMonthState.dailyHolidayCaps || {}));
 
             var fixedAssignments = arBuildFixedAssignments(arMonthState.yyyymm, employees);
             var draftState = arCreateDraftState(arMonthState.yyyymm, employees, fixedAssignments);
@@ -1963,7 +2175,10 @@ function arRenderDayDetailPanel(dayKey) {
     }
 
     var requirement = arMonthState.dailyRequirements[dayKey];
+    var dayCap = arGetDailyHolidayCap(dayKey);
     var html = "<div class='ar-day-detail-title'>" + title + "</div><div class='ar-day-detail-body'>";
+
+    html += "<div class='ar-day-detail-draft-summary'>월 목표 휴무 " + arGetMonthlyHolidayTargetValue() + "일 / 이 날짜 최대 휴무 " + (dayCap != null ? dayCap + "명" : "제한 없음") + "</div>";
 
     if (!requirement) {
         html += "<div class='ar-day-detail-empty'>이 날짜에는 저장된 필요인원 설정이 없습니다.</div>";
@@ -2024,6 +2239,8 @@ function arLoadMonth() {
         arMonthState.yyyymm = yyyymm;
         arMonthState.activeCodes = arGetActiveCodesFromConfig(cfg);
         arMonthState.dailyRequirements = arCloneDailyRequirements(cfg.dailyRequirements || {});
+        arMonthState.monthlyHolidayTarget = arGetDefaultMonthlyHolidayTarget(yyyymm);
+        arMonthState.dailyHolidayCaps = {};
         arSelectedDays = [];
         arLastClickedDayKey = "";
         arDraftState = null;
@@ -2035,6 +2252,7 @@ function arLoadMonth() {
         arRenderDayDetailPanel("");
         arRenderDraftUi();
         arUpdateSelectionCountLabel();
+        arSyncHolidayConfigInputs();
         arSetDraftStatus("", "");
         arSetStatus("", "");
     }).catch(function(e) {

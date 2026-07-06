@@ -1919,6 +1919,13 @@ body {
   background: #fafcff;
   padding: 12px;
 }
+.ar-draft-config-summary {
+  margin-top: 10px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--text-sub);
+  line-height: 1.5;
+}
 .ar-draft-grid-empty,
 .ar-draft-warning-empty {
   font-size: 12px;

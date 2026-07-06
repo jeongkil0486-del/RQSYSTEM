@@ -704,6 +704,14 @@
 
                         <!-- 상단: 입력 패널 (전체/코드별/조별 + 적용/저장 버튼) -->
                         <div class="form-row">
+                            <label class="form-label">월 목표 휴무 개수</label>
+                            <input type="number" id="arMonthlyHolidayTarget" min="1" max="31" class="form-input small small-num-input" placeholder="예: 8">
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">일별 최대 휴무 개수</label>
+                            <input type="number" id="arDailyHolidayCap" min="1" max="999" class="form-input small small-num-input" placeholder="예: 4">
+                        </div>
+                        <div class="form-row">
                             <label class="form-label">전체 필요인원</label>
                             <input type="number" id="arTotalRequired" min="0" max="999" class="form-input small small-num-input" placeholder="예: 18">
                         </div>
