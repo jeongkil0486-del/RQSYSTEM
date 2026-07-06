@@ -295,9 +295,10 @@ function arEnsureDraftPanel() {
         + "</div>"
         + "<div id='arDraftConfigSummary' class='ar-draft-config-summary'></div>"
         + "<div class='ar-draft-legend'>"
-        + "  <span class='ar-legend-chip ar-legend-fixed-off'>고정 신청값</span>"
+        + "  <span class='ar-legend-chip ar-legend-fixed-request-off'>직원 신청/고정 휴무</span>"
         + "  <span class='ar-legend-chip ar-legend-fixed-work'>고정 근무값</span>"
-        + "  <span class='ar-legend-chip ar-legend-auto'>자동배정값</span>"
+        + "  <span class='ar-legend-chip ar-legend-auto-generated-off'>AI 자동 휴무</span>"
+        + "  <span class='ar-legend-chip ar-legend-empty'>빈칸</span>"
         + "</div>"
         + "<div id='arDraftDaySummary' class='ar-draft-day-summary'></div>"
         + "<div class='ar-draft-layout'>"
@@ -489,6 +490,14 @@ function arGetDraftDayBadge(dayKey) {
     if (!arDraftState || !arDraftState.daySummaries || !arDraftState.daySummaries[dayKey]) return "";
 
     var summary = arDraftState.daySummaries[dayKey];
+    var fixedOffCount = summary.fixedOffCount || 0;
+    var autoOffCount = summary.autoOffCount || 0;
+    if (fixedOffCount > 0 || autoOffCount > 0) {
+        var parts = [];
+        if (fixedOffCount > 0) parts.push("<span class='ar-draft-cell-badge-fixed-request-off'>신청휴무 " + fixedOffCount + "</span>");
+        if (autoOffCount > 0) parts.push("<span class='ar-draft-cell-badge-auto-generated-off'>자동휴무 " + autoOffCount + "</span>");
+        return "<div class='ar-draft-cell-badge-group'>" + parts.join("") + "</div>";
+    }
     if (summary.totalMissing > 0) {
         return "<div class='ar-draft-cell-badge ar-draft-cell-badge-short'>부족 " + summary.totalMissing + "</div>";
     }
@@ -1979,8 +1988,9 @@ function arGetGridCellText(entry) {
 
 function arGetGridCellClass(entry) {
     if (!entry) return "ar-draft-cell-empty";
-    if (entry.type === "fixed" && entry.source === "fixed_request") return "ar-draft-cell-fixed-off";
+    if (entry.type === "fixed" && entry.source === "fixed_request") return "ar-draft-cell-fixed-request-off ar-draft-cell-fixed-off";
     if (entry.type === "fixed" && entry.source === "fixed_work") return "ar-draft-cell-fixed-work";
+    if (entry.type === "auto" && entry.source === "auto_off") return "ar-draft-cell-auto-generated-off ar-draft-cell-auto";
     if (entry.type === "auto") return "ar-draft-cell-auto";
     return "ar-draft-cell-empty";
 }
@@ -2105,6 +2115,10 @@ function arGetHolidaySummaryLine(draftState, employee) {
         + " | 자동 " + (summary.autoOff || 0)
         + " | 부족 " + (summary.shortage || 0)
         + " | 최대연속 " + maxStreak + "일";
+}
+
+function arGetDayDetailEntryHtml(entryClass, text) {
+    return "<span class='ar-day-detail-entry " + entryClass + "'>" + text + "</span>";
 }
 
 function arGetGridCellText(entry) {
@@ -2327,8 +2341,15 @@ function arRenderDayDetailPanel(dayKey) {
             var entry = assignments[uid];
             var emp = arDraftState.employeesByUid[uid] || {};
             var line = (emp.name || uid) + " - " + (entry.label || arGetCodeLabel(entry.code));
-            if (entry.type === "fixed") fixedItems.push(line);
-            else if (entry.type === "auto") autoItems.push(line);
+            if (entry.type === "fixed" && entry.source === "fixed_request") {
+                fixedItems.push(arGetDayDetailEntryHtml("ar-day-detail-entry-fixed-request-off", line));
+            } else if (entry.type === "fixed") {
+                fixedItems.push(arGetDayDetailEntryHtml("ar-day-detail-entry-fixed-work", line));
+            } else if (entry.type === "auto" && entry.source === "auto_off") {
+                autoItems.push(arGetDayDetailEntryHtml("ar-day-detail-entry-auto-generated-off", line));
+            } else if (entry.type === "auto") {
+                autoItems.push(arGetDayDetailEntryHtml("ar-day-detail-entry-auto", line));
+            }
         });
 
         var summary = (arDraftState.daySummaries || {})[dayKey];
@@ -2424,9 +2445,9 @@ function arRenderDayDetailPanel(dayKey) {
         html += "<div class='ar-day-detail-section-title'>휴무 초안 결과</div>";
         html += "<div class='ar-day-detail-draft-summary'>고정 휴무 " + (summary.fixedOffCount || 0) + " / 자동 휴무 " + (summary.autoOffCount || 0) + " / 경고 " + (summary.warningCount || 0) + "</div>";
         html += "<div class='ar-day-detail-subtitle'>고정값</div>";
-        html += fixedItems.length ? "<div class='ar-day-detail-list'>" + fixedItems.join("<br>") + "</div>" : "<div class='ar-day-detail-empty'>고정값 없음</div>";
+        html += fixedItems.length ? "<div class='ar-day-detail-list'>" + fixedItems.join("") + "</div>" : "<div class='ar-day-detail-empty'>고정값 없음</div>";
         html += "<div class='ar-day-detail-subtitle'>자동 휴무</div>";
-        html += autoItems.length ? "<div class='ar-day-detail-list'>" + autoItems.join("<br>") + "</div>" : "<div class='ar-day-detail-empty'>자동 휴무 없음</div>";
+        html += autoItems.length ? "<div class='ar-day-detail-list'>" + autoItems.join("") + "</div>" : "<div class='ar-day-detail-empty'>자동 휴무 없음</div>";
 
         var warnings = (arDraftState.warningsByDay || {})[dayKey] || [];
         html += "<div class='ar-day-detail-subtitle'>경고</div>";

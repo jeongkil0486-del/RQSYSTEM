@@ -1870,17 +1870,21 @@ body {
   font-size: 11px;
   font-weight: 700;
 }
-.ar-legend-fixed-off {
-  background: #eef2ff;
-  color: #4338ca;
+.ar-legend-fixed-request-off {
+  background: #fef2f2;
+  color: #b91c1c;
 }
 .ar-legend-fixed-work {
   background: #ecfeff;
   color: #0f766e;
 }
-.ar-legend-auto {
+.ar-legend-auto-generated-off {
   background: #eff6ff;
   color: #1d4ed8;
+}
+.ar-legend-empty {
+  background: #f3f4f6;
+  color: #6b7280;
 }
 .ar-draft-day-summary {
   display: flex;
@@ -2027,9 +2031,10 @@ body {
 .ar-draft-cell-empty {
   color: var(--text-light);
 }
+.ar-draft-cell-fixed-request-off,
 .ar-draft-cell-fixed-off {
-  background: #eef2ff !important;
-  color: #4338ca;
+  background: #fef2f2 !important;
+  color: #b91c1c;
   font-weight: 700;
 }
 .ar-draft-cell-fixed-work {
@@ -2037,10 +2042,58 @@ body {
   color: #0f766e;
   font-weight: 700;
 }
+.ar-draft-cell-auto-generated-off,
 .ar-draft-cell-auto {
   background: #eff6ff !important;
   color: #1d4ed8;
   font-weight: 700;
+}
+.ar-draft-cell-badge-group {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: center;
+}
+.ar-draft-cell-badge-fixed-request-off,
+.ar-draft-cell-badge-auto-generated-off {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.ar-draft-cell-badge-fixed-request-off {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+.ar-draft-cell-badge-auto-generated-off {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.ar-day-detail-entry {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  margin: 0 6px 6px 0;
+  font-size: 12px;
+  font-weight: 700;
+}
+.ar-day-detail-entry-fixed-request-off {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+.ar-day-detail-entry-fixed-work {
+  background: #ecfeff;
+  color: #0f766e;
+}
+.ar-day-detail-entry-auto-generated-off,
+.ar-day-detail-entry-auto {
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 @media (max-width: 1024px) {
   .ar-draft-layout {
