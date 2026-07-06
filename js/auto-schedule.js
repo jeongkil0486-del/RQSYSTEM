@@ -458,6 +458,33 @@ function arGetCompactSummaryHtml(dayData) {
     return lines.join("<br>");
 }
 
+function arGetCompactSummaryHtml(dayKey, dayData) {
+    var dayCap = arGetDailyHolidayCap(dayKey);
+    if (!dayData && dayCap == null) return "<span class='ar-day-empty-text'>미설정</span>";
+
+    var lines = [];
+    var codeParts = [];
+
+    if (dayData && dayData.totalRequired != null) {
+        lines.push("<span class='ar-day-total'>총 " + dayData.totalRequired + "명</span>");
+    }
+
+    Object.keys((dayData || {}).byCode || {}).forEach(function(codeName) {
+        var line = arGetCodeSummaryLine(dayData, codeName);
+        if (line) codeParts.push(line);
+    });
+
+    if (codeParts.length > 0) {
+        lines.push("<span class='ar-day-codes'>" + codeParts.join(" / ") + "</span>");
+    }
+
+    if (dayCap != null) {
+        lines.push("<span class='ar-day-cap'>최대휴무 " + dayCap + "명</span>");
+    }
+
+    return lines.join("<br>");
+}
+
 function arGetDraftDayBadge(dayKey) {
     if (!arDraftState || !arDraftState.daySummaries || !arDraftState.daySummaries[dayKey]) return "";
 
@@ -532,7 +559,7 @@ function arRenderCalendarGrid() {
 
         var summaryDiv = document.createElement("div");
         summaryDiv.className = "count-badge ar-day-summary";
-        summaryDiv.innerHTML = arGetCompactSummaryHtml(dayData) + arGetDraftDayBadge(dayKey);
+        summaryDiv.innerHTML = arGetCompactSummaryHtml(dayKey, dayData) + arGetDraftDayBadge(dayKey);
         dateDiv.appendChild(summaryDiv);
 
         (function(boundDayKey) {
@@ -1870,6 +1897,32 @@ function arCollectDraftResultCounts(draftState) {
     };
 }
 
+function arBuildDailyHolidayCapUsageLog(draftState) {
+    var meta = arGetMonthMeta(draftState.yyyymm);
+    var usage = {};
+
+    for (var dayNum = 1; dayNum <= meta.totalDays; dayNum++) {
+        var dayKey = String(dayNum);
+        var cap = arGetDailyHolidayCap(dayKey);
+        var actualOffCount = arCountDayOffEntries(draftState, dayKey);
+        usage[dayKey] = {
+            cap: cap,
+            actualOffCount: actualOffCount,
+            exceeded: cap != null ? actualOffCount > cap : false
+        };
+    }
+
+    return usage;
+}
+
+function arPickDailyCapUsageMap(usage, fieldName) {
+    var picked = {};
+    Object.keys(usage || {}).forEach(function(dayKey) {
+        picked[dayKey] = usage[dayKey] ? usage[dayKey][fieldName] : null;
+    });
+    return picked;
+}
+
 function arRenderDraftDaySummary() {
     var container = document.getElementById("arDraftDaySummary");
     if (!container) return;
@@ -2200,9 +2253,14 @@ function arGenerateDraft() {
             arBuildDaySummaries(draftState);
 
             var draftCounts = arCollectDraftResultCounts(draftState);
+            var dailyCapUsageLog = arBuildDailyHolidayCapUsageLog(draftState);
             console.log("[auto-schedule:draft] assigned cell counts:", draftCounts);
             console.log("[auto-schedule:draft] actual assigned cells:", draftCounts.autoAssignedCells);
             console.log("[auto-schedule:draft] unassigned cells:", draftCounts.unassignedCellCount);
+            console.log("[auto-schedule:draft] caps used by day:", arPickDailyCapUsageMap(dailyCapUsageLog, "cap"));
+            console.log("[auto-schedule:draft] actual off counts by day:", arPickDailyCapUsageMap(dailyCapUsageLog, "actualOffCount"));
+            console.log("[auto-schedule:draft] cap exceeded by day:", arPickDailyCapUsageMap(dailyCapUsageLog, "exceeded"));
+            console.log("[auto-schedule:draft] daily cap usage:", dailyCapUsageLog);
 
             arDraftState = draftState;
             arRenderCalendarGrid();
