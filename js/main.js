@@ -31,6 +31,94 @@ var fn = {
   adminCancelRequest:   fnClient.httpsCallable("adminCancelRequest"),
 };
 
+var SESSION_STATE_KEY = "rq_session_state";
+
+try {
+  auth.setPersistence(firebase.auth.Auth.Persistence.SESSION).catch(function(err) {
+    console.warn("세션 지속성 설정 실패:", err && err.message);
+  });
+} catch (e) {
+  console.warn("세션 지속성 초기화 실패:", e && e.message);
+}
+
+function getStoredSessionState() {
+  try {
+    var raw = sessionStorage.getItem(SESSION_STATE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function saveSessionState(nextState) {
+  var prev = getStoredSessionState() || {};
+  var merged = {};
+  Object.keys(prev).forEach(function(key) { merged[key] = prev[key]; });
+  Object.keys(nextState || {}).forEach(function(key) {
+    if (nextState[key] === undefined) return;
+    merged[key] = nextState[key];
+  });
+  try {
+    sessionStorage.setItem(SESSION_STATE_KEY, JSON.stringify(merged));
+  } catch (e) {}
+}
+
+function clearStoredSessionState() {
+  try {
+    sessionStorage.removeItem(SESSION_STATE_KEY);
+  } catch (e) {}
+}
+
+function updateSessionScreenState(page) {
+  if (!page) return;
+  var saved = getStoredSessionState();
+  var uid = currentUid || (saved && saved.uid);
+  var role = currentUserRole || (saved && saved.role);
+  if (!uid || !role) return;
+  saveSessionState({ page: page });
+}
+
+function persistSignedInSession(user, profile) {
+  if (!user || !profile) return;
+  saveSessionState({
+    uid: user.uid || "",
+    userName: profile.legacyName || profile.name || user.displayName || "",
+    role: String(profile.role || "staff").toLowerCase(),
+    deptId: profile.deptId || "",
+    page: window.__RQ_CURRENT_PAGE || "dashboard",
+  });
+}
+
+function restoreSessionUiIfPresent() {
+  var saved = getStoredSessionState();
+  if (!saved || !saved.uid || !saved.role) return false;
+
+  currentUid       = saved.uid || "";
+  currentUser      = saved.userName || "";
+  currentUserRole  = String(saved.role || "staff").toLowerCase();
+  currentDept      = saved.deptId || "";
+  currentProfile   = {
+    role: currentUserRole,
+    deptId: currentDept,
+    name: currentUser,
+    legacyName: currentUser,
+  };
+  isSuperAdmin     = currentUserRole === "super_admin";
+  isAdmin          = currentUserRole === "admin";
+  if (isSuperAdmin) {
+    isAdmin = false;
+    currentDept = "";
+  }
+  SUPER_ADMIN_ID = isSuperAdmin ? (currentUser || currentUid) : null;
+  window.__RQ_CURRENT_PAGE = saved.page || (isSuperAdmin ? "orgadmin" : "dashboard");
+  document.documentElement.classList.add("rq-has-session");
+
+  var loginArea = document.getElementById("loginArea");
+  if (loginArea) loginArea.style.display = "none";
+  if (modal) modal.style.display = "flex";
+  return true;
+}
+
 // ?? UI ?ы띁 ??????????????????????????????????????????????????????????????????
 function setLoginButtonState(disabled, label) {
   var loginBtn = document.querySelector(".submit-btn");
@@ -75,6 +163,8 @@ function resetSessionState() {
 }
 
 function resetUiToLoggedOut() {
+  window.__RQ_CURRENT_PAGE = "dashboard";
+  document.documentElement.classList.remove("rq-has-session");
   resetSessionState();
   modal.style.display = "none";
   document.getElementById("loginArea").style.display = "block";
@@ -123,6 +213,7 @@ function applyProfile(user, profile) {
   isAdmin      = role === "admin";
   if (isSuperAdmin) { isAdmin = false; currentDept = ""; }
   SUPER_ADMIN_ID = isSuperAdmin ? (currentUser || user.uid) : null;
+  persistSignedInSession(user, profile);
 }
 
 function setSuperDeleteSectionVisible(visible) {
@@ -211,6 +302,7 @@ function handleSignedInUser(user) {
     return loadDeptList();
   }).then(function(result) {
     if (result && result.mustChangePassword) {
+      clearStoredSessionState();
       document.getElementById("loginArea").style.display = "none";
       modal.style.display = "none";
       showForcePasswordChangeModal();
@@ -245,11 +337,13 @@ auth.onAuthStateChanged(function(user) {
   if (user) {
     handleSignedInUser(user);
   } else {
+    clearStoredSessionState();
     resetUiToLoggedOut();
   }
 });
 
 function closeCalendar() {
+  clearStoredSessionState();
   if (auth.currentUser) { auth.signOut(); return; }
   resetUiToLoggedOut();
 }

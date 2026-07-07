@@ -41,7 +41,10 @@ function checkAuth() {
     var virtualEmail = empNoToEmail(empNo);
 
     // Firebase Auth 표준 로그인 — 비밀번호는 Auth 서버가 검증
-    auth.signInWithEmailAndPassword(virtualEmail, pass)
+    auth.setPersistence(firebase.auth.Auth.Persistence.SESSION)
+        .then(function() {
+            return auth.signInWithEmailAndPassword(virtualEmail, pass);
+        })
         .catch(function(error) {
             var code = error.code || "";
             var msg  = "사번 또는 비밀번호가 올바르지 않습니다.";
@@ -63,6 +66,9 @@ function checkAuth() {
 
 function loginSuccess(name) {
     currentUser = name;
+    if (typeof persistSignedInSession === "function" && auth.currentUser) {
+        persistSignedInSession(auth.currentUser, currentProfile || {});
+    }
     setLoginButtonState(false, "로그인");
     refreshData();
     document.getElementById("loginArea").style.display = "none";

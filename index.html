@@ -15,14 +15,38 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-functions.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
+    <script>
+    (function() {
+        window.__RQ_BOOT_HAS_SESSION = false;
+        try {
+            if (sessionStorage.getItem("rq_session_state")) {
+                window.__RQ_BOOT_HAS_SESSION = true;
+                document.documentElement.classList.add("rq-has-session");
+            }
+        } catch (e) {}
+    })();
+    </script>
+
     <link rel="stylesheet" href="css/style.css">
+    <style>
+    html.rq-has-session #loginArea { display: none !important; }
+    html.rq-has-session #appShell { display: flex !important; }
+    </style>
 </head>
 <body>
 
 <!-- ═══════════════════════════════════════════════
      LOGIN PAGE
 ═══════════════════════════════════════════════ -->
-<div class="login-page" id="loginArea">
+<div class="login-page" id="loginArea" style="display:none;">
+    <script>
+    (function() {
+        var el = document.getElementById("loginArea");
+        if (el && !window.__RQ_BOOT_HAS_SESSION) {
+            el.style.display = "flex";
+        }
+    })();
+    </script>
     <!-- 배경 영상 (로그인 화면 전용) — 기존 그라디언트 배경 위에 표시되며,
          영상 로드 실패 시 .login-page 의 기존 배경(그라디언트)이 그대로
          보이는 자연스러운 fallback 이 된다. 기능/로그인 로직과 무관한
@@ -78,6 +102,14 @@
      APP SHELL (로그인 후 표시)
 ═══════════════════════════════════════════════ -->
 <div id="appShell" style="display:none; flex-direction:column; min-height:100vh;">
+    <script>
+    (function() {
+        var el = document.getElementById("appShell");
+        if (el && window.__RQ_BOOT_HAS_SESSION) {
+            el.style.display = "flex";
+        }
+    })();
+    </script>
 
     <!-- ── Top Navigation ── -->
     <nav class="top-nav">
@@ -878,6 +910,20 @@
    ===================================================== */
 
 var PAGE_IDS = ['dashboard','requests','employees','settings','downloads','orgadmin'];
+window.__RQ_CURRENT_PAGE = window.__RQ_CURRENT_PAGE || 'dashboard';
+
+function getRestoredPageForRole() {
+    var stored = (typeof getStoredSessionState === 'function') ? getStoredSessionState() : null;
+    var page = window.__RQ_CURRENT_PAGE || (stored && stored.page) || 'dashboard';
+    var isSup = (typeof isSuperAdmin !== 'undefined' && isSuperAdmin);
+    var isAdm = (typeof isAdmin !== 'undefined' && isAdmin);
+
+    if (isSup) return 'orgadmin';
+    if (isAdm) {
+        return PAGE_IDS.indexOf(page) >= 0 && page !== 'orgadmin' ? page : 'dashboard';
+    }
+    return 'dashboard';
+}
 
 // ── 페이지 전환 ──────────────────────────────────────
 function showPage(page) {
@@ -890,6 +936,10 @@ function showPage(page) {
     var drawerBtn = document.getElementById('drawerBtn-' + page);
     if (navBtn) navBtn.classList.add('active');
     if (drawerBtn) drawerBtn.classList.add('active');
+    window.__RQ_CURRENT_PAGE = page;
+    if (typeof updateSessionScreenState === 'function') {
+        updateSessionScreenState(page);
+    }
 
     // 설정 페이지를 열 때마다 신청 오픈/마감 input 값을 DB 기준으로 다시 보정
     // (저장은 정상이었지만 화면 전환 타이밍에 따라 빈 값으로 보일 수 있었던
@@ -969,6 +1019,7 @@ closeCalendar = function() {
     _origCloseCalendar();
     document.getElementById('appShell').style.display = 'none';
     document.getElementById('loginArea').style.display = 'flex';
+    document.documentElement.classList.remove('rq-has-session');
     showPage('dashboard');
 };
 
@@ -1093,7 +1144,7 @@ function applyRoleBasedUI() {
             if (staffBar) staffBar.style.display = 'none';
             if (actionBar) actionBar.style.display = 'none';
 
-            showPage('orgadmin');
+            showPage(getRestoredPageForRole());
             return;
         }
 
@@ -1149,7 +1200,7 @@ function applyRoleBasedUI() {
         if (annualTmplCard) annualTmplCard.style.display = isAdm ? 'block' : 'none';
         if (annualTmplBtnInEmpPage) annualTmplBtnInEmpPage.style.display = isAdm ? 'inline-flex' : 'none';
 
-        showPage('dashboard');
+        showPage(getRestoredPageForRole());
 
         // ── 직원 공지 구독 초기화 (신청/취소 로직과 완전 분리) ──
         // 관리자 공지 패널은 설정(settings) 페이지 진입 시 showPage 훅에서 렌더링
@@ -1187,6 +1238,10 @@ renderRestrictedRoleView = function() {
 };
 
 // ── 최근 신청 내역 렌더 헬퍼 (관리자 대시보드 전용) ────
+if (typeof restoreSessionUiIfPresent === 'function') {
+    restoreSessionUiIfPresent();
+}
+
 function updateRecentFeed(items, targetId) {
     var feed = document.getElementById(targetId || 'recentFeed');
     if (!feed) return;
