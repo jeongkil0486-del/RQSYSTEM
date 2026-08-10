@@ -455,13 +455,36 @@ function resetAllRequests() {
 // ?? 愿由ъ옄: ?ㅼ젙 珥덇린??(Cloud Function ?쇰줈 ??? ???????????????????????????
 function resetAllConfigurations() {
   if (!isAdmin && !isSuperAdmin) return;
-  if (!confirm("설정을 초기화하시겠습니까?")) return;
+  if (!confirm("설정을 초기화하시겠습니까?\n(조 편성 포함 — 신청 기간/한도/조별 휴무·근무 제한이 모두 초기화됩니다)")) return;
 
-  fn.saveDeptConfig({
-    deptId: currentDept,
-    yyyymm: getTargetYearMonth().fullStr,
-    config: { openAt: null, closeAt: null, dayMax: null, globalUserMax: null, annualUserMax: null },
-  }).then(function() {
+  var tm = getTargetYearMonth();
+  // 조 편성(persistent groups)은 A~E 빈 배열로 "명시적으로" 저장해야
+  // 초기화된 상태임을 구분할 수 있다 (키가 아예 없으면 legacy 월별 데이터로
+  // fallback되어 예전 조 편성이 되살아나 보이는 문제가 생길 수 있음).
+  var emptyGroups = { A: [], B: [], C: [], D: [], E: [] };
+
+  Promise.all([
+    fn.saveDeptConfig({
+      deptId: currentDept,
+      yyyymm: tm.fullStr,
+      config: {
+        openAt: null, closeAt: null, dayMax: null, globalUserMax: null, annualUserMax: null,
+        groupMaxA: null, groupMaxB: null, groupMaxC: null, groupMaxD: null, groupMaxE: null,
+        scGroupLimits: null,
+        groupDayLimits: null,
+        scGroupDayLimits: null,
+        groupDayLimitsEnabled: null,
+        scGroupDayLimitsEnabled: null
+      },
+    }),
+    fn.saveGroupAssignment({ deptId: currentDept, groups: emptyGroups, yyyymm: tm.fullStr })
+  ]).then(function() {
+    liveDBData["_groupDayLimits"] = {};
+    liveDBData["_scGroupDayLimits"] = {};
+    liveDBData["_groupDayLimitsEnabled"] = false;
+    liveDBData["_scGroupDayLimitsEnabled"] = false;
+    ["A","B","C","D","E"].forEach(function(g) { liveDBData["rq_live_group_" + g] = []; });
+    liveDBData["_persistentGroupsLoaded"] = true;
     alert("설정 초기화 완료");
     refreshData();
   }).catch(function(e) {

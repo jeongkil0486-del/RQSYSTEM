@@ -278,21 +278,22 @@
 
             <div class="cards-grid">
 
-                <!-- 특정일 제한 (다른 두 카드와 한 줄 배치 — 내부는 압축 정렬) -->
+                <!-- 특정일 휴무 제한 (다른 두 카드와 한 줄 배치 — 내부는 압축 정렬) -->
                 <div class="feature-card">
                     <div class="feature-card-header">
                         <div class="feature-icon blue" style="background:#eff6ff;">🎯</div>
                         <div>
-                            <div class="feature-card-title">특정일 제한</div>
-                            <div class="feature-card-desc">특정 날짜의 신청 가능 인원을 설정합니다.</div>
+                            <div class="feature-card-title">특정일 휴무 제한</div>
+                            <div class="feature-card-desc">특정 날짜의 휴무 신청 가능 인원을 설정합니다.</div>
                         </div>
                     </div>
                     <div class="feature-card-body">
                         <div class="form-row form-row-nowrap form-row-compact">
-                            <input type="number" id="specialDayInput" min="1" max="31" class="form-input tiny-num-input" placeholder="일" title="날짜 (일)">
                             <input type="number" id="specialDayLimit" min="0" max="40" class="form-input tiny-num-input" placeholder="명" title="제한 인원">
-                            <button class="btn btn-primary-sm btn-compact" onclick="setSpecialDayLimit(true)">적용</button>
+                            <button class="btn btn-secondary btn-compact" onclick="openSpecialDayDateModal()">날짜 선택</button>
+                            <button class="btn btn-primary-sm btn-compact" onclick="applySpecialDayLimits()">적용</button>
                         </div>
+                        <div id="specialDaySelectedSummary" class="date-selected-summary">선택 날짜: 없음</div>
                         <div class="form-row">
                             <label class="form-label">현황</label>
                         </div>
@@ -300,13 +301,13 @@
                     </div>
                 </div>
 
-                <!-- 일별 신청 제한 -->
+                <!-- 월 휴무 제한 -->
                 <div class="feature-card">
                     <div class="feature-card-header">
                         <div class="feature-icon orange" style="background:#fff7ed;">📢</div>
                         <div>
-                            <div class="feature-card-title">일별 신청 제한</div>
-                            <div class="feature-card-desc">하루 최대 신청 가능 인원을 설정합니다.</div>
+                            <div class="feature-card-title">월 휴무 제한</div>
+                            <div class="feature-card-desc">하루 최대 휴무 신청 가능 인원을 설정합니다.</div>
                         </div>
                     </div>
                     <div class="feature-card-body">
@@ -342,13 +343,37 @@
                     </div>
                 </div>
 
-                <!-- 조별 신청 한도 (전체 너비 — 5개 조 입력창 잘림 방지) -->
+                <!-- 스케줄 코드 (설정 페이지에서 이동 — 직원별 신청 제한 옆에 배치) -->
+                <div class="feature-card">
+                    <div class="feature-card-header">
+                        <div class="feature-icon purple" style="background:#faf5ff;">🗓️</div>
+                        <div>
+                            <div class="feature-card-title">스케줄 코드</div>
+                            <div class="feature-card-desc">근무 스케줄 코드를 등록하고 관리합니다.</div>
+                        </div>
+                    </div>
+                    <div class="feature-card-body">
+                        <div class="form-row">
+                            <label class="form-label">코드</label>
+                            <input type="text" id="scheduleCodeInput" placeholder="코드" class="form-input" style="max-width:100px;">
+                            <label class="form-label" style="min-width:auto;">제한</label>
+                            <input type="number" id="scheduleCodeLimit" min="1" max="999" class="form-input small small-num-input" placeholder="제한">
+                            <button class="btn btn-primary-sm" onclick="createScheduleCode()">생성</button>
+                        </div>
+                        <div class="form-row">
+                            <label class="form-label">현황</label>
+                        </div>
+                        <div class="custom-floating-tooltip" id="scheduleCodeTooltipBoard"></div>
+                    </div>
+                </div>
+
+                <!-- 조별 휴무 제한 (전체 너비 — 5개 조 입력창 잘림 방지) -->
                 <div class="feature-card card-wide">
                     <div class="feature-card-header">
                         <div class="feature-icon green" style="background:#f0fdf4;">👥</div>
                         <div>
-                            <div class="feature-card-title">조별 신청 한도</div>
-                            <div class="feature-card-desc">각 조의 월별 신청 한도를 설정합니다.</div>
+                            <div class="feature-card-title">조별 휴무 제한</div>
+                            <div class="feature-card-desc">선택한 날짜에 각 조의 휴무 신청 한도를 설정합니다.</div>
                         </div>
                     </div>
                     <div class="feature-card-body">
@@ -363,8 +388,14 @@
                             <input type="number" id="groupMaxConfigD" min="1" max="40" class="form-input small small-num-input" placeholder="2">
                             <span class="group-label gl-e">E조</span>
                             <input type="number" id="groupMaxConfigE" min="1" max="40" class="form-input small small-num-input" placeholder="2">
+                            <button class="btn btn-secondary" onclick="openGroupDayDateModal()">날짜 선택</button>
                             <button class="btn btn-primary-sm" onclick="saveGroupMaxConstraints()">적용</button>
                         </div>
+                        <div id="groupDaySelectedSummary" class="date-selected-summary">선택 날짜: 없음</div>
+                        <div class="form-row">
+                            <label class="form-label">날짜별 제한 현황</label>
+                        </div>
+                        <div class="custom-floating-tooltip" id="groupDayLimitTooltipBoard"></div>
                         <div class="form-row">
                             <label class="form-label">조 편성</label>
                         </div>
@@ -372,13 +403,13 @@
                     </div>
                 </div>
 
-                <!-- 조별 코드 제한 (전체 너비 — 5개 조 입력창 잘림 방지) -->
+                <!-- 조별 근무 제한 (전체 너비 — 5개 조 입력창 잘림 방지) -->
                 <div class="feature-card card-wide">
                     <div class="feature-card-header">
                         <div class="feature-icon" style="background:#fef2f2;">🔢</div>
                         <div>
-                            <div class="feature-card-title">조별 코드 제한</div>
-                            <div class="feature-card-desc">스케줄 코드별 조별 신청 한도를 설정합니다.</div>
+                            <div class="feature-card-title">조별 근무 제한</div>
+                            <div class="feature-card-desc">선택한 날짜에 스케줄 코드별 조별 근무 한도를 설정합니다.</div>
                         </div>
                     </div>
                     <div class="feature-card-body">
@@ -399,8 +430,10 @@
                             <input type="number" id="scGroupLimitD" min="0" max="99" class="form-input small small-num-input" placeholder="-">
                             <span class="group-label gl-e">E조</span>
                             <input type="number" id="scGroupLimitE" min="0" max="99" class="form-input small small-num-input" placeholder="-">
+                            <button class="btn btn-secondary" onclick="openScGroupDayDateModal()">날짜 선택</button>
                             <button class="btn btn-primary-sm" onclick="saveScGroupLimit()">적용</button>
                         </div>
+                        <div id="scGroupDaySelectedSummary" class="date-selected-summary">선택 날짜: 없음</div>
                         <div class="form-row">
                             <label class="form-label">현황</label>
                         </div>
@@ -590,30 +623,6 @@
                             <input type="number" id="globalUserMaxConfig" min="1" max="31" class="form-input small small-num-input" placeholder="4">
                             <button class="btn btn-primary-sm" onclick="saveGlobalUserMaxConstraint()">적용</button>
                         </div>
-                    </div>
-                </div>
-
-                <!-- 스케줄 코드 -->
-                <div class="feature-card">
-                    <div class="feature-card-header">
-                        <div class="feature-icon purple" style="background:#faf5ff;">🗓️</div>
-                        <div>
-                            <div class="feature-card-title">스케줄 코드</div>
-                            <div class="feature-card-desc">근무 스케줄 코드를 등록하고 관리합니다.</div>
-                        </div>
-                    </div>
-                    <div class="feature-card-body">
-                        <div class="form-row">
-                            <label class="form-label">코드</label>
-                            <input type="text" id="scheduleCodeInput" placeholder="코드" class="form-input" style="max-width:100px;">
-                            <label class="form-label" style="min-width:auto;">제한</label>
-                            <input type="number" id="scheduleCodeLimit" min="1" max="999" class="form-input small small-num-input" placeholder="제한">
-                            <button class="btn btn-primary-sm" onclick="createScheduleCode()">생성</button>
-                        </div>
-                        <div class="form-row">
-                            <label class="form-label">현황</label>
-                        </div>
-                        <div class="custom-floating-tooltip" id="scheduleCodeTooltipBoard"></div>
                     </div>
                 </div>
 
@@ -873,6 +882,28 @@
     </div>
 </div>
 
+<!-- 공통 날짜 선택 모달 (특정일 휴무 제한 / 조별 휴무 제한 / 조별 근무 제한 공용) -->
+<div id="dateSelectModal" onclick="if(event.target===this) closeDateSelectionModal();" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.55); z-index:99999; justify-content:center; align-items:center;">
+    <div class="date-select-box">
+        <div class="date-select-box-header">
+            <div id="dateSelectTitle" class="date-select-box-title">날짜 선택</div>
+            <button type="button" onclick="closeDateSelectionModal()" class="date-select-box-close">✕</button>
+        </div>
+        <div id="dateSelectMonthLabel" class="date-select-month">—년 —월</div>
+        <div class="date-select-weekdays">
+            <span class="date-select-dow sun">일</span><span class="date-select-dow">월</span><span class="date-select-dow">화</span>
+            <span class="date-select-dow">수</span><span class="date-select-dow">목</span><span class="date-select-dow">금</span><span class="date-select-dow sat">토</span>
+        </div>
+        <div id="dateSelectGrid" class="date-select-grid"></div>
+        <div id="dateSelectSummary" class="date-select-summary">선택된 날짜: 없음</div>
+        <div class="date-select-actions">
+            <button type="button" class="btn btn-secondary" onclick="clearDateSelection()">전체 선택 해제</button>
+            <button type="button" class="btn btn-secondary" onclick="closeDateSelectionModal()">취소</button>
+            <button type="button" class="btn btn-primary-sm" onclick="confirmDateSelection()">선택 완료</button>
+        </div>
+    </div>
+</div>
+
 <!-- 최근 신청 내역 전체보기 모달 ('더보기' 클릭 시) -->
 <div id="recentFeedModal" onclick="if(event.target===this) closeRecentFeedModal();" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.55); z-index:99998; justify-content:center; align-items:center;">
     <div style="background:#fff; border-radius:14px; padding:0; width:420px; max-width:92%; max-height:80vh; box-shadow:0 8px 32px rgba(0,0,0,0.35); box-sizing:border-box; display:flex; flex-direction:column; overflow:hidden;">
@@ -896,6 +927,7 @@
 <script src="js/auth.js"></script>
 <script src="js/super-admin.js"></script>
 <script src="js/limits.js"></script>
+<script src="js/date-select.js"></script>
 <script src="js/calendar.js"></script>
 <script src="js/excel.js"></script>
 <script src="js/download-template.js"></script>

@@ -17,6 +17,7 @@ var _dirtyAnnualStatusBoard  = false;
 var _dirtyLiveGroupBoards    = false;
 var _dirtyScheduleCodeBoard  = false;
 var _dirtyScGroupLimitBoard  = false;
+var _dirtyGroupDayLimitBoard = false;
 
 /** 현재 특정 page-* 요소가 active 클래스를 가지고 있는지 확인 */
 function _isPageActive(pageId) {
@@ -256,6 +257,7 @@ function _saveGroupsQuietly() {
         Object.keys(saved).forEach(function(group) {
             liveDBData["rq_live_group_" + group] = saved[group];
         });
+        liveDBData["_persistentGroupsLoaded"] = true;
     }).catch(function(e) {
         // 자동 정리 저장 실패는 무시 (수동 저장 버튼으로 재시도 가능)
         console.warn("[admin-users] _saveGroupsQuietly 실패:", e && e.message);
@@ -378,6 +380,7 @@ function saveAllGroupsFromInputs() {
             Object.keys(saved).forEach(function(group) {
                 liveDBData["rq_live_group_" + group] = saved[group];
             });
+            liveDBData["_persistentGroupsLoaded"] = true;
             groupBoardStateLoaded = false;
             drawLiveGroupBoards();
             alert("조 배정이 저장되었습니다.");
@@ -508,12 +511,12 @@ document.addEventListener("DOMContentLoaded", function() {
             if (_dirtyScGroupLimitBoard) {
                 if (typeof drawScGroupLimitBoard === "function") drawScGroupLimitBoard();
             }
-        } else if (page === "settings") {
+            if (_dirtyGroupDayLimitBoard) {
+                if (typeof drawGroupDayLimitBoard === "function") drawGroupDayLimitBoard();
+            }
+            // 스케줄 코드 관리 카드가 설정 → 신청관리로 이동했으므로 여기서 렌더링
             if (_dirtyScheduleCodeBoard) {
                 if (typeof drawScheduleCodeBoard === "function") drawScheduleCodeBoard();
-            }
-            if (_dirtyScGroupLimitBoard) {
-                if (typeof drawScGroupLimitBoard === "function") drawScGroupLimitBoard();
             }
         }
     };

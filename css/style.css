@@ -1315,6 +1315,121 @@ body {
 /* Old calendar-box references — now hidden; kept for JS compat */
 .calendar-box { display: none !important; }
 
+/* ─── 공통 날짜 선택 모달 (특정일 휴무 제한 / 조별 휴무 제한 / 조별 근무 제한 공용) ─── */
+.date-select-box {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border);
+  padding: 18px 20px 16px;
+  width: 340px;
+  max-width: 92vw;
+  max-height: 88vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+.date-select-box-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.date-select-box-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.date-select-box-close {
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: var(--text-light, #94a3b8);
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 4px;
+}
+.date-select-month {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-sub);
+  margin-bottom: 10px;
+}
+.date-select-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.date-select-dow {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-sub);
+}
+.date-select-dow.sun { color: #e53935; }
+.date-select-dow.sat { color: #1565c0; }
+.date-select-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.date-select-cell {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12.5px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #f8fafc;
+  color: var(--text-main);
+  cursor: pointer;
+  user-select: none;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.date-select-cell.empty {
+  border: none;
+  background: none;
+  cursor: default;
+}
+.date-select-cell.sun { color: #e53935; }
+.date-select-cell.sat { color: #1565c0; }
+.date-select-cell:hover:not(.empty) { border-color: var(--accent); }
+.date-select-cell.selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 700;
+}
+.date-select-summary {
+  font-size: 12px;
+  color: var(--text-sub);
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+.date-select-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.date-selected-summary {
+  font-size: 11.5px;
+  color: var(--text-sub);
+  margin: -4px 0 10px;
+}
+@media (max-width: 480px) {
+  .date-select-box { width: 100%; padding: 16px 14px 14px; }
+  .date-select-actions { justify-content: stretch; }
+  .date-select-actions .btn { flex: 1; }
+}
+
 /* ─── Super Admin Panel ─── */
 #superAdminPanel {
   padding: 0 !important;

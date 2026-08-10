@@ -232,10 +232,10 @@ function updateLimitTooltipBoard() {
         deleteUserLimitFromBoard(e, badge.getAttribute("data-empno"));
     };
 
-    var specialHtml = "<strong style='color:#fff;font-size:13px;'>🎯 당월 특정일 제한 현황</strong>"
+    var specialHtml = "<strong style='color:#fff;font-size:13px;'>🎯 특정일 휴무 제한 현황</strong>"
                     + "<div style='font-size:10px;color:#bdc3c7;margin:3px 0 7px;'>우클릭으로 삭제</div>";
     if (specialDays.length === 0) {
-        specialHtml += "<div style='color:#aaa;font-style:italic;font-size:12px;'>(특정일 제한 없음)</div>";
+        specialHtml += "<div style='color:#aaa;font-style:italic;font-size:12px;'>(특정일 휴무 제한 없음)</div>";
     } else {
         specialHtml += "<div style='display:flex;flex-wrap:wrap;gap:5px;'>";
         specialDays.sort(function(a, b) { return parseInt(a.day) - parseInt(b.day); }).forEach(function(item) {
@@ -259,7 +259,7 @@ function updateLimitTooltipBoard() {
 function deleteSpecialDayFromBoard(event, day) {
     event.preventDefault();
     var tm = getTargetYearMonth();
-    if (!confirm(parseInt(tm.month) + "월 " + day + "일 특정일 제한을 삭제하시겠습니까?")) return;
+    if (!confirm(parseInt(tm.month) + "월 " + day + "일 특정일 휴무 제한을 삭제하시겠습니까?")) return;
 
     fn.setSpecialDayLimit({ deptId: currentDept, yyyymm: tm.fullStr, day: day, limit: null })
       .then(function() {
@@ -325,6 +325,7 @@ function refreshData() {
         drawLiveGroupBoards();
         drawScheduleCodeBoard();
         drawScGroupLimitBoard();
+        if (typeof drawGroupDayLimitBoard === "function") drawGroupDayLimitBoard();
         updateScGroupLimitCodeSelect();
         drawAnnualStatusBoard();
     } else {
@@ -563,6 +564,17 @@ function editDate(date) {
             alert("[" + currentScheduleCode + "] 코드 개인 한도(" + codeObj.limit + "건) 초과");
             return;
         }
+        var scGroups = ["A","B","C","D","E"];
+        for (var sgi = 0; sgi < scGroups.length; sgi++) {
+            var sg   = scGroups[sgi];
+            var sgrp = getLiveGroupList(sg);
+            if (!groupContainsCurrentUser(sgrp)) continue;
+            var scLimit = _resolveScGroupDayLimit(currentScheduleCode, sg, dayStr);
+            if (scLimit !== null && getGroupScCodeCountByDate(sgrp, currentScheduleCode, date) >= scLimit) {
+                alert(sg + "조 " + date + "일 [" + currentScheduleCode + "] 근무 제한(" + scLimit + "명) 초과");
+                return;
+            }
+        }
         _runDayRequest(dayStr, function() {
             return fn.submitRequest({ deptId: currentDept, yyyymm: tm.fullStr, day: dayStr, type: "schedule", scheduleCode: currentScheduleCode });
         }, "신청 실패", "submit", "schedule", currentScheduleCode).catch(function() {});
@@ -607,9 +619,9 @@ function editDate(date) {
         var g    = groups[gi];
         var grp  = getLiveGroupList(g);
         if (!groupContainsCurrentUser(grp)) continue;
-        var gMax = parseInt(getFirebaseItem("rq_config_group_max_" + g, "2"));
-        if (getGroupCountByDate(grp, date) >= gMax) {
-            alert(g + "조 일자 한도(" + gMax + "명) 초과");
+        var gLimit = _resolveGroupDayLimit(g, dayStr);
+        if (gLimit !== null && getGroupCountByDate(grp, date) >= gLimit) {
+            alert(g + "조 " + date + "일 휴무 제한(" + gLimit + "명) 초과");
             return;
         }
     }
@@ -817,6 +829,21 @@ function saveSpecialDayLimit() {
       }).catch(function(e) { alert(e.message || "실패"); });
 }
 
+
+// ── 날짜별 조별 휴무 제한 조회 (클라이언트 사전검사용 — 최종 판정은 서버) ──────
+// ⚠️ liveDBData["_groupDayLimits"] 객체의 존재 여부가 아니라, 명시적 플래그
+// liveDBData["_groupDayLimitsEnabled"] 로만 날짜별 방식 사용 여부를 판단한다.
+// 날짜별 설정을 전부 삭제해 데이터가 비어도(플래그는 true로 남음) 절대 legacy
+// 월 전체 공통값(rq_config_group_max_*)으로 되돌아가지 않는다.
+function _resolveGroupDayLimit(group, dayStr) {
+    if (liveDBData["_groupDayLimitsEnabled"] === true) {
+        var dayLimits = (liveDBData["_groupDayLimits"] || {})[dayStr];
+        if (dayLimits && dayLimits[group] != null) return parseInt(dayLimits[group], 10);
+        return null;
+    }
+    var legacy = getFirebaseItem("rq_config_group_max_" + group, null);
+    return legacy !== null ? parseInt(legacy, 10) : null;
+}
 
 // ── 읽기 전용 카운터/집계 함수 ────────────────────────────────────────────────
 function getGroupCountByDate(groupArray, date) {

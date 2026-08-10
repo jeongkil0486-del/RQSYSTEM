@@ -115,7 +115,16 @@ function _clearConfigLiveData(yyyymm) {
             delete liveDBData[k];
             return;
         }
-        if (k.startsWith("rq_config_") || k.startsWith("rq_limit_uid_") || k.startsWith("rq_limit_emp_") || k.startsWith("sc_glimit_") || k.startsWith("rq_live_group_")) {
+        if (k.startsWith("rq_config_") || k.startsWith("rq_limit_uid_") || k.startsWith("rq_limit_emp_") || k.startsWith("sc_glimit_")) {
+            delete liveDBData[k];
+            return;
+        }
+        // ⚠️ rq_live_group_* (조 편성)는 여기서 지우지 않는다.
+        // 조 편성은 더 이상 월별(config) 데이터가 아니라 지점 공통 persistent
+        // 데이터이며, 별도의 독립 리스너(_subscribeRealtimeKeys 의 persistentGroups)
+        // 로 채워진다. 여기서 함께 지우면 cfg 값이 바뀔 때마다(월 변경과 무관하게)
+        // 조 편성이 일시적으로 비어보이는 문제가 생긴다.
+        if (k === "_groupDayLimits" || k === "_scGroupDayLimits" || k === "_groupDayLimitsEnabled" || k === "_scGroupDayLimitsEnabled") {
             delete liveDBData[k];
             return;
         }
@@ -149,8 +158,9 @@ function connectDeptDB(dept, onFirstLoad, overrideYyyymm) {
     var counterPath = "departments/" + dept + "/publicCounters/" + yyyymm;
     var myReqPath = "userRequests/" + currentUid + "/" + yyyymm;
     var avPath = "departments/" + dept + "/adminView/" + yyyymm;
+    var persistentGroupsPath = "departments/" + dept + "/persistent/groups";
     var initialState = {};
-    var total = (isAdmin || isSuperAdmin) ? 5 : 3;
+    var total = (isAdmin || isSuperAdmin) ? 6 : 4;
     var loaded = 0;
     function onLoaded() {
         if (connectToken !== _deptConnectToken) return;
@@ -186,6 +196,13 @@ function connectDeptDB(dept, onFirstLoad, overrideYyyymm) {
         var myData = snap.val() || {};
         initialState.myReq = JSON.stringify(myData);
         _applyMyRequests(myData, yyyymm);
+        onLoaded();
+    });
+    db.ref(persistentGroupsPath).once("value", function(snap) {
+        if (connectToken !== _deptConnectToken) return;
+        var pg = snap.val() || {};
+        initialState.persistentGroups = JSON.stringify(pg);
+        _applyPersistentGroupsToLiveData(pg);
         onLoaded();
     });
     if (isAdmin || isSuperAdmin) {
@@ -231,13 +248,43 @@ function _applyCfgToLiveData(cfg, yyyymm) {
         });
     }
 
-    if (cfg.groups) {
+    if (cfg.groupDayLimits) liveDBData["_groupDayLimits"] = cfg.groupDayLimits;
+    if (cfg.scGroupDayLimits) liveDBData["_scGroupDayLimits"] = cfg.scGroupDayLimits;
+    // ⚠️ 날짜별 방식 사용 여부는 groupDayLimits/scGroupDayLimits 객체의 "존재"가 아니라
+    // 반드시 이 명시적 플래그로만 판단한다 (RTDB는 빈 객체가 되면 부모 노드 자체가
+    // 사라질 수 있어, 값 존재 여부로 모드를 판단하면 날짜별 설정을 전부 삭제했을 때
+    // legacy 월 전체 공통값이 실수로 다시 살아날 수 있다).
+    liveDBData["_groupDayLimitsEnabled"] = cfg.groupDayLimitsEnabled === true;
+    liveDBData["_scGroupDayLimitsEnabled"] = cfg.scGroupDayLimitsEnabled === true;
+
+    // ⚠️ 조 편성(cfg.groups)은 legacy(월별) 저장 흔적이다. persistent groups
+    // 리스너가 아직 한 번도 데이터를 채우지 못한 지점(과거 데이터만 있는 경우)의
+    // 화면 표시용 fallback으로만 사용하고, persistent 데이터가 이미 로드된
+    // 이후에는 절대 덮어쓰지 않는다 (안 그러면 월 전환 시 옛 월별 조 편성이
+    // 다시 살아나 보이는 문제가 생길 수 있음).
+    if (cfg.groups && !liveDBData["_persistentGroupsLoaded"]) {
         ["A", "B", "C", "D", "E"].forEach(function(group) {
             if (cfg.groups[group]) liveDBData["rq_live_group_" + group] = cfg.groups[group];
         });
     }
 
     _applyUserLimitsToLiveData(cfg.userLimits || {});
+}
+
+/**
+ * departments/{deptId}/persistent/groups 스냅샷을 liveDBData 에 반영한다.
+ * persistent 데이터가 존재하면(비어있는 A~E 배열이라도) 그것이 항상 source of
+ * truth이며, 존재하지 않는 지점은 _applyCfgToLiveData 의 legacy groups fallback이
+ * 이미 채워둔 값을 그대로 둔다(마이그레이션 전 화면 표시용).
+ */
+function _applyPersistentGroupsToLiveData(persistentGroups) {
+    var hasPersistent = !!(persistentGroups && Object.keys(persistentGroups).length > 0);
+    if (hasPersistent) {
+        ["A", "B", "C", "D", "E"].forEach(function(group) {
+            liveDBData["rq_live_group_" + group] = Array.isArray(persistentGroups[group]) ? persistentGroups[group] : [];
+        });
+    }
+    liveDBData["_persistentGroupsLoaded"] = hasPersistent;
 }
 
 function _applyMyRequests(myData, yyyymm) {
@@ -341,6 +388,15 @@ function _subscribeRealtimeKeys(dept, yyyymm, initialState, connectToken) {
         if (currentUser && !isAdmin) _updateMyUserCells(changedDays);
     });
     _deptListeners.push({ path: myReqPath, event: "value", fn: onMyValue });
+    var persistentGroupsPath = "departments/" + dept + "/persistent/groups";
+    var onPersistentGroups = db.ref(persistentGroupsPath).on("value", function(snap) {
+        var pg = snap.val() || {};
+        if (isDuplicateInitial("persistentGroups", pg)) return;
+        _applyPersistentGroupsToLiveData(pg);
+        if (typeof groupBoardStateLoaded !== "undefined") groupBoardStateLoaded = false;
+        if (currentUser) _throttledRefresh();
+    });
+    _deptListeners.push({ path: persistentGroupsPath, event: "value", fn: onPersistentGroups });
     if (isAdmin || isSuperAdmin) {
         var avPath = "departments/" + dept + "/adminView/" + yyyymm;
         var onAdminView = db.ref(avPath).on("value", function(snap) {

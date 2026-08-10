@@ -97,6 +97,36 @@ function getRequestLimitMessage(kind) {
     return new functions.https.HttpsError("resource-exhausted", "신청 한도를 초과했습니다.");
 }
 
+/**
+ * 조 편성(persistent groups)을 읽는다.
+ * departments/{deptId}/persistent/groups 가 존재하면 그것을 source of truth로 사용하고,
+ * (설정 전체 초기화 시에도 A~E 빈 배열로 명시 저장되므로 "초기화된 상태"도 정상적으로 구분됨)
+ * 아직 한 번도 저장된 적이 없는 지점(persistent 데이터 없음)은
+ * 과거 월별 설정(configs/{yyyymm}/groups)을 legacy fallback으로 사용한다.
+ */
+async function getEffectiveGroups(deptId, cfg) {
+    const persSnap = await db.ref("departments/" + deptId + "/persistent/groups").once("value");
+    const pers = persSnap.val();
+    if (pers && Object.keys(pers).length > 0) return pers;
+    return cfg.groups || {};
+}
+
+/**
+ * 날짜별 조별 휴무 제한(groupDayLimits) 사용 여부.
+ * ⚠️ RTDB에서는 빈 객체 {}의 "존재 여부"로 모드를 판단하면 안 된다 — 관리자가
+ * 날짜별 설정을 전부 개별 삭제하면 groupDayLimits 부모 노드 자체가 사라질 수
+ * 있고, 그 순간 legacy groupMaxA~E가 다시 살아나는 문제가 생긴다.
+ * 반드시 별도의 명시적 플래그(groupDayLimitsEnabled)로만 판단한다.
+ */
+function hasGroupDayLimits(cfg) {
+    return cfg.groupDayLimitsEnabled === true;
+}
+
+/** 날짜별 조별 근무(코드) 제한(scGroupDayLimits) 사용 여부 — 위와 동일한 이유로 명시적 플래그로만 판단 */
+function hasScGroupDayLimits(cfg) {
+    return cfg.scGroupDayLimitsEnabled === true;
+}
+
 function findMemberGroups(groups, uid, empNo) {
     const matched = [];
     const uidStr = String(uid || "").trim();
@@ -173,7 +203,7 @@ async function validateAndStageRequest(deptId, yyyymm, day, uid, profile, type, 
     if (type === "schedule" && scheduleCode) reqData.scheduleCode = scheduleCode;
 
     const userLimitCfg = (cfg.userLimits || {})[uid] || {};
-    const groups = cfg.groups || {};
+    const groups = await getEffectiveGroups(deptId, cfg);
     const matchedGroups = findMemberGroups(groups, uid, empNo);
     const dayMax = toIntOr(10, cfg.dayMax);
     const specialLimitRaw = cfg.specialDayLimits && hasOwn(cfg.specialDayLimits, dayStr) ? cfg.specialDayLimits[dayStr] : null;
@@ -205,8 +235,18 @@ async function validateAndStageRequest(deptId, yyyymm, day, uid, profile, type, 
                 return;
             }
 
+            const useGroupDayLimits = hasGroupDayLimits(cfg);
             const exceedsGroup = matchedGroups.some(function(group) {
-                const limit = toIntOr(2, cfg["groupMax" + group]);
+                let limit;
+                if (useGroupDayLimits) {
+                    // 날짜별 조별 휴무 제한이 켜진 달: 해당 날짜에 설정된 조 제한이 없으면 거부하지 않음
+                    const dayLimits = (cfg.groupDayLimits || {})[dayStr];
+                    if (!dayLimits || !hasOwn(dayLimits, group) || dayLimits[group] == null) return false;
+                    limit = toIntOr(0, dayLimits[group]);
+                } else {
+                    // legacy: 월 전체 공통 조별 한도
+                    limit = toIntOr(2, cfg["groupMax" + group]);
+                }
                 const count = getGroupDayCount(ledger, groups, group, dayStr, function(req) {
                     return req && req.type === "normal";
                 });
@@ -243,10 +283,20 @@ async function validateAndStageRequest(deptId, yyyymm, day, uid, profile, type, 
                 return;
             }
 
+            const useScGroupDayLimits = hasScGroupDayLimits(cfg);
             const exceedsGroupCode = matchedGroups.some(function(group) {
                 const key = scheduleCode + "_" + group;
-                if (!cfg.scGroupLimits || !hasOwn(cfg.scGroupLimits, key)) return false;
-                const limit = toIntOr(0, cfg.scGroupLimits[key]);
+                let limit;
+                if (useScGroupDayLimits) {
+                    // 날짜별 조별 근무(코드) 제한이 켜진 달: 해당 날짜에 설정된 제한이 없으면 거부하지 않음
+                    const dayLimits = (cfg.scGroupDayLimits || {})[dayStr];
+                    if (!dayLimits || !hasOwn(dayLimits, key) || dayLimits[key] == null) return false;
+                    limit = toIntOr(0, dayLimits[key]);
+                } else {
+                    // legacy: 월 전체 공통 코드별 조 한도
+                    if (!cfg.scGroupLimits || !hasOwn(cfg.scGroupLimits, key)) return false;
+                    limit = toIntOr(0, cfg.scGroupLimits[key]);
+                }
                 const count = getGroupDayCount(ledger, groups, group, dayStr, function(req) {
                     return req && req.type === "schedule" && req.scheduleCode === scheduleCode;
                 });
@@ -578,18 +628,26 @@ exports.deleteEmployee = functions.runWith(RUN_OPTS).https.onCall(async (data, c
     return { ok: true };
 });
 
-// ── 12. saveGroupAssignment — 조별 배정 저장 ─────────────────────────────────
+// ── 12. saveGroupAssignment — 조별 배정 저장 (지점 공통 영구 설정) ───────────
+// ⚠️ 조 편성은 더 이상 "월별 설정"이 아니다. departments/{deptId}/persistent/groups
+//    에 저장되며, 신청 대상 월(yyyymm)이 바뀌어도 그대로 유지된다.
+//    yyyymm 파라미터는 과거 클라이언트와의 호환을 위해 계속 받지만 저장 경로에는
+//    더 이상 사용하지 않는다.
 exports.saveGroupAssignment = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
     if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
     const deptId = String(data.deptId || "").trim();
-    const yyyymm = String(data.yyyymm || "").trim();
     const groups = data.groups || {};
 
-    if (!deptId || !yyyymm) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
+    if (!deptId) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
     await assertAdmin(context.auth.uid, deptId);
 
-    await db.ref("departments/" + deptId + "/configs/" + yyyymm + "/groups").set(groups);
-    return { ok: true, groups };
+    const normalized = {};
+    ["A", "B", "C", "D", "E"].forEach(function(g) {
+        normalized[g] = Array.isArray(groups[g]) ? groups[g] : [];
+    });
+
+    await db.ref("departments/" + deptId + "/persistent/groups").set(normalized);
+    return { ok: true, groups: normalized };
 });
 
 // ── 13. getSuperAdminSummary — 슈퍼관리자 현황 ───────────────────────────────

@@ -141,7 +141,7 @@ function saveDayMaxConstraint() {
     }).then(function() {
         liveDBData["rq_config_day_max"] = val;
         refreshData();
-        alert("일별 신청 제한이 저장되었습니다.");
+        alert("월 휴무 제한이 저장되었습니다.");
     }).catch(function(e) {
         alert((e && e.message) || "저장 실패");
     });
@@ -191,36 +191,182 @@ function saveAnnualUserMaxConstraint() {
     });
 }
 
+// ── 조별 휴무 제한 (날짜별) ────────────────────────────────────────────────────
+// departments/{deptId}/configs/{yyyymm}/groupDayLimits/{day}/{A|B|C|D|E} = 인원수
+// 이 키가 한 번이라도 저장되면(빈 객체라도) 그 달은 날짜별 방식이 source of truth가
+// 되며, 과거의 월 전체 공통 groupMaxA~E 값(레거시)은 더 이상 적용되지 않는다.
+// (레거시 groupMaxA~E 는 이 달에 groupDayLimits 가 전혀 없을 때만 서버에서 fallback으로 쓰인다.)
+function _buildGroupDayLimitsFromLiveData() {
+    var src = liveDBData["_groupDayLimits"] || {};
+    var out = {};
+    Object.keys(src).forEach(function(day) {
+        out[day] = Object.assign({}, src[day] || {});
+    });
+    return out;
+}
+
+function openGroupDayDateModal() {
+    if (!isAdmin && !isSuperAdmin) return;
+    openDateSelectionModal("GROUP_DAY_LIMIT", function(days) {
+        var el = document.getElementById("groupDaySelectedSummary");
+        if (el) el.innerText = days.length ? ("선택 날짜: " + days.map(function(d) { return d + "일"; }).join(", ")) : "선택 날짜: 없음";
+    });
+}
+
 function saveGroupMaxConstraints() {
     if (!isAdmin && !isSuperAdmin) return;
 
-    var cfg = {};
-    var ok  = true;
+    var vals = {};
+    var ok = true;
     ["A", "B", "C", "D", "E"].forEach(function(group) {
         var el = document.getElementById("groupMaxConfig" + group);
         var v  = el ? parseInt(el.value, 10) : NaN;
         if (isNaN(v) || v < 1) ok = false;
-        cfg["groupMax" + group] = v;
+        vals[group] = v;
     });
-
     if (!ok) {
         alert("각 조 한도는 1 이상이어야 합니다.");
         return;
     }
 
+    var days = (dateSelectorState.selectedDays.GROUP_DAY_LIMIT || []).slice();
+    if (days.length === 0) {
+        alert("날짜 선택 버튼으로 적용할 날짜를 먼저 선택해주세요.");
+        return;
+    }
+
+    var existing = _buildGroupDayLimitsFromLiveData();
+    days.forEach(function(day) {
+        var dayKey = String(day);
+        existing[dayKey] = Object.assign({}, existing[dayKey] || {}, vals);
+    });
+
     fn.saveDeptConfig({
         deptId: currentDept,
         yyyymm: getTargetYearMonth().fullStr,
-        config: cfg
+        // groupDayLimitsEnabled: true — 이 달을 "날짜별 조별 휴무 제한" 방식으로
+        // 명시 전환한다. 이후 날짜별 설정을 모두 삭제해도 이 플래그는 유지되어
+        // (설정 전체 초기화 전까지) 절대 legacy groupMaxA~E로 되돌아가지 않는다.
+        config: { groupDayLimits: existing, groupDayLimitsEnabled: true }
     }).then(function() {
-        Object.keys(cfg).forEach(function(key) {
-            liveDBData["rq_config_" + key.replace("groupMax", "group_max_")] = cfg[key];
-        });
+        liveDBData["_groupDayLimits"] = existing;
+        liveDBData["_groupDayLimitsEnabled"] = true;
         refreshData();
-        alert("조별 한도가 저장되었습니다.");
+        if (typeof drawGroupDayLimitBoard === "function") drawGroupDayLimitBoard();
+        alert("조별 휴무 제한이 저장되었습니다.");
     }).catch(function(e) {
         alert((e && e.message) || "저장 실패");
     });
+}
+
+function deleteGroupDayLimitFromBoard(event, day) {
+    event.preventDefault();
+    if (!confirm(day + "일의 조별 휴무 제한을 삭제하시겠습니까?")) return;
+
+    var existing = _buildGroupDayLimitsFromLiveData();
+    delete existing[String(day)];
+
+    // ⚠️ 날짜별 설정을 전부 지워 existing이 {} 가 되더라도 groupDayLimitsEnabled는
+    // 절대 건드리지 않는다(=true 유지) — 이 달은 이미 날짜별 방식으로 전환되었으므로
+    // legacy groupMaxA~E로 되돌아가면 안 된다.
+    fn.saveDeptConfig({
+        deptId: currentDept,
+        yyyymm: getTargetYearMonth().fullStr,
+        config: { groupDayLimits: existing }
+    }).then(function() {
+        liveDBData["_groupDayLimits"] = existing;
+        drawGroupDayLimitBoard();
+    }).catch(function(e) {
+        alert((e && e.message) || "삭제 실패");
+    });
+}
+
+function drawGroupDayLimitBoard() {
+    if (typeof _isPageActive === "function" && !_isPageActive("requests")) {
+        _dirtyGroupDayLimitBoard = true;
+        return;
+    }
+    _dirtyGroupDayLimitBoard = false;
+
+    var container = document.getElementById("groupDayLimitTooltipBoard");
+    if (!container) return;
+
+    var data = liveDBData["_groupDayLimits"] || {};
+    var days = Object.keys(data).map(function(d) { return parseInt(d, 10); }).sort(function(a, b) { return a - b; });
+
+    var html = "<strong style='color:#fff;font-size:13px;'>날짜별 제한 현황</strong>"
+             + "<div style='font-size:10px;color:#bdc3c7;margin:3px 0 7px;'>우클릭으로 해당 날짜 삭제</div>";
+    if (days.length === 0) {
+        html += "<div style='color:#aaa;font-style:italic;font-size:12px;'>(설정된 날짜별 제한 없음)</div>";
+    } else {
+        html += "<div style='display:flex;flex-direction:column;gap:4px;'>";
+        days.forEach(function(day) {
+            var g = data[String(day)] || {};
+            var parts = ["A", "B", "C", "D", "E"].filter(function(x) { return g[x] != null; })
+                .map(function(x) { return x + " " + g[x]; }).join(" / ");
+            html += "<span class='gdl-badge' data-day='" + day + "'"
+                  + " style='background:rgba(46,204,113,0.2);border:1px solid #2ecc71;border-radius:5px;"
+                  + "padding:4px 8px;font-size:12px;color:#8af5b2;font-weight:bold;cursor:context-menu;white-space:normal;'>"
+                  + day + "일 &nbsp; " + (parts || "제한 없음") + "</span>";
+        });
+        html += "</div>";
+    }
+    container.innerHTML = html;
+    container.oncontextmenu = function(e) {
+        var badge = e.target.closest(".gdl-badge");
+        if (!badge) return;
+        e.preventDefault();
+        deleteGroupDayLimitFromBoard(e, badge.getAttribute("data-day"));
+    };
+}
+
+// ── 특정일 휴무 제한 (복수 날짜 일괄 적용) ─────────────────────────────────────
+// 저장 구조는 기존과 동일한 specialDayLimits/{day} = 인원수 를 그대로 사용하고,
+// 날짜 선택 모달로 고른 날짜 각각에 대해 기존 setSpecialDayLimit 을 순차 호출한다.
+function openSpecialDayDateModal() {
+    if (!isAdmin && !isSuperAdmin) return;
+    openDateSelectionModal("SPECIAL_DAY_LIMIT", function(days) {
+        var el = document.getElementById("specialDaySelectedSummary");
+        if (el) el.innerText = days.length ? ("선택 날짜: " + days.map(function(d) { return d + "일"; }).join(", ")) : "선택 날짜: 없음";
+    });
+}
+
+function applySpecialDayLimits() {
+    if (!isAdmin && !isSuperAdmin) return;
+
+    var limitInput = document.getElementById("specialDayLimit");
+    var limitVal = limitInput ? parseInt(limitInput.value, 10) : NaN;
+    if (isNaN(limitVal) || limitVal < 0) {
+        alert("0 이상의 숫자를 입력해주세요.");
+        return;
+    }
+
+    var days = (dateSelectorState.selectedDays.SPECIAL_DAY_LIMIT || []).slice();
+    if (days.length === 0) {
+        alert("날짜 선택 버튼으로 적용할 날짜를 먼저 선택해주세요.");
+        return;
+    }
+
+    var tm = getTargetYearMonth();
+    var idx = 0;
+    function runNext() {
+        if (idx >= days.length) {
+            refreshData();
+            if (typeof updateLimitTooltipBoard === "function") updateLimitTooltipBoard();
+            alert("특정일 휴무 제한이 저장되었습니다.");
+            return;
+        }
+        var day = days[idx];
+        fn.setSpecialDayLimit({ deptId: currentDept, yyyymm: tm.fullStr, day: day, limit: limitVal })
+          .then(function() {
+              liveDBData["rq_special_limit_" + tm.fullStr + "_" + day] = limitVal;
+              idx++;
+              runNext();
+          }).catch(function(e) {
+              alert(((e && e.message) || "저장 실패") + " (" + day + "일)");
+          });
+    }
+    runNext();
 }
 
 function setSpecialDayLimit(isSet) {
@@ -509,5 +655,10 @@ window.saveGlobalUserMaxConstraint = saveGlobalUserMaxConstraint;
 window.saveAnnualUserMaxConstraint = saveAnnualUserMaxConstraint;
 window.saveGroupMaxConstraints    = saveGroupMaxConstraints;
 window.setSpecialDayLimit         = setSpecialDayLimit;
+window.openSpecialDayDateModal    = openSpecialDayDateModal;
+window.applySpecialDayLimits      = applySpecialDayLimits;
+window.openGroupDayDateModal      = openGroupDayDateModal;
+window.drawGroupDayLimitBoard     = drawGroupDayLimitBoard;
+window.deleteGroupDayLimitFromBoard = deleteGroupDayLimitFromBoard;
 window.triggerAnnualUpload        = triggerAnnualUpload;
 window.downloadAnnualTemplate     = downloadAnnualTemplate;
