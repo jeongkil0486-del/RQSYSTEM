@@ -23,6 +23,7 @@ var fn = {
   listNotices:         fnClient.httpsCallable("listNotices"),
   markNoticeRead:      fnClient.httpsCallable("markNoticeRead"),
   saveGroupAssignment: fnClient.httpsCallable("saveGroupAssignment"),
+  ensurePersistentGroups: fnClient.httpsCallable("ensurePersistentGroups"),
   getSuperAdminSummary: fnClient.httpsCallable("getSuperAdminSummary"),
   listDepartments:      fnClient.httpsCallable("listDepartments"),
   listDeptEmployees:    fnClient.httpsCallable("listDeptEmployees"),

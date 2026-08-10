@@ -98,16 +98,44 @@ function getRequestLimitMessage(kind) {
 }
 
 /**
+ * 조 편성(persistent groups) 관련 공통 헬퍼.
+ *
+ * ⚠️ RTDB는 빈 배열/빈 객체를 저장하면 그 경로 자체가 사라질 수 있으므로,
+ * "persistent/groups 노드가 존재하는지"만으로는 "이미 persistent 방식으로
+ * 전환되었는지"를 판단할 수 없다 (A~E를 전부 비운 상태와 아직 한 번도
+ * migration되지 않은 상태를 구분할 수 없음). 따라서 반드시 명시적
+ * _initialized 마커로만 판단한다.
+ *   - _initialized === true  → persistent가 source of truth (A~E가 전부 비어도 유효)
+ *   - _initialized 없음      → 과거(마커 도입 이전) 저장분과의 하위호환을 위해
+ *                              A~E 중 실제 데이터가 하나라도 있으면 initialized로 인정
+ *   - 둘 다 아니면            → 아직 migration되지 않은 상태 (legacy fallback 대상)
+ */
+function isPersistentGroupsInitialized(pers) {
+    if (!pers) return false;
+    if (pers._initialized === true) return true;
+    return ["A", "B", "C", "D", "E"].some(function(g) {
+        return Array.isArray(pers[g]) && pers[g].length > 0;
+    });
+}
+
+function extractGroupsFromPersistent(pers) {
+    const out = {};
+    ["A", "B", "C", "D", "E"].forEach(function(g) {
+        out[g] = (pers && Array.isArray(pers[g])) ? pers[g] : [];
+    });
+    return out;
+}
+
+/**
  * 조 편성(persistent groups)을 읽는다.
- * departments/{deptId}/persistent/groups 가 존재하면 그것을 source of truth로 사용하고,
- * (설정 전체 초기화 시에도 A~E 빈 배열로 명시 저장되므로 "초기화된 상태"도 정상적으로 구분됨)
- * 아직 한 번도 저장된 적이 없는 지점(persistent 데이터 없음)은
- * 과거 월별 설정(configs/{yyyymm}/groups)을 legacy fallback으로 사용한다.
+ * persistent/groups가 initialized 상태이면 그것을 source of truth로 사용하고,
+ * 아직 migration되지 않은 지점은 과거 월별 설정(configs/{yyyymm}/groups)을
+ * legacy fallback으로 사용한다 (실제 migration은 ensurePersistentGroups가 담당).
  */
 async function getEffectiveGroups(deptId, cfg) {
     const persSnap = await db.ref("departments/" + deptId + "/persistent/groups").once("value");
     const pers = persSnap.val();
-    if (pers && Object.keys(pers).length > 0) return pers;
+    if (isPersistentGroupsInitialized(pers)) return extractGroupsFromPersistent(pers);
     return cfg.groups || {};
 }
 
@@ -641,13 +669,88 @@ exports.saveGroupAssignment = functions.runWith(RUN_OPTS).https.onCall(async (da
     if (!deptId) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
     await assertAdmin(context.auth.uid, deptId);
 
-    const normalized = {};
+    // _initialized: true — 관리자가 조 편성을 한 번이라도 저장하면 이 지점은
+    // persistent 방식으로 전환된 것으로 명시 확정한다. A~E를 전부 비운 채
+    // 저장해도(=RTDB에서 A~E 키 자체가 사라져도) _initialized만은 남아있으므로
+    // "아직 migration 안 됨"과 절대 혼동되지 않는다.
+    const normalized = { _initialized: true };
     ["A", "B", "C", "D", "E"].forEach(function(g) {
         normalized[g] = Array.isArray(groups[g]) ? groups[g] : [];
     });
 
     await db.ref("departments/" + deptId + "/persistent/groups").set(normalized);
-    return { ok: true, groups: normalized };
+    return { ok: true, groups: extractGroupsFromPersistent(normalized) };
+});
+
+// ── 12b. ensurePersistentGroups — legacy 월별 조 편성을 persistent로 1회 migration ──
+// 관리자가 별도 작업을 하지 않아도, 아직 persistent 방식으로 전환되지 않은 지점의
+// 조 편성을 서버가 안전하게 옮겨준다. 클라이언트는 임의의 groups 데이터를 보낼 수
+// 없고(요청 바디의 groups는 사용하지 않음), 서버가 기존 DB의 legacy 데이터를 읽어
+// persistent로 옮기는 역할만 한다. staff도 호출 가능하지만 반드시 자기 지점에
+// 한해서만 동작한다 (assertAdmin이 아닌 별도의 "본인 지점" 검증 사용).
+exports.ensurePersistentGroups = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const deptId = String(data.deptId || "").trim();
+    if (!deptId) throw new functions.https.HttpsError("invalid-argument", "deptId 필요");
+
+    const profile = await getCallerProfile(context.auth.uid);
+    if (!profile) throw new functions.https.HttpsError("permission-denied", "프로필 없음");
+    const role = String(profile.role || "").toLowerCase();
+    if (role !== "super_admin") {
+        if (String(profile.deptId || "").trim() !== deptId)
+            throw new functions.https.HttpsError("permission-denied", "다른 지점 접근 불가");
+    }
+
+    const groupsRef = db.ref("departments/" + deptId + "/persistent/groups");
+    const persSnap = await groupsRef.once("value");
+    const pers = persSnap.val();
+
+    if (pers && pers._initialized === true) {
+        return { ok: true, migrated: false, groups: extractGroupsFromPersistent(pers) };
+    }
+
+    if (pers && isPersistentGroupsInitialized(pers)) {
+        // 하위호환: marker 도입 이전에 이미 실제 조 편성이 저장돼 있던 지점 — marker만 보완
+        await groupsRef.update({ _initialized: true });
+        return { ok: true, migrated: false, groups: extractGroupsFromPersistent(pers) };
+    }
+
+    // ── 아직 persistent 방식으로 전환되지 않은 지점: legacy configs/{yyyymm}/groups 검색 ──
+    function hasAnyMember(g) {
+        return !!g && ["A", "B", "C", "D", "E"].some(function(k) {
+            return Array.isArray(g[k]) && g[k].length > 0;
+        });
+    }
+
+    const yyyymm = String(data.yyyymm || "").trim();
+    let legacyGroups = null;
+
+    if (/^\d{6}$/.test(yyyymm)) {
+        const curSnap = await db.ref("departments/" + deptId + "/configs/" + yyyymm + "/groups").once("value");
+        const curGroups = curSnap.val();
+        if (hasAnyMember(curGroups)) legacyGroups = curGroups;
+    }
+
+    if (!legacyGroups) {
+        const configsSnap = await db.ref("departments/" + deptId + "/configs").once("value");
+        const configsAll = configsSnap.val() || {};
+        const candidates = Object.keys(configsAll)
+            .filter(function(k) { return /^\d{6}$/.test(k); })
+            .sort()
+            .reverse(); // 최신 월부터 검색
+        for (const ym of candidates) {
+            const g = configsAll[ym] && configsAll[ym].groups;
+            if (hasAnyMember(g)) { legacyGroups = g; break; }
+        }
+    }
+
+    const normalized = { _initialized: true };
+    ["A", "B", "C", "D", "E"].forEach(function(g) {
+        normalized[g] = (legacyGroups && Array.isArray(legacyGroups[g])) ? legacyGroups[g] : [];
+    });
+
+    await groupsRef.set(normalized);
+    return { ok: true, migrated: !!legacyGroups, groups: extractGroupsFromPersistent(normalized) };
 });
 
 // ── 13. getSuperAdminSummary — 슈퍼관리자 현황 ───────────────────────────────

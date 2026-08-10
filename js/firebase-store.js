@@ -201,9 +201,33 @@ function connectDeptDB(dept, onFirstLoad, overrideYyyymm) {
     db.ref(persistentGroupsPath).once("value", function(snap) {
         if (connectToken !== _deptConnectToken) return;
         var pg = snap.val() || {};
-        initialState.persistentGroups = JSON.stringify(pg);
-        _applyPersistentGroupsToLiveData(pg);
-        onLoaded();
+        if (_isPersistentGroupsInitialized(pg)) {
+            initialState.persistentGroups = JSON.stringify(pg);
+            _applyPersistentGroupsToLiveData(pg);
+            onLoaded();
+            return;
+        }
+        // ⚠️ 이 지점은 아직 persistent 방식으로 전환되지 않았다. 관리자가 별도
+        // 작업을 하지 않아도 자동으로 legacy configs/{yyyymm}/groups 를 찾아
+        // persistent/groups 로 옮기도록 서버(ensurePersistentGroups)에 요청한다.
+        // 이미 초기화된 지점은 이 분기를 타지 않으므로(위에서 바로 return),
+        // 정상 운영 중에는 추가 네트워크 비용이 들지 않는다.
+        fn.ensurePersistentGroups({ deptId: dept, yyyymm: yyyymm }).then(function(result) {
+            if (connectToken !== _deptConnectToken) return;
+            var groups = (result.data && result.data.groups) || {};
+            var normalized = Object.assign({ _initialized: true }, groups);
+            initialState.persistentGroups = JSON.stringify(normalized);
+            _applyPersistentGroupsToLiveData(normalized);
+            onLoaded();
+        }).catch(function(e) {
+            console.warn("[firebase-store] ensurePersistentGroups 실패:", e && e.message);
+            if (connectToken !== _deptConnectToken) return;
+            // migration 요청이 실패해도 로딩을 막지 않는다 — legacy cfg.groups
+            // fallback(이미 _applyCfgToLiveData 에서 처리됨)으로 계속 진행.
+            initialState.persistentGroups = JSON.stringify(pg);
+            _applyPersistentGroupsToLiveData(pg);
+            onLoaded();
+        });
     }, function(error) {
         console.error("Failed to load persistent groups:", error);
         if (connectToken !== _deptConnectToken) return;
@@ -277,19 +301,38 @@ function _applyCfgToLiveData(cfg, yyyymm) {
 }
 
 /**
+ * departments/{deptId}/persistent/groups 가 "이미 persistent 방식으로 전환된
+ * 지점"인지 판단한다.
+ * ⚠️ RTDB는 빈 배열/빈 객체를 저장하면 그 경로 자체가 사라질 수 있으므로,
+ * 단순히 persistentGroups 객체의 키 개수만으로 판단하면 안 된다 (A~E를 전부
+ * 비운 상태와 아직 한 번도 migration되지 않은 상태를 구분할 수 없음).
+ * 반드시 _initialized === true 마커를 우선 확인하고, marker가 없는 과거
+ * 저장분과의 하위호환을 위해서만 A~E 실데이터 존재 여부를 보조 기준으로 쓴다.
+ */
+function _isPersistentGroupsInitialized(persistentGroups) {
+    if (!persistentGroups) return false;
+    if (persistentGroups._initialized === true) return true;
+    return ["A", "B", "C", "D", "E"].some(function(group) {
+        return Array.isArray(persistentGroups[group]) && persistentGroups[group].length > 0;
+    });
+}
+
+/**
  * departments/{deptId}/persistent/groups 스냅샷을 liveDBData 에 반영한다.
- * persistent 데이터가 존재하면(비어있는 A~E 배열이라도) 그것이 항상 source of
- * truth이며, 존재하지 않는 지점은 _applyCfgToLiveData 의 legacy groups fallback이
- * 이미 채워둔 값을 그대로 둔다(마이그레이션 전 화면 표시용).
+ * initialized 상태이면(A~E가 전부 비어있는 초기화 직후 상태 포함) 그것이 항상
+ * source of truth이며, 아직 initialized 되지 않은 지점은 _applyCfgToLiveData 의
+ * legacy groups fallback이 채워둔 값을 그대로 둔다(migration 완료 전 화면 표시용 —
+ * 실제 migration은 connectDeptDB 에서 ensurePersistentGroups 로 처리한다).
  */
 function _applyPersistentGroupsToLiveData(persistentGroups) {
-    var hasPersistent = !!(persistentGroups && Object.keys(persistentGroups).length > 0);
-    if (hasPersistent) {
+    var pg = persistentGroups || {};
+    var isInitialized = _isPersistentGroupsInitialized(pg);
+    if (isInitialized) {
         ["A", "B", "C", "D", "E"].forEach(function(group) {
-            liveDBData["rq_live_group_" + group] = Array.isArray(persistentGroups[group]) ? persistentGroups[group] : [];
+            liveDBData["rq_live_group_" + group] = Array.isArray(pg[group]) ? pg[group] : [];
         });
     }
-    liveDBData["_persistentGroupsLoaded"] = hasPersistent;
+    liveDBData["_persistentGroupsLoaded"] = isInitialized;
 }
 
 function _applyMyRequests(myData, yyyymm) {
