@@ -1101,6 +1101,24 @@ body {
   gap: 16px;
 }
 .card-wide { grid-column: 1 / -1; }
+
+/* 조별 휴무 제한 / 조별 근무 제한 — 같은 행에 나란히(50/50), 모바일은 1열.
+   grid의 기본 align-items:stretch 덕분에 두 카드 높이가 자동으로 맞춰진다. */
+.cards-row-2col {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 640px) {
+  .cards-row-2col { grid-template-columns: 1fr; }
+}
+/* compact 카드의 버튼 줄 — 카드 전체 폭을 억지로 채우지 않고 필요한 만큼만 */
+.dm-card-btn-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .group-inputs {
   display: flex;
   align-items: center;
@@ -1520,6 +1538,64 @@ body {
 }
 @media (max-width: 480px) {
   .date-select-cell { height: 34px; font-size: 11px; }
+}
+
+/* ─── 조 편성 관리 팝업 ─── (조별 휴무 제한 카드에서 분리 — 평소엔 숨겨진 채로
+   필요할 때만 열림. 내부 #groupListTooltipBoard 렌더링/드래그 로직은 그대로 재사용) */
+.group-assign-box {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border);
+  width: 1100px;
+  max-width: 95vw;
+  max-height: 90vh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.group-assign-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.group-assign-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.group-assign-desc {
+  font-size: 12px;
+  color: var(--text-sub);
+  margin-top: 3px;
+}
+.group-assign-body {
+  padding: 16px 22px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+/* 카드 안에 있을 때 쓰던 420px 제한을 풀어 넓은 팝업 공간을 활용한다
+   (다른 곳의 .custom-floating-tooltip 공용 규칙은 건드리지 않음) */
+.group-assign-body .custom-floating-tooltip {
+  max-height: none;
+  margin-top: 0;
+}
+.group-assign-footer {
+  padding: 12px 22px 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+@media (max-width: 768px) {
+  .group-assign-box { width: calc(100vw - 24px); max-height: 92vh; }
+  .group-assign-header, .group-assign-body, .group-assign-footer { padding-left: 14px; padding-right: 14px; }
 }
 
 /* ─── Super Admin Panel ─── */

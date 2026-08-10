@@ -194,10 +194,14 @@ function _getGroupBoardTokenLabel(token) {
     return emp.name + (emp.empNo ? " (" + emp.empNo + ")" : "");
 }
 
+// ⚠️ read-only 함수 — 로컬 groupBoardState 를 구성할 뿐, Firebase에는 절대 쓰지
+// 않는다. drawLiveGroupBoards()를 통해 모달을 "열기만" 해도 호출되는 함수이므로,
+// 여기서 DB write를 하면 사용자가 [저장]을 누르지 않아도 조 편성이 바뀌는 문제가
+// 생긴다. 실제 저장은 사용자가 [저장] 버튼을 눌렀을 때 saveAllGroupsFromInputs()
+// 한 곳에서만 일어난다.
 function _buildGroupBoardState() {
     var state = { POOL: [], A: [], B: [], C: [], D: [], E: [] };
     var assigned = {};
-    var hasOrphan = false;
     var visibleEmployees = _getVisibleDeptEmployees();
 
     ["A", "B", "C", "D", "E"].forEach(function(group) {
@@ -206,8 +210,10 @@ function _buildGroupBoardState() {
             if (!raw) return;
             var emp = employeeByUid[raw] || employeeByEmpNo[raw.toLowerCase()];
             if (!emp) {
-                // orphan 토큰 감지 — 화면에 표시하지 않고 정리 플래그만 세움
-                hasOrphan = true;
+                // orphan 토큰(삭제된 직원의 남은 uid) — 화면/local state에서 제외만
+                // 한다. DB 정리는 하지 않으며, 관리자가 이후 [저장]을 누르면
+                // groupBoardState(이미 orphan이 빠진 상태)가 그대로 저장되면서
+                // 자연스럽게 정리된다.
                 return;
             }
             var token = emp.uid || emp.empNo || raw;
@@ -226,42 +232,6 @@ function _buildGroupBoardState() {
 
     groupBoardState = state;
     groupBoardStateLoaded = true;
-
-    // orphan이 있으면 정리된 상태를 조용히 Firebase에 저장
-    // (alert 없이 saveGroupAssignment 직접 호출)
-    if (hasOrphan && (isAdmin || isSuperAdmin) && currentDept) {
-        _saveGroupsQuietly();
-    }
-}
-
-/**
- * _saveGroupsQuietly()
- * orphan uid 정리 후 alert 없이 Firebase에 조편성을 저장한다.
- * groupBoardState가 이미 정리된 상태여야 한다.
- * 실패해도 UI에는 영향 없음 (다음 저장 시 재시도됨).
- */
-function _saveGroupsQuietly() {
-    if (!isAdmin && !isSuperAdmin) return;
-    if (!currentDept) return;
-    var groups = {};
-    ["A", "B", "C", "D", "E"].forEach(function(group) {
-        groups[group] = (groupBoardState[group] || []).slice();
-    });
-    fn.saveGroupAssignment({
-        deptId: currentDept,
-        groups: groups,
-        yyyymm: getTargetYearMonth().fullStr
-    }).then(function(result) {
-        // liveDBData 갱신 (다음 _buildGroupBoardState 호출 시 정리된 데이터를 읽음)
-        var saved = (result.data && result.data.groups) || groups;
-        Object.keys(saved).forEach(function(group) {
-            liveDBData["rq_live_group_" + group] = saved[group];
-        });
-        liveDBData["_persistentGroupsLoaded"] = true;
-    }).catch(function(e) {
-        // 자동 정리 저장 실패는 무시 (수동 저장 버튼으로 재시도 가능)
-        console.warn("[admin-users] _saveGroupsQuietly 실패:", e && e.message);
-    });
 }
 
 function _bindGroupBoardDropTarget(target, zone, indexResolver) {
@@ -387,6 +357,27 @@ function saveAllGroupsFromInputs() {
         }).catch(function(e) {
             alert((e && e.message) || "저장 실패");
         });
+}
+
+// ── 조 편성 관리 팝업 (조별 휴무 제한 카드의 [조 편성 관리] 버튼) ───────────────
+// 팝업을 여는 것 자체는 Firebase에 아무것도 쓰지 않는다 — drawLiveGroupBoards()는
+// 순수 렌더링 함수이고, 저장은 여전히 그 안에서 렌더링되는 "저장" 버튼
+// (saveAllGroupsFromInputs) 을 눌러야만 실행된다.
+function openGroupAssignmentModal() {
+    if (!isAdmin && !isSuperAdmin) return;
+    // 팝업을 열 때마다 liveDBData 기준으로 다시 빌드해 항상 최신 저장 상태를 보여준다.
+    groupBoardStateLoaded = false;
+    drawLiveGroupBoards();
+    var modalEl = document.getElementById("groupAssignmentModal");
+    if (modalEl) modalEl.style.display = "flex";
+}
+
+function closeGroupAssignmentModal() {
+    var modalEl = document.getElementById("groupAssignmentModal");
+    if (modalEl) modalEl.style.display = "none";
+    // 저장하지 않고 닫은 경우, 드래그로만 바뀌고 아직 저장되지 않은 상태를 버리고
+    // 다음에 다시 열었을 때 liveDBData(=마지막 저장본) 기준으로 새로 그리도록 한다.
+    groupBoardStateLoaded = false;
 }
 
 // ── 직원 계정 생성 ─────────────────────────────────────────────────────────────

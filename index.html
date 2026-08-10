@@ -359,38 +359,43 @@
                     </div>
                 </div>
 
-                <!-- 조별 휴무 제한 — 날짜별 상세/설정은 공통 관리 팝업에서 처리. 조 편성은 별개 기능이므로 그대로 유지 -->
-                <div class="feature-card card-wide">
-                    <div class="feature-card-header">
-                        <div class="feature-icon green" style="background:#f0fdf4;">👥</div>
-                        <div>
-                            <div class="feature-card-title">조별 휴무 제한</div>
-                            <div class="feature-card-desc">선택한 날짜에 각 조의 휴무 신청 한도를 설정합니다.</div>
-                        </div>
-                    </div>
-                    <div class="feature-card-body">
-                        <div id="groupDayCardSummary" class="dm-card-summary">설정된 날짜 0일</div>
-                        <button class="btn btn-primary-sm btn-full" onclick="openDateManageModal('GROUP_DAY_LIMIT')">설정 관리</button>
-                        <div class="form-row" style="margin-top:14px;">
-                            <label class="form-label">조 편성</label>
-                        </div>
-                        <div class="custom-floating-tooltip" id="groupListTooltipBoard"></div>
-                    </div>
-                </div>
+                <!-- 조별 휴무 제한 + 조별 근무 제한 — 같은 행에 나란히, compact 카드.
+                     날짜별 상세/설정은 공통 관리 팝업에서, 조 편성은 별도 팝업에서 처리 -->
+                <div class="cards-row-2col">
 
-                <!-- 조별 근무 제한 — 날짜별 상세/설정(코드 선택 포함)은 공통 관리 팝업에서 처리 -->
-                <div class="feature-card card-wide">
-                    <div class="feature-card-header">
-                        <div class="feature-icon" style="background:#fef2f2;">🔢</div>
-                        <div>
-                            <div class="feature-card-title">조별 근무 제한</div>
-                            <div class="feature-card-desc">선택한 날짜에 스케줄 코드별 조별 근무 한도를 설정합니다.</div>
+                    <div class="feature-card">
+                        <div class="feature-card-header">
+                            <div class="feature-icon green" style="background:#f0fdf4;">👥</div>
+                            <div>
+                                <div class="feature-card-title">조별 휴무 제한</div>
+                                <div class="feature-card-desc">선택한 날짜에 각 조의 휴무 신청 한도를 설정합니다.</div>
+                            </div>
+                        </div>
+                        <div class="feature-card-body">
+                            <div id="groupDayCardSummary" class="dm-card-summary">설정된 날짜 0일</div>
+                            <div class="dm-card-btn-row">
+                                <button class="btn btn-primary-sm" onclick="openDateManageModal('GROUP_DAY_LIMIT')">설정 관리</button>
+                                <button class="btn btn-secondary" onclick="openGroupAssignmentModal()">조 편성 관리</button>
+                            </div>
                         </div>
                     </div>
-                    <div class="feature-card-body">
-                        <div id="scGroupDayCardSummary" class="dm-card-summary">설정된 날짜 없음</div>
-                        <button class="btn btn-primary-sm btn-full" onclick="openDateManageModal('SC_GROUP_DAY_LIMIT')">설정 관리</button>
+
+                    <div class="feature-card">
+                        <div class="feature-card-header">
+                            <div class="feature-icon" style="background:#fef2f2;">🔢</div>
+                            <div>
+                                <div class="feature-card-title">조별 근무 제한</div>
+                                <div class="feature-card-desc">선택한 날짜에 스케줄 코드별 조별 근무 한도를 설정합니다.</div>
+                            </div>
+                        </div>
+                        <div class="feature-card-body">
+                            <div id="scGroupDayCardSummary" class="dm-card-summary">설정된 날짜 없음</div>
+                            <div class="dm-card-btn-row">
+                                <button class="btn btn-primary-sm" onclick="openDateManageModal('SC_GROUP_DAY_LIMIT')">설정 관리</button>
+                            </div>
+                        </div>
                     </div>
+
                 </div>
 
             </div>
@@ -905,6 +910,29 @@
                     <button type="button" class="btn btn-danger btn-full" onclick="bulkDeleteDateManageSetting()">선택 설정 일괄 삭제</button>
                 </div>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- 조 편성 관리 팝업 ("조별 휴무 제한" 카드의 [조 편성 관리] 버튼에서 열림)
+     내부 #groupListTooltipBoard 는 기존 admin-users.js 의 drawLiveGroupBoards() /
+     drag&drop / saveAllGroupsFromInputs() 를 그대로 재사용한다 — 위치만 카드 밖의
+     이 팝업으로 옮겼을 뿐, id를 그대로 유지했으므로 기존 로직은 전혀 수정하지 않았다.
+     "저장" 버튼은 drawLiveGroupBoards() 가 렌더링하는 내용 안에 이미 포함되어 있다. -->
+<div id="groupAssignmentModal" onclick="if(event.target===this) closeGroupAssignmentModal();" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.55); z-index:99999; justify-content:center; align-items:center;">
+    <div class="group-assign-box">
+        <div class="group-assign-header">
+            <div>
+                <div class="group-assign-title">조 편성 관리</div>
+                <div class="group-assign-desc">직원 카드를 드래그하여 조 사이로 이동할 수 있습니다.</div>
+            </div>
+            <button type="button" onclick="closeGroupAssignmentModal()" class="date-select-box-close">✕</button>
+        </div>
+        <div class="group-assign-body">
+            <div class="custom-floating-tooltip" id="groupListTooltipBoard"></div>
+        </div>
+        <div class="group-assign-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeGroupAssignmentModal()">취소</button>
         </div>
     </div>
 </div>
