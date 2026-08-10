@@ -1,0 +1,80 @@
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "auth !== null && auth.uid === $uid",
+        ".write": false
+      }
+    },
+    "departments": {
+      "$deptId": {
+        "publicCounters": {
+          "$yyyymm": {
+            ".read": "auth !== null && (root.child('users').child(auth.uid).child('role').val() === 'super_admin' || root.child('users').child(auth.uid).child('deptId').val() === $deptId)",
+            ".write": false
+          }
+        },
+        "configs": {
+          "$yyyymm": {
+            ".read": "auth !== null && (root.child('users').child(auth.uid).child('role').val() === 'super_admin' || root.child('users').child(auth.uid).child('deptId').val() === $deptId)",
+            ".write": false
+          }
+        },
+        "adminView": {
+          "$yyyymm": {
+            ".read": "auth !== null && (root.child('users').child(auth.uid).child('role').val() === 'super_admin' || (root.child('users').child(auth.uid).child('deptId').val() === $deptId && root.child('users').child(auth.uid).child('role').val() === 'admin'))",
+            ".write": false
+          }
+        },
+        "persistent": {
+          "groups": {
+            ".read": "auth !== null && root.child('users').child(auth.uid).child('deptId').val() === $deptId",
+            ".write": false
+          }
+        }
+      }
+    },
+    "userRequests": {
+      "$uid": {
+        ".read": "auth !== null && auth.uid === $uid",
+        ".write": false
+      }
+    },
+    "auditLogs": {
+      ".read": false,
+      ".write": false
+    },
+    "requestLedger": {
+      ".read": false,
+      ".write": false
+    },
+    "employeeIndex": {
+      ".read": false,
+      ".write": false
+    },
+    "trinity_system": {
+      ".read": false,
+      ".write": false
+    },
+    "adminAccounts": {
+      ".read": false,
+      ".write": false
+    },
+    "admin_pass": {
+      ".read": false,
+      ".write": false
+    },
+    "super_admin": {
+      ".read": false,
+      ".write": false
+    },
+    "$other": {
+      ".read": false,
+      ".write": false
+    },
+    "requestsLedger": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}

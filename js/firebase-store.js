@@ -204,6 +204,11 @@ function connectDeptDB(dept, onFirstLoad, overrideYyyymm) {
         initialState.persistentGroups = JSON.stringify(pg);
         _applyPersistentGroupsToLiveData(pg);
         onLoaded();
+    }, function(error) {
+        console.error("Failed to load persistent groups:", error);
+        if (connectToken !== _deptConnectToken) return;
+        initialState.persistentGroups = JSON.stringify({});
+        onLoaded();
     });
     if (isAdmin || isSuperAdmin) {
         loadDeptEmployees(dept).then(function() {
@@ -395,6 +400,8 @@ function _subscribeRealtimeKeys(dept, yyyymm, initialState, connectToken) {
         _applyPersistentGroupsToLiveData(pg);
         if (typeof groupBoardStateLoaded !== "undefined") groupBoardStateLoaded = false;
         if (currentUser) _throttledRefresh();
+    }, function(error) {
+        console.error("Persistent groups listener failed:", error);
     });
     _deptListeners.push({ path: persistentGroupsPath, event: "value", fn: onPersistentGroups });
     if (isAdmin || isSuperAdmin) {
