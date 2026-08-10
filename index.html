@@ -278,7 +278,7 @@
 
             <div class="cards-grid">
 
-                <!-- 특정일 휴무 제한 (다른 두 카드와 한 줄 배치 — 내부는 압축 정렬) -->
+                <!-- 특정일 휴무 제한 (다른 두 카드와 한 줄 배치) — 날짜별 상세는 공통 관리 팝업에서 처리 -->
                 <div class="feature-card">
                     <div class="feature-card-header">
                         <div class="feature-icon blue" style="background:#eff6ff;">🎯</div>
@@ -288,16 +288,8 @@
                         </div>
                     </div>
                     <div class="feature-card-body">
-                        <div class="form-row form-row-nowrap form-row-compact">
-                            <input type="number" id="specialDayLimit" min="0" max="40" class="form-input tiny-num-input" placeholder="명" title="제한 인원">
-                            <button class="btn btn-secondary btn-compact" onclick="openSpecialDayDateModal()">날짜 선택</button>
-                            <button class="btn btn-primary-sm btn-compact" onclick="applySpecialDayLimits()">적용</button>
-                        </div>
-                        <div id="specialDaySelectedSummary" class="date-selected-summary">선택 날짜: 없음</div>
-                        <div class="form-row">
-                            <label class="form-label">현황</label>
-                        </div>
-                        <div class="custom-floating-tooltip" id="specialDayTooltipBoard"></div>
+                        <div id="specialDayCardSummary" class="dm-card-summary">설정된 날짜 0일</div>
+                        <button class="btn btn-primary-sm btn-full" onclick="openDateManageModal('SPECIAL_DAY_LIMIT')">설정 관리</button>
                     </div>
                 </div>
 
@@ -367,7 +359,7 @@
                     </div>
                 </div>
 
-                <!-- 조별 휴무 제한 (전체 너비 — 5개 조 입력창 잘림 방지) -->
+                <!-- 조별 휴무 제한 — 날짜별 상세/설정은 공통 관리 팝업에서 처리. 조 편성은 별개 기능이므로 그대로 유지 -->
                 <div class="feature-card card-wide">
                     <div class="feature-card-header">
                         <div class="feature-icon green" style="background:#f0fdf4;">👥</div>
@@ -377,33 +369,16 @@
                         </div>
                     </div>
                     <div class="feature-card-body">
-                        <div class="form-row group-inputs">
-                            <span class="group-label gl-a">A조</span>
-                            <input type="number" id="groupMaxConfigA" min="1" max="40" class="form-input small small-num-input" placeholder="2">
-                            <span class="group-label gl-b">B조</span>
-                            <input type="number" id="groupMaxConfigB" min="1" max="40" class="form-input small small-num-input" placeholder="2">
-                            <span class="group-label gl-c">C조</span>
-                            <input type="number" id="groupMaxConfigC" min="1" max="40" class="form-input small small-num-input" placeholder="2">
-                            <span class="group-label gl-d">D조</span>
-                            <input type="number" id="groupMaxConfigD" min="1" max="40" class="form-input small small-num-input" placeholder="2">
-                            <span class="group-label gl-e">E조</span>
-                            <input type="number" id="groupMaxConfigE" min="1" max="40" class="form-input small small-num-input" placeholder="2">
-                            <button class="btn btn-secondary" onclick="openGroupDayDateModal()">날짜 선택</button>
-                            <button class="btn btn-primary-sm" onclick="saveGroupMaxConstraints()">적용</button>
-                        </div>
-                        <div id="groupDaySelectedSummary" class="date-selected-summary">선택 날짜: 없음</div>
-                        <div class="form-row">
-                            <label class="form-label">날짜별 제한 현황</label>
-                        </div>
-                        <div class="custom-floating-tooltip" id="groupDayLimitTooltipBoard"></div>
-                        <div class="form-row">
+                        <div id="groupDayCardSummary" class="dm-card-summary">설정된 날짜 0일</div>
+                        <button class="btn btn-primary-sm btn-full" onclick="openDateManageModal('GROUP_DAY_LIMIT')">설정 관리</button>
+                        <div class="form-row" style="margin-top:14px;">
                             <label class="form-label">조 편성</label>
                         </div>
                         <div class="custom-floating-tooltip" id="groupListTooltipBoard"></div>
                     </div>
                 </div>
 
-                <!-- 조별 근무 제한 (전체 너비 — 5개 조 입력창 잘림 방지) -->
+                <!-- 조별 근무 제한 — 날짜별 상세/설정(코드 선택 포함)은 공통 관리 팝업에서 처리 -->
                 <div class="feature-card card-wide">
                     <div class="feature-card-header">
                         <div class="feature-icon" style="background:#fef2f2;">🔢</div>
@@ -413,31 +388,8 @@
                         </div>
                     </div>
                     <div class="feature-card-body">
-                        <div class="form-row">
-                            <label class="form-label">코드</label>
-                            <select id="scGroupLimitCodeSelect" class="form-select" style="width:90px;">
-                                <option value="">코드</option>
-                            </select>
-                        </div>
-                        <div class="form-row group-inputs">
-                            <span class="group-label gl-a">A조</span>
-                            <input type="number" id="scGroupLimitA" min="0" max="99" class="form-input small small-num-input" placeholder="-">
-                            <span class="group-label gl-b">B조</span>
-                            <input type="number" id="scGroupLimitB" min="0" max="99" class="form-input small small-num-input" placeholder="-">
-                            <span class="group-label gl-c">C조</span>
-                            <input type="number" id="scGroupLimitC" min="0" max="99" class="form-input small small-num-input" placeholder="-">
-                            <span class="group-label gl-d">D조</span>
-                            <input type="number" id="scGroupLimitD" min="0" max="99" class="form-input small small-num-input" placeholder="-">
-                            <span class="group-label gl-e">E조</span>
-                            <input type="number" id="scGroupLimitE" min="0" max="99" class="form-input small small-num-input" placeholder="-">
-                            <button class="btn btn-secondary" onclick="openScGroupDayDateModal()">날짜 선택</button>
-                            <button class="btn btn-primary-sm" onclick="saveScGroupLimit()">적용</button>
-                        </div>
-                        <div id="scGroupDaySelectedSummary" class="date-selected-summary">선택 날짜: 없음</div>
-                        <div class="form-row">
-                            <label class="form-label">현황</label>
-                        </div>
-                        <div class="custom-floating-tooltip" id="scGroupLimitTooltipBoard"></div>
+                        <div id="scGroupDayCardSummary" class="dm-card-summary">설정된 날짜 없음</div>
+                        <button class="btn btn-primary-sm btn-full" onclick="openDateManageModal('SC_GROUP_DAY_LIMIT')">설정 관리</button>
                     </div>
                 </div>
 
@@ -882,24 +834,77 @@
     </div>
 </div>
 
-<!-- 공통 날짜 선택 모달 (특정일 휴무 제한 / 조별 휴무 제한 / 조별 근무 제한 공용) -->
-<div id="dateSelectModal" onclick="if(event.target===this) closeDateSelectionModal();" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.55); z-index:99999; justify-content:center; align-items:center;">
-    <div class="date-select-box">
-        <div class="date-select-box-header">
-            <div id="dateSelectTitle" class="date-select-box-title">날짜 선택</div>
-            <button type="button" onclick="closeDateSelectionModal()" class="date-select-box-close">✕</button>
+<!-- 공통 날짜별 설정 관리 팝업 (특정일 휴무 제한 / 조별 휴무 제한 / 조별 근무 제한 공용)
+     좌: 달력(현황 dot + 복수 선택) / 우: 선택 현황 + 현재 설정 + 새 설정 입력 + 적용/일괄삭제 -->
+<div id="dateSelectModal" onclick="if(event.target===this) closeDateManageModal();" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.55); z-index:99999; justify-content:center; align-items:center;">
+    <div class="date-manage-box">
+        <div class="date-manage-header">
+            <div class="date-manage-header-text">
+                <div id="dateSelectTitle" class="date-manage-title">날짜별 설정 관리</div>
+                <div id="dateSelectMonthLabel" class="date-manage-month">—년 —월</div>
+            </div>
+            <button type="button" onclick="closeDateManageModal()" class="date-select-box-close">✕</button>
         </div>
-        <div id="dateSelectMonthLabel" class="date-select-month">—년 —월</div>
-        <div class="date-select-weekdays">
-            <span class="date-select-dow sun">일</span><span class="date-select-dow">월</span><span class="date-select-dow">화</span>
-            <span class="date-select-dow">수</span><span class="date-select-dow">목</span><span class="date-select-dow">금</span><span class="date-select-dow sat">토</span>
-        </div>
-        <div id="dateSelectGrid" class="date-select-grid"></div>
-        <div id="dateSelectSummary" class="date-select-summary">선택된 날짜: 없음</div>
-        <div class="date-select-actions">
-            <button type="button" class="btn btn-secondary" onclick="clearDateSelection()">전체 선택 해제</button>
-            <button type="button" class="btn btn-secondary" onclick="closeDateSelectionModal()">취소</button>
-            <button type="button" class="btn btn-primary-sm" onclick="confirmDateSelection()">선택 완료</button>
+
+        <div class="date-manage-body">
+            <!-- 왼쪽: 달력 -->
+            <div class="date-manage-left">
+                <div class="date-select-weekdays">
+                    <span class="date-select-dow sun">일</span><span class="date-select-dow">월</span><span class="date-select-dow">화</span>
+                    <span class="date-select-dow">수</span><span class="date-select-dow">목</span><span class="date-select-dow">금</span><span class="date-select-dow sat">토</span>
+                </div>
+                <div id="dateSelectGrid" class="date-select-grid"></div>
+                <div class="date-manage-left-actions">
+                    <button type="button" class="btn btn-secondary btn-sm-full" onclick="selectAllConfiguredDates()">설정된 날짜 전체 선택</button>
+                    <button type="button" class="btn btn-secondary btn-sm-full" onclick="clearDateSelection()">전체 선택 해제</button>
+                </div>
+            </div>
+
+            <!-- 오른쪽: 선택 현황 + 현재 설정 + 새 설정 + 적용/일괄삭제 -->
+            <div class="date-manage-right">
+                <div id="dateSelectSummary" class="dm-selection-summary">선택된 날짜: 없음</div>
+
+                <!-- SC_GROUP_DAY_LIMIT 전용: 근무 코드 선택 -->
+                <div id="dmScCodeRow" class="dm-section" style="display:none;">
+                    <label class="form-label">근무 코드</label>
+                    <select id="dmScCodeSelect" class="form-select" onchange="onDmScCodeChange(this.value)"></select>
+                </div>
+
+                <div class="dm-section">
+                    <div class="dm-section-title">현재 설정</div>
+                    <div id="dmCurrentSetting" class="dm-current-setting">날짜를 선택하세요</div>
+                </div>
+
+                <div class="dm-section dm-section-divider">
+                    <div class="dm-section-title">새 설정</div>
+
+                    <!-- SPECIAL_DAY_LIMIT 전용 -->
+                    <div id="dmSpecialInputRow" class="form-row" style="display:none;">
+                        <label class="form-label">제한 인원</label>
+                        <input type="number" id="dmSpecialLimitInput" min="0" max="40" class="form-input small small-num-input" placeholder="명">
+                    </div>
+
+                    <!-- GROUP_DAY_LIMIT / SC_GROUP_DAY_LIMIT 공용 -->
+                    <div id="dmGroupInputRow" class="form-row group-inputs" style="display:none;">
+                        <span class="group-label gl-a">A조</span>
+                        <input type="number" id="dmGroupInputA" min="0" max="99" class="form-input small small-num-input" placeholder="-">
+                        <span class="group-label gl-b">B조</span>
+                        <input type="number" id="dmGroupInputB" min="0" max="99" class="form-input small small-num-input" placeholder="-">
+                        <span class="group-label gl-c">C조</span>
+                        <input type="number" id="dmGroupInputC" min="0" max="99" class="form-input small small-num-input" placeholder="-">
+                        <span class="group-label gl-d">D조</span>
+                        <input type="number" id="dmGroupInputD" min="0" max="99" class="form-input small small-num-input" placeholder="-">
+                        <span class="group-label gl-e">E조</span>
+                        <input type="number" id="dmGroupInputE" min="0" max="99" class="form-input small small-num-input" placeholder="-">
+                    </div>
+
+                    <button type="button" class="btn btn-primary-sm btn-full" onclick="applyDateManageSetting()">선택 날짜에 적용</button>
+                </div>
+
+                <div class="dm-section">
+                    <button type="button" class="btn btn-danger btn-full" onclick="bulkDeleteDateManageSetting()">선택 설정 일괄 삭제</button>
+                </div>
+            </div>
         </div>
     </div>
 </div>

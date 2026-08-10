@@ -1315,30 +1315,43 @@ body {
 /* Old calendar-box references — now hidden; kept for JS compat */
 .calendar-box { display: none !important; }
 
-/* ─── 공통 날짜 선택 모달 (특정일 휴무 제한 / 조별 휴무 제한 / 조별 근무 제한 공용) ─── */
-.date-select-box {
+/* ─── 공통 날짜별 설정 관리 팝업 (특정일 휴무 제한 / 조별 휴무 제한 / 조별 근무 제한 공용) ───
+   "왼쪽 달력 + 오른쪽 상세/설정" 와이드 레이아웃. 신청관리의 메인 대시보드 달력
+   (#mainCalendarGrid)과는 완전히 별개이며 이 모달 안에서만 쓰이는 클래스다. */
+.date-manage-box {
   background: var(--bg-card);
   border-radius: var(--radius);
   box-shadow: var(--shadow-md);
   border: 1px solid var(--border);
-  padding: 18px 20px 16px;
-  width: 440px;
-  max-width: 92vw;
-  max-height: 88vh;
+  padding: 20px 24px 18px;
+  width: 900px;
+  max-width: 94vw;
+  max-height: 90vh;
   overflow-y: auto;
   overflow-x: hidden;
   box-sizing: border-box;
 }
-.date-select-box-header {
+.date-manage-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 8px;
+  gap: 10px;
+  margin-bottom: 16px;
 }
-.date-select-box-title {
-  font-size: 14px;
+.date-manage-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.date-manage-title {
+  font-size: 15px;
   font-weight: 700;
   color: var(--text-main);
+}
+.date-manage-month {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-sub);
 }
 .date-select-box-close {
   background: none;
@@ -1348,13 +1361,39 @@ body {
   cursor: pointer;
   line-height: 1;
   padding: 0 4px;
+  flex-shrink: 0;
 }
-.date-select-month {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text-sub);
-  margin-bottom: 10px;
+.date-manage-body {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
 }
+.date-manage-left {
+  flex: 0 0 55%;
+  max-width: 55%;
+  box-sizing: border-box;
+}
+.date-manage-right {
+  flex: 1 1 45%;
+  max-width: 45%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.date-manage-left-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.btn-sm-full {
+  flex: 1;
+  font-size: 11.5px;
+  padding: 7px 8px;
+}
+
+/* 달력 (왼쪽 패널 안에서 사용 — weekdays/grid/cell 클래스 자체는 공용) */
 .date-select-weekdays {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -1378,7 +1417,6 @@ body {
   width: 100%;
   box-sizing: border-box;
   gap: 4px;
-  margin-bottom: 10px;
 }
 .date-select-cell {
   /* ⚠️ aspect-ratio + display:flex 조합은 grid 1fr 트랙과 함께 쓰면 셀이
@@ -1386,11 +1424,13 @@ body {
      고정 height + min-width:0 방식이 7열 grid 안에서 안정적으로 줄어든다. */
   min-width: 0;
   width: auto;
-  height: 40px;
+  height: 44px;
   box-sizing: border-box;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 2px;
   font-size: 12.5px;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -1405,44 +1445,81 @@ body {
   background: none;
   cursor: default;
 }
-.date-select-cell.sun { color: #e53935; }
-.date-select-cell.sat { color: #1565c0; }
+.date-select-cell.sun .dm-cell-num { color: #e53935; }
+.date-select-cell.sat .dm-cell-num { color: #1565c0; }
 .date-select-cell:hover:not(.empty) { border-color: var(--accent); }
+.dm-cell-num { line-height: 1; }
+.dm-cell-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+/* 선택됨: 배경 accent. 현재 상세를 보는 active date: outline으로 별도 구분 */
 .date-select-cell.selected {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
   font-weight: 700;
 }
-.date-select-summary {
+.date-select-cell.selected .dm-cell-num { color: #fff; }
+.date-select-cell.selected .dm-cell-dot { background: #fff; }
+.date-select-cell.active {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* 오른쪽 패널 */
+.dm-selection-summary {
   font-size: 12px;
   color: var(--text-sub);
   background: #f8fafc;
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px 10px;
-  margin-bottom: 12px;
   line-height: 1.5;
   word-break: break-word;
 }
-.date-select-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-.date-selected-summary {
-  font-size: 11.5px;
+.dm-section { }
+.dm-section-title {
+  font-size: 12px;
+  font-weight: 700;
   color: var(--text-sub);
-  margin: -4px 0 10px;
+  margin-bottom: 6px;
+}
+.dm-current-setting {
+  font-size: 13px;
+  color: var(--text-main);
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  white-space: pre-line;
+  line-height: 1.6;
+  min-height: 44px;
+  word-break: break-word;
+}
+.dm-section-divider {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+/* 신청관리 카드에 남는 compact 요약 (기존 날짜별 상세 현황판을 대체) */
+.dm-card-summary {
+  font-size: 12.5px;
+  color: var(--text-sub);
+  margin-bottom: 10px;
+}
+
+@media (max-width: 768px) {
+  /* 좌/우 2열을 억지로 유지하지 않고 세로로 쌓는다. 7열 달력 구조는 그대로 유지. */
+  .date-manage-box { width: calc(100vw - 32px); padding: 16px 14px 14px; }
+  .date-manage-body { flex-direction: column; gap: 16px; }
+  .date-manage-left, .date-manage-right { flex: 1 1 auto; max-width: 100%; }
+  .date-select-cell { height: 38px; font-size: 11.5px; }
 }
 @media (max-width: 480px) {
-  /* 7열 구조는 그대로 유지하고(모바일에서도 2~3열로 바꾸지 않음) 셀 폭/폰트만
-     화면에 맞춰 줄어들도록 한다. */
-  .date-select-box { width: calc(100vw - 32px); padding: 16px 14px 14px; }
-  .date-select-cell { height: 34px; font-size: 11.5px; }
-  .date-select-actions { justify-content: stretch; }
-  .date-select-actions .btn { flex: 1; }
+  .date-select-cell { height: 34px; font-size: 11px; }
 }
 
 /* ─── Super Admin Panel ─── */

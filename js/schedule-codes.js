@@ -146,71 +146,9 @@ function _buildScGroupDayLimitsFromLiveData() {
     return out;
 }
 
-function openScGroupDayDateModal() {
-    if (!isAdmin && !isSuperAdmin) return;
-    openDateSelectionModal("SC_GROUP_DAY_LIMIT", function(days) {
-        var el = document.getElementById("scGroupDaySelectedSummary");
-        if (el) el.innerText = days.length ? ("선택 날짜: " + days.map(function(d) { return d + "일"; }).join(", ")) : "선택 날짜: 없음";
-    });
-}
-
-function saveScGroupLimit() {
-    if (!isAdmin && !isSuperAdmin) return;
-    var sel      = document.getElementById("scGroupLimitCodeSelect");
-    var codeName = sel ? sel.value.trim() : "";
-    if (!codeName) { alert("❌ 코드를 선택해주세요."); return; }
-
-    var vals = {};
-    var applied = [];
-    var ok = true;
-    ["A","B","C","D","E"].forEach(function(g) {
-        var el = document.getElementById("scGroupLimit" + g);
-        if (!el || el.value === "") return;
-        var num = parseInt(el.value);
-        if (isNaN(num) || num < 0) { ok = false; return; }
-        vals[codeName + "_" + g] = num;
-        applied.push(g + "조: " + num + "명");
-    });
-    if (!ok) { alert("❌ 0 이상의 숫자를 입력해주세요."); return; }
-    if (applied.length === 0) { alert("❌ 최소 하나의 조 값을 입력해주세요."); return; }
-
-    var days = (dateSelectorState.selectedDays.SC_GROUP_DAY_LIMIT || []).slice();
-    if (days.length === 0) { alert("❌ 날짜 선택 버튼으로 적용할 날짜를 먼저 선택해주세요."); return; }
-
-    var existing = _buildScGroupDayLimitsFromLiveData();
-    days.forEach(function(day) {
-        var dayKey = String(day);
-        existing[dayKey] = Object.assign({}, existing[dayKey] || {}, vals);
-    });
-
-    // scGroupDayLimitsEnabled: true — 이 달을 "날짜별 조별 근무 제한" 방식으로
-    // 명시 전환한다. 이후 날짜별 설정을 모두 삭제해도 이 플래그는 유지되어
-    // (설정 전체 초기화 전까지) 절대 legacy scGroupLimits로 되돌아가지 않는다.
-    fn.saveDeptConfig({ deptId: currentDept, yyyymm: getTargetYearMonth().fullStr, config: { scGroupDayLimits: existing, scGroupDayLimitsEnabled: true } })
-      .then(function() {
-          liveDBData["_scGroupDayLimits"] = existing;
-          liveDBData["_scGroupDayLimitsEnabled"] = true;
-          refreshData();
-          alert("✨ [" + codeName + "] 조별 근무 제한 적용!\n" + applied.join(" | "));
-          drawScGroupLimitBoard();
-      }).catch(function(e) { alert(e.message || "저장 실패"); });
-}
-
-function deleteScGroupDayLimitFromBoard(event, day) {
-    event.preventDefault();
-    if (!confirm(day + "일의 조별 근무 제한을 삭제하시겠습니까?")) return;
-
-    var existing = _buildScGroupDayLimitsFromLiveData();
-    delete existing[String(day)];
-
-    // ⚠️ 날짜별 설정을 전부 지워 existing이 {} 가 되더라도 scGroupDayLimitsEnabled는
-    // 절대 건드리지 않는다(=true 유지) — legacy scGroupLimits로 되돌아가면 안 된다.
-    fn.saveDeptConfig({ deptId: currentDept, yyyymm: getTargetYearMonth().fullStr, config: { scGroupDayLimits: existing } })
-      .then(function() {
-          liveDBData["_scGroupDayLimits"] = existing;
-          drawScGroupLimitBoard();
-      }).catch(function(e) { alert((e && e.message) || "삭제 실패"); });
-}
+// ⚠️ 날짜 선택 + 현재값 표시 + 적용 + 일괄 삭제는 이제 공통 관리 팝업
+// (js/date-select.js 의 openDateManageModal)에서 전부 처리한다. 위의
+// _buildScGroupDayLimitsFromLiveData 는 그 팝업이 사용하는 데이터 헬퍼다.
 
 function clearScGroupLimit() {
     if (!isAdmin && !isSuperAdmin) return;
@@ -233,61 +171,7 @@ function clearScGroupLimit() {
       }).catch(function(e) { alert(e.message || "해제 실패"); });
 }
 
-window.saveScGroupLimit = saveScGroupLimit;
 window.createScheduleCode = createScheduleCode;
-window.openScGroupDayDateModal = openScGroupDayDateModal;
-window.deleteScGroupDayLimitFromBoard = deleteScGroupDayLimitFromBoard;
-
-function drawScGroupLimitBoard() {
-    // page-requests가 active가 아니면 dirty 플래그만 세우고 건너뜀
-    if (typeof _isPageActive === "function" && !_isPageActive("requests")) {
-        _dirtyScGroupLimitBoard = true;
-        return;
-    }
-    _dirtyScGroupLimitBoard = false;
-
-    var container = document.getElementById("scGroupLimitTooltipBoard");
-    if (!container) return;
-
-    var data = liveDBData["_scGroupDayLimits"] || {};
-    var days = Object.keys(data).map(function(d) { return parseInt(d, 10); }).sort(function(a, b) { return a - b; });
-
-    var html = "<strong style='color:#fff;font-size:13px;'>🔢 조별 근무 제한 현황</strong>"
-             + "<div style='font-size:10px;color:#bdc3c7;margin:3px 0 7px;'>우클릭으로 해당 날짜 삭제</div>";
-    if (days.length === 0) {
-        html += "<div style='color:#aaa;font-style:italic;font-size:12px;'>(설정된 날짜별 제한 없음)</div>";
-    } else {
-        html += "<div style='display:flex;flex-direction:column;gap:6px;'>";
-        days.forEach(function(day) {
-            var entries = data[String(day)] || {};
-            var byCode = {};
-            var order  = [];
-            Object.keys(entries).forEach(function(key) {
-                var lastUnderscore = key.lastIndexOf("_");
-                if (lastUnderscore < 0) return;
-                var code  = key.slice(0, lastUnderscore);
-                var group = key.slice(lastUnderscore + 1);
-                if (!byCode[code]) { byCode[code] = []; order.push(code); }
-                byCode[code].push(group + " " + entries[key]);
-            });
-            var codeParts = order.map(function(code) {
-                return "[" + code + "] " + byCode[code].join(" / ");
-            }).join("&nbsp;&nbsp;");
-            html += "<span class='scgdl-badge' data-day='" + day + "'"
-                  + " style='background:rgba(233,30,140,0.2);border:1px solid #e91e8c;border-radius:5px;"
-                  + "padding:4px 8px;font-size:12px;color:#f8bbd0;font-weight:bold;cursor:context-menu;white-space:normal;'>"
-                  + day + "일 &nbsp; " + (codeParts || "제한 없음") + "</span>";
-        });
-        html += "</div>";
-    }
-    container.innerHTML = html;
-    container.oncontextmenu = function(e) {
-        var badge = e.target.closest(".scgdl-badge");
-        if (!badge) return;
-        e.preventDefault();
-        deleteScGroupDayLimitFromBoard(e, badge.getAttribute("data-day"));
-    };
-}
 
 function deleteScGroupLimitFromBoard(event, codeName, groupLetter) {
     event.preventDefault();

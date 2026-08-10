@@ -190,24 +190,21 @@ function _runDayRequest(day, requestFn, errorMessage, action, type, scheduleCode
     });
 }
 
+// ⚠️ 특정일 휴무 제한의 날짜별 상세 현황(specialDayTooltipBoard)은 신청관리
+// 공통 관리 팝업(openDateManageModal('SPECIAL_DAY_LIMIT'))으로 이동했다.
+// 이 함수는 이제 "직원별 개별 한도 현황"만 그린다(별개 기능이므로 그대로 유지).
 function updateLimitTooltipBoard() {
-    var limitContainer   = document.getElementById("limitListTooltipBoard");
-    var specialContainer = document.getElementById("specialDayTooltipBoard");
-    if (!limitContainer || !specialContainer) return;
+    var limitContainer = document.getElementById("limitListTooltipBoard");
+    if (!limitContainer) return;
 
     var limitedUsers = [];
-    var specialDays  = [];
-    var tm = getTargetYearMonth();
 
     Object.keys(liveDBData).forEach(function(key) {
-        if (key.startsWith("rq_limit_uid_")) {
-            var uid = key.replace("rq_limit_uid_", "");
-            var emp = employeeByUid[uid];
-            if (!emp) return; // 매칭되지 않는(삭제된) 직원 — 화면에 표시하지 않고 무시 (다음 저장/삭제 시 자연히 정리됨)
-            limitedUsers.push({ uid: uid, empNo: emp.empNo || uid, name: emp.name, count: liveDBData[key] });
-        } else if (key.startsWith("rq_special_limit_" + tm.fullStr + "_")) {
-            specialDays.push({ day: key.replace("rq_special_limit_" + tm.fullStr + "_", ""), count: liveDBData[key] });
-        }
+        if (!key.startsWith("rq_limit_uid_")) return;
+        var uid = key.replace("rq_limit_uid_", "");
+        var emp = employeeByUid[uid];
+        if (!emp) return; // 매칭되지 않는(삭제된) 직원 — 화면에 표시하지 않고 무시 (다음 저장/삭제 시 자연히 정리됨)
+        limitedUsers.push({ uid: uid, empNo: emp.empNo || uid, name: emp.name, count: liveDBData[key] });
     });
 
     var limitHtml = "<strong style='color:#fff;font-size:13px;'>📊 직원별 개별 한도 현황</strong>"
@@ -230,28 +227,6 @@ function updateLimitTooltipBoard() {
         if (!badge) return;
         e.preventDefault();
         deleteUserLimitFromBoard(e, badge.getAttribute("data-empno"));
-    };
-
-    var specialHtml = "<strong style='color:#fff;font-size:13px;'>🎯 특정일 휴무 제한 현황</strong>"
-                    + "<div style='font-size:10px;color:#bdc3c7;margin:3px 0 7px;'>우클릭으로 삭제</div>";
-    if (specialDays.length === 0) {
-        specialHtml += "<div style='color:#aaa;font-style:italic;font-size:12px;'>(특정일 휴무 제한 없음)</div>";
-    } else {
-        specialHtml += "<div style='display:flex;flex-wrap:wrap;gap:5px;'>";
-        specialDays.sort(function(a, b) { return parseInt(a.day) - parseInt(b.day); }).forEach(function(item) {
-            specialHtml += "<span class='sp-day-badge' data-day='" + item.day + "'"
-                         + " style='background:rgba(52,152,219,0.25);border:1px solid #54a0ff;border-radius:5px;"
-                         + "padding:4px 8px;font-size:12px;color:#74b9ff;font-weight:bold;cursor:context-menu;white-space:nowrap;'>"
-                         + item.day + "일: " + item.count + "명</span>";
-        });
-        specialHtml += "</div>";
-    }
-    specialContainer.innerHTML = specialHtml;
-    specialContainer.oncontextmenu = function(e) {
-        var badge = e.target.closest(".sp-day-badge");
-        if (!badge) return;
-        e.preventDefault();
-        deleteSpecialDayFromBoard(e, badge.getAttribute("data-day"));
     };
 }
 
@@ -324,9 +299,8 @@ function refreshData() {
         groupBoardStateLoaded = false;
         drawLiveGroupBoards();
         drawScheduleCodeBoard();
-        drawScGroupLimitBoard();
-        if (typeof drawGroupDayLimitBoard === "function") drawGroupDayLimitBoard();
         updateScGroupLimitCodeSelect();
+        if (typeof _updateDateManageCardSummaries === "function") _updateDateManageCardSummaries();
         drawAnnualStatusBoard();
     } else {
         var savedConfig    = getFirebaseItem("rq_allowed_start_datetime", null);
