@@ -279,7 +279,8 @@
                 <div class="staff-overview-toolbar">
                     <div class="staff-overview-filters">
                         <button type="button" class="staff-filter-btn active" id="staffOverviewFilter-all" onclick="setStaffOverviewFilter('all')">전체 직원</button>
-                        <button type="button" class="staff-filter-btn" id="staffOverviewFilter-mygroup" onclick="setStaffOverviewFilter('mygroup')">내 조</button>
+                        <button type="button" class="staff-filter-btn" id="staffOverviewFilter-mygroup" onclick="setStaffOverviewFilter('mygroup')">소속 조</button>
+                        <span id="staffOverviewMygroupHint" class="staff-filter-hint" style="display:none;">소속 조 미배정</span>
                     </div>
                     <button type="button" class="btn btn-secondary" onclick="refreshStaffOverview()">새로고침</button>
                 </div>
@@ -294,6 +295,36 @@
                     <div class="staff-overview-filters" style="font-size:12px;color:var(--text-sub);">날짜별로 신청 가능한 항목을 확인합니다. (실제 신청은 [내 신청] 탭에서)</div>
                     <button type="button" class="btn btn-secondary" onclick="refreshStaffAvailability()">새로고침</button>
                 </div>
+
+                <!-- 필터: 서버 재호출 없이 이미 받은 월 데이터를 client-side 로 다시 렌더링만 한다 -->
+                <div class="staff-avail-filter-block">
+                    <div class="staff-avail-filter-row">
+                        <span class="staff-avail-filter-title">상태</span>
+                        <div class="staff-overview-filters">
+                            <button type="button" class="staff-filter-btn active" id="staffAvailStatusFilter-all" onclick="setStaffAvailStatusFilter('all')">전체</button>
+                            <button type="button" class="staff-filter-btn" id="staffAvailStatusFilter-allowed" onclick="setStaffAvailStatusFilter('allowed')">신청 가능</button>
+                            <button type="button" class="staff-filter-btn" id="staffAvailStatusFilter-blocked" onclick="setStaffAvailStatusFilter('blocked')">신청 불가</button>
+                            <button type="button" class="staff-filter-btn" id="staffAvailStatusFilter-done" onclick="setStaffAvailStatusFilter('done')">신청 완료</button>
+                        </div>
+                    </div>
+                    <div class="staff-avail-filter-row">
+                        <span class="staff-avail-filter-title">종류</span>
+                        <div class="staff-overview-filters">
+                            <button type="button" class="staff-filter-btn active" id="staffAvailTypeFilter-all" onclick="setStaffAvailTypeFilter('all')">전체</button>
+                            <button type="button" class="staff-filter-btn" id="staffAvailTypeFilter-normal" onclick="setStaffAvailTypeFilter('normal')">휴무</button>
+                            <button type="button" class="staff-filter-btn" id="staffAvailTypeFilter-annual" onclick="setStaffAvailTypeFilter('annual')">연차</button>
+                            <button type="button" class="staff-filter-btn" id="staffAvailTypeFilter-petition" onclick="setStaffAvailTypeFilter('petition')">청원</button>
+                            <button type="button" class="staff-filter-btn" id="staffAvailTypeFilter-schedule" onclick="setStaffAvailTypeFilter('schedule')">근무코드</button>
+                        </div>
+                    </div>
+                    <div class="staff-avail-filter-row" id="staffAvailCodeFilterRow" style="display:none;">
+                        <span class="staff-avail-filter-title">근무코드</span>
+                        <select id="staffAvailCodeSelect" class="form-select" onchange="setStaffAvailCodeFilter(this.value)">
+                            <option value="all">전체 코드</option>
+                        </select>
+                    </div>
+                </div>
+
                 <div id="staffAvailabilityList" class="staff-availability-list">
                     <div class="staff-overview-loading">불러오는 중...</div>
                 </div>

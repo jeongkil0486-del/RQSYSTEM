@@ -510,11 +510,11 @@ function editDate(date) {
     var closeAt = getFirebaseItem("rq_allowed_end_datetime", null);
     var now     = Date.now();
     if (openAt && now < new Date(openAt).getTime()) {
-        alert("\uC544\uC9C1 \uC2E0\uCCAD \uAE30\uAC04 \uC804\uC785\uB2C8\uB2E4.\\n\uC624\uD508: " + formatDateTimeString(openAt));
+        alert("\uC544\uC9C1 \uC2E0\uCCAD \uAE30\uAC04 \uC804\uC785\uB2C8\uB2E4.\n\uC624\uD508: " + formatDateTimeString(openAt));
         return;
     }
     if (closeAt && now > new Date(closeAt).getTime()) {
-        alert("\uC2E0\uCCAD \uAE30\uAC04\uC774 \uB9C8\uAC10\uB418\uC5C8\uC2B5\uB2C8\uB2E4.\\n\uB9C8\uAC10: " + formatDateTimeString(closeAt));
+        alert("\uC2E0\uCCAD \uAE30\uAC04\uC774 \uB9C8\uAC10\uB418\uC5C8\uC2B5\uB2C8\uB2E4.\n\uB9C8\uAC10: " + formatDateTimeString(closeAt));
         return;
     }
     var prefix  = "rq_" + currentUser + "_" + tm.fullStr + "_";
