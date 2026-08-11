@@ -30,6 +30,8 @@ var fn = {
   uploadAnnualQuotas:   fnClient.httpsCallable("uploadAnnualQuotas"),
   resyncDerivedData:    fnClient.httpsCallable("resyncDerivedData"),
   adminCancelRequest:   fnClient.httpsCallable("adminCancelRequest"),
+  getStaffScheduleOverview: fnClient.httpsCallable("getStaffScheduleOverview"),
+  getStaffDailyAvailability: fnClient.httpsCallable("getStaffDailyAvailability"),
 };
 
 var SESSION_STATE_KEY = "rq_session_state";

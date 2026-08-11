@@ -215,6 +215,13 @@
                 </div>
             </div>
 
+            <!-- 직원모드 서브탭: 내 신청 / 전체 신청 현황 / 신청 가능 현황 -->
+            <div class="staff-subtabs" id="staffSubtabs" style="display:none;">
+                <button type="button" class="staff-subtab active" id="staffTabBtn-my" onclick="switchStaffTab('my')">내 신청</button>
+                <button type="button" class="staff-subtab" id="staffTabBtn-overview" onclick="switchStaffTab('overview')">전체 신청 현황</button>
+                <button type="button" class="staff-subtab" id="staffTabBtn-availability" onclick="switchStaffTab('availability')">신청 가능 현황</button>
+            </div>
+
             <!-- 직원용 빠른 조회: 달력만, 새로고침 버튼만 -->
             <div class="filter-bar staff-action-bar" id="staffFilterBar" style="display:none;">
                 <!-- 직원 전용 신청 버튼들 (휴무/근무/초기화/새로고침 — 한 줄 고정) -->
@@ -264,6 +271,31 @@
                         </div>
                     </div>
 
+                </div>
+            </div>
+
+            <!-- 전체 신청 현황 (직원모드 전용 탭 패널) -->
+            <div id="staffOverviewPanel" class="staff-tab-panel" style="display:none;">
+                <div class="staff-overview-toolbar">
+                    <div class="staff-overview-filters">
+                        <button type="button" class="staff-filter-btn active" id="staffOverviewFilter-all" onclick="setStaffOverviewFilter('all')">전체 직원</button>
+                        <button type="button" class="staff-filter-btn" id="staffOverviewFilter-mygroup" onclick="setStaffOverviewFilter('mygroup')">내 조</button>
+                    </div>
+                    <button type="button" class="btn btn-secondary" onclick="refreshStaffOverview()">새로고침</button>
+                </div>
+                <div id="staffOverviewTableWrap" class="staff-overview-table-wrap">
+                    <div class="staff-overview-loading">불러오는 중...</div>
+                </div>
+            </div>
+
+            <!-- 신청 가능 현황 (직원모드 전용 탭 패널) -->
+            <div id="staffAvailabilityPanel" class="staff-tab-panel" style="display:none;">
+                <div class="staff-overview-toolbar">
+                    <div class="staff-overview-filters" style="font-size:12px;color:var(--text-sub);">날짜별로 신청 가능한 항목을 확인합니다. (실제 신청은 [내 신청] 탭에서)</div>
+                    <button type="button" class="btn btn-secondary" onclick="refreshStaffAvailability()">새로고침</button>
+                </div>
+                <div id="staffAvailabilityList" class="staff-availability-list">
+                    <div class="staff-overview-loading">불러오는 중...</div>
                 </div>
             </div>
         </div>
@@ -1034,6 +1066,7 @@
 <script src="js/calendar.js"></script>
 <script src="js/excel.js"></script>
 <script src="js/download-template.js"></script>
+<script src="js/staff-overview.js"></script>
 <script src="js/main.js"></script>
 <script src="js/notices.js"></script>
 
@@ -1312,18 +1345,23 @@ function applyRoleBasedUI() {
 
         if (dashBody2) dashBody2.style.display = 'grid';
 
+        var staffSubtabs = document.getElementById('staffSubtabs');
+
         if (isStaffOnly) {
             if (statRow2) statRow2.style.display = 'none';
             if (staffBar2) staffBar2.style.display = 'flex';
             if (actionBar2) actionBar2.style.display = 'none';
             if (rightPanel) rightPanel.style.display = 'none';
             if (dashBody2) dashBody2.style.gridTemplateColumns = '1fr';
+            if (staffSubtabs) staffSubtabs.style.display = 'flex';
+            if (typeof switchStaffTab === 'function') switchStaffTab('my');
         } else {
             if (statRow2) statRow2.style.display = 'grid';
             if (staffBar2) staffBar2.style.display = 'none';
             if (actionBar2) actionBar2.style.display = 'flex';
             if (rightPanel) rightPanel.style.display = 'flex';
             if (dashBody2) dashBody2.style.gridTemplateColumns = '';
+            if (staffSubtabs) staffSubtabs.style.display = 'none';
         }
 
         // ── 직원 엑셀 양식 다운로드: 슈퍼관리자만 (직원 계정 생성용이라 권한 민감) ──

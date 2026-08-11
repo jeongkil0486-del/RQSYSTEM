@@ -1104,3 +1104,247 @@ exports.markNoticeRead = functions.runWith(RUN_OPTS).https.onCall(async (data, c
     await db.ref("trinity_system/" + deptId + "/noticeReads/" + noticeId + "/" + context.auth.uid).set(true);
     return { ok: true };
 });
+
+// ── 공통 헬퍼: yyyymm의 총 일수 ─────────────────────────────────────────────
+function daysInMonth(yyyymm) {
+    const year  = parseInt(String(yyyymm).slice(0, 4), 10);
+    const month = parseInt(String(yyyymm).slice(4, 6), 10);
+    if (!Number.isFinite(year) || !Number.isFinite(month)) return 31;
+    return new Date(year, month, 0).getDate();
+}
+
+// ── 24. getStaffScheduleOverview — 직원모드: 같은 지점 전체 신청 현황 조회 ──
+// staff 본인 조회용 read-only 함수. adminView 는 서버(Admin SDK)에서만 읽고
+// 클라이언트에는 화면 표시에 필요한 최소 데이터만 반환한다(개인정보/관리자 설정 제외).
+exports.getStaffScheduleOverview = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const deptId = String(data.deptId || "").trim();
+    const yyyymm = String(data.yyyymm || "").trim();
+    if (!deptId || !yyyymm) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
+
+    const profile = await getCallerProfile(context.auth.uid);
+    if (!profile) throw new functions.https.HttpsError("permission-denied", "프로필 없음");
+    // ⚠️ 호출자가 요청 body에 임의의 deptId를 넣어도 반드시 자기 프로필의
+    // deptId와 일치해야만 조회를 허용한다 (다른 지점 데이터 조회 차단).
+    if (String(profile.deptId || "").trim() !== deptId)
+        throw new functions.https.HttpsError("permission-denied", "다른 지점 접근 불가");
+
+    const [usersSnap, avSnap, cfgSnap, persSnap] = await Promise.all([
+        db.ref("users").orderByChild("deptId").equalTo(deptId).once("value"),
+        db.ref("departments/" + deptId + "/adminView/" + yyyymm).once("value"),
+        db.ref("departments/" + deptId + "/configs/" + yyyymm).once("value"),
+        db.ref("departments/" + deptId + "/persistent/groups").once("value")
+    ]);
+
+    const cfg = cfgSnap.val() || {};
+    const pers = persSnap.val();
+    const groups = isPersistentGroupsInitialized(pers) ? extractGroupsFromPersistent(pers) : (cfg.groups || {});
+    const myEmpNo = normalizeEmpNo(profile.empNo);
+    const myGroups = findMemberGroups(groups, context.auth.uid, myEmpNo);
+
+    const avAll = avSnap.val() || {};
+    const employees = [];
+    usersSnap.forEach(function(child) {
+        const p = child.val() || {};
+        const role = String(p.role || "staff").toLowerCase();
+        if (role !== "staff") return; // admin/super_admin 제외
+
+        const uid = child.key;
+        const empNo = p.empNo || "";
+        const name = p.legacyName || p.name || "";
+        const empGroups = findMemberGroups(groups, uid, empNo);
+
+        const days = {};
+        const avDays = avAll[uid] || {};
+        Object.keys(avDays).forEach(function(day) {
+            const req = avDays[day];
+            if (!req) return;
+            if (req.type === "normal") days[day] = "휴";
+            else if (req.type === "petition") days[day] = "청";
+            else if (req.type === "annual") days[day] = "연";
+            else if (req.type === "schedule" && req.scheduleCode) days[day] = req.scheduleCode;
+        });
+
+        employees.push({
+            uid: uid,
+            empNo: empNo,
+            name: name,
+            group: empGroups.length > 0 ? empGroups[0] : null,
+            sortOrder: (p.sortOrder != null ? Number(p.sortOrder) : null),
+            days: days
+        });
+    });
+
+    // 다운로드(exportToExcel)와 동일한 정렬: sortOrder 우선, 없으면 empNo 사전순
+    employees.sort(function(a, b) {
+        var aHas = (a.sortOrder != null);
+        var bHas = (b.sortOrder != null);
+        if (aHas && bHas)  return a.sortOrder - b.sortOrder;
+        if (aHas && !bHas) return -1;
+        if (!aHas && bHas) return 1;
+        return String(a.empNo || "").localeCompare(String(b.empNo || ""), undefined, { numeric: true, sensitivity: "base" });
+    });
+
+    return { yyyymm: yyyymm, myGroups: myGroups, employees: employees };
+});
+
+// ── 25. getStaffDailyAvailability — 직원모드: 날짜별 신청 가능 현황 조회 ────
+// 조회 전용 preview. 실제 신청 가부의 최종 source of truth는 항상
+// submitRequest()의 트랜잭션 검증이며, 여기서는 동일한 규칙(같은 공통 헬퍼)을
+// 재사용해 "현재 시점 기준" 미리보기만 제공한다. 조회 시점과 실제 신청 시점
+// 사이에 다른 직원의 신청으로 한도가 찰 수 있으므로 결과가 달라질 수 있다.
+exports.getStaffDailyAvailability = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const deptId = String(data.deptId || "").trim();
+    const yyyymm = String(data.yyyymm || "").trim();
+    if (!deptId || !yyyymm) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
+
+    const uid = context.auth.uid;
+    const profile = await getCallerProfile(uid);
+    if (!profile) throw new functions.https.HttpsError("permission-denied", "프로필 없음");
+    if (String(profile.deptId || "").trim() !== deptId)
+        throw new functions.https.HttpsError("permission-denied", "다른 지점 접근 불가");
+
+    const [cfgSnap, ledgerSnap] = await Promise.all([
+        db.ref("departments/" + deptId + "/configs/" + yyyymm).once("value"),
+        db.ref("requestsLedger/" + deptId + "/" + yyyymm).once("value")
+    ]);
+    const cfg = cfgSnap.val() || {};
+    const ledger = ledgerSnap.val() || {};
+    const groups = await getEffectiveGroups(deptId, cfg);
+    const empNo = normalizeEmpNo(profile.empNo);
+    const matchedGroups = findMemberGroups(groups, uid, empNo);
+
+    const userDays = ledger[uid] || {};
+    const userLimitCfg = (cfg.userLimits || {})[uid] || {};
+    const dayMax = toIntOr(10, cfg.dayMax);
+    const scheduleCodes = Array.isArray(cfg.scheduleCodes) ? cfg.scheduleCodes : [];
+    const useGroupDayLimits = hasGroupDayLimits(cfg);
+    const useScGroupDayLimits = hasScGroupDayLimits(cfg);
+    const now = Date.now();
+    const openAt = cfg.openAt ? new Date(cfg.openAt).getTime() : null;
+    const closeAt = cfg.closeAt ? new Date(cfg.closeAt).getTime() : null;
+    const outsideRequestPeriod = (Number.isFinite(openAt) && now < openAt)
+        || (Number.isFinite(closeAt) && now > closeAt);
+
+    const annualLimit = userLimitCfg.annualQuota != null
+        ? toIntOr(0, userLimitCfg.annualQuota)
+        : toIntOr(15, cfg.annualUserMax);
+    const annualCount = getUserRequestCountByType(userDays, "annual");
+
+    const totalDays = daysInMonth(yyyymm);
+    const days = {};
+
+    for (let d = 1; d <= totalDays; d++) {
+        const dayStr = String(d);
+        const existing = (hasOwn(userDays, dayStr) && userDays[dayStr]) ? userDays[dayStr] : null;
+        const dayResult = {
+            existingRequest: existing ? { type: existing.type || "normal", scheduleCode: existing.scheduleCode || null } : null,
+            normal: null,
+            annual: null,
+            petition: null,
+            schedule: {}
+        };
+
+        if (existing) {
+            dayResult.normal   = { allowed: false, reasonCode: "ALREADY_REQUESTED" };
+            dayResult.annual   = { allowed: false, reasonCode: "ALREADY_REQUESTED" };
+            dayResult.petition = { allowed: false, reasonCode: "ALREADY_REQUESTED" };
+            scheduleCodes.forEach(function(item) {
+                dayResult.schedule[item.name] = { allowed: false, reasonCode: "ALREADY_REQUESTED" };
+            });
+            days[dayStr] = dayResult;
+            continue;
+        }
+
+        // 기존 직원 신청 UI(calendar.js)의 openAt/closeAt 정책과 동일하게,
+        // 신청 기간 밖에서는 실제로 선택할 수 없는 항목을 가능으로 표시하지 않는다.
+        if (outsideRequestPeriod) {
+            dayResult.normal   = { allowed: false, reasonCode: "REQUEST_PERIOD" };
+            dayResult.annual   = { allowed: false, reasonCode: "REQUEST_PERIOD" };
+            dayResult.petition = { allowed: false, reasonCode: "REQUEST_PERIOD" };
+            scheduleCodes.forEach(function(item) {
+                dayResult.schedule[item.name] = { allowed: false, reasonCode: "REQUEST_PERIOD" };
+            });
+            days[dayStr] = dayResult;
+            continue;
+        }
+
+        // ── normal(휴무) ──
+        const specialLimitRaw = cfg.specialDayLimits && hasOwn(cfg.specialDayLimits, dayStr) ? cfg.specialDayLimits[dayStr] : null;
+        const effectiveDayLimit = specialLimitRaw != null ? toIntOr(dayMax, specialLimitRaw) : dayMax;
+        const dayCount = getDayRequestCount(ledger, dayStr);
+        if (dayCount >= effectiveDayLimit) {
+            dayResult.normal = { allowed: false, reasonCode: "DAY_LIMIT" };
+        } else {
+            const personalLimit = userLimitCfg.globalUserMax != null
+                ? toIntOr(0, userLimitCfg.globalUserMax)
+                : toIntOr(4, cfg.globalUserMax);
+            const normalCount = getUserRequestCountByType(userDays, "normal");
+            if (normalCount >= personalLimit) {
+                dayResult.normal = { allowed: false, reasonCode: "USER_LIMIT" };
+            } else {
+                let blockedGroup = null;
+                for (const group of matchedGroups) {
+                    let limit;
+                    if (useGroupDayLimits) {
+                        const dayLimits = (cfg.groupDayLimits || {})[dayStr];
+                        if (!dayLimits || !hasOwn(dayLimits, group) || dayLimits[group] == null) continue;
+                        limit = toIntOr(0, dayLimits[group]);
+                    } else {
+                        limit = toIntOr(2, cfg["groupMax" + group]);
+                    }
+                    const count = getGroupDayCount(ledger, groups, group, dayStr, function(req) {
+                        return req && req.type === "normal";
+                    });
+                    if (count >= limit) { blockedGroup = group; break; }
+                }
+                dayResult.normal = blockedGroup
+                    ? { allowed: false, reasonCode: "GROUP_LIMIT" }
+                    : { allowed: true, reasonCode: null };
+            }
+        }
+
+        // ── annual(연차) ──
+        dayResult.annual = annualCount >= annualLimit
+            ? { allowed: false, reasonCode: "ANNUAL_LIMIT", remaining: 0 }
+            : { allowed: true, reasonCode: null, remaining: annualLimit - annualCount };
+
+        // ── petition(청원) — 기존 submitRequest 정책상 별도 한도 없음, 중복 신청만 차단(이미 위에서 처리) ──
+        dayResult.petition = { allowed: true, reasonCode: null };
+
+        // ── schedule(근무코드) ──
+        scheduleCodes.forEach(function(item) {
+            const scheduleLimit = toIntOr(999, item.limit);
+            const myScheduleCount = getUserRequestCountByType(userDays, "schedule", item.name);
+            if (myScheduleCount >= scheduleLimit) {
+                dayResult.schedule[item.name] = { allowed: false, reasonCode: "SCHEDULE_USER_LIMIT" };
+                return;
+            }
+            let blockedGroup = null;
+            for (const group of matchedGroups) {
+                const key = item.name + "_" + group;
+                let limit;
+                if (useScGroupDayLimits) {
+                    const dayLimits = (cfg.scGroupDayLimits || {})[dayStr];
+                    if (!dayLimits || !hasOwn(dayLimits, key) || dayLimits[key] == null) continue;
+                    limit = toIntOr(0, dayLimits[key]);
+                } else {
+                    if (!cfg.scGroupLimits || !hasOwn(cfg.scGroupLimits, key)) continue;
+                    limit = toIntOr(0, cfg.scGroupLimits[key]);
+                }
+                const count = getGroupDayCount(ledger, groups, group, dayStr, function(req) {
+                    return req && req.type === "schedule" && req.scheduleCode === item.name;
+                });
+                if (count >= limit) { blockedGroup = group; break; }
+            }
+            dayResult.schedule[item.name] = blockedGroup
+                ? { allowed: false, reasonCode: "SCHEDULE_GROUP_LIMIT" }
+                : { allowed: true, reasonCode: null };
+        });
+
+        days[dayStr] = dayResult;
+    }
+
+    return { yyyymm: yyyymm, myGroups: matchedGroups, days: days };
+});
