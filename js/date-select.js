@@ -54,7 +54,7 @@ var DATE_MANAGE_ADAPTERS = {
         getSummaryLine: function(day) {
             var tm = getTargetYearMonth();
             var v = liveDBData["rq_special_limit_" + tm.fullStr + "_" + day];
-            return v !== undefined ? (v + "명") : "미설정";
+            return v !== undefined ? (v + "명") : "-";
         },
         getAllConfiguredDays: function() {
             var tm = getTargetYearMonth();
@@ -106,8 +106,14 @@ var DATE_MANAGE_ADAPTERS = {
         hasSetting: function(day) {
             return DATE_MANAGE_ADAPTERS.GROUP_DAY_LIMIT.hasAnySetting(day);
         },
+        // A~E 실제 값을 "A2 · B3 · C2 · D2 · E3" 형태로 압축 표시한다.
+        // 설정되지 않은 조는 숫자 대신 "-"로 짧게 표시 (긴 문구 대신 한 줄 유지).
         getSummaryLine: function(day) {
-            return DATE_MANAGE_ADAPTERS.GROUP_DAY_LIMIT.hasAnySetting(day) ? "설정됨" : "미설정";
+            var d = (liveDBData["_groupDayLimits"] || {})[String(day)];
+            if (!d || Object.keys(d).length === 0) return "-";
+            return ["A", "B", "C", "D", "E"].map(function(g) {
+                return g + (d[g] != null ? d[g] : "-");
+            }).join(" · ");
         },
         getAllConfiguredDays: function() {
             return Object.keys(liveDBData["_groupDayLimits"] || {}).map(function(d) { return parseInt(d, 10); });
@@ -173,17 +179,34 @@ var DATE_MANAGE_ADAPTERS = {
             var keys = ["A", "B", "C", "D", "E"].map(function(group) { return codeName + "_" + group; });
             return keys.some(function(key) { return Object.prototype.hasOwnProperty.call(d, key); });
         },
-        // "현재 설정" 통합 패널: 그 날짜에 설정이 존재하는 코드명만 나열 (값은 표시하지 않음 — 상세는 탭 입력에서)
+        // "현재 설정" 통합 패널: 현재 선택된 근무코드(scCode)의 A~E 실제 값을
+        // "B코드 │ A1 · B- · C2 · D1 · E-" 형태로 보여준다. 같은 날짜에 다른
+        // 근무코드 설정도 있으면 줄을 늘리지 않고 끝에 "+N코드"만 덧붙인다.
+        // ⚠️ 다른 코드 존재 여부는 key.split("_")[0] 같은 단순 파싱을 쓰지 않는다
+        // (codeName 자체에 "_"가 포함될 수 있어 기존 exact-key 규칙이 깨질 수 있음).
+        // 반드시 등록된 스케줄 코드 목록을 기준으로 codeName+"_A"~"_E" exact key
+        // 존재 여부만 확인한다 — bulkDelete/hasSetting과 동일한 exact-key 규칙.
         getSummaryLine: function(day) {
             var d = (liveDBData["_scGroupDayLimits"] || {})[String(day)] || {};
-            var codes = {};
-            Object.keys(d).forEach(function(key) {
-                var idx = key.lastIndexOf("_");
-                if (idx < 0) return;
-                codes[key.slice(0, idx)] = true;
+            var codeName = dateManageState.scCode;
+            if (!codeName || Object.keys(d).length === 0) return "-";
+
+            var mainLine = codeName + "코드 │ " + ["A", "B", "C", "D", "E"].map(function(g) {
+                var v = d[codeName + "_" + g];
+                return g + (v != null ? v : "-");
+            }).join(" · ");
+
+            var allCodes = (typeof getScheduleCodeList === "function") ? getScheduleCodeList() : [];
+            var otherCount = 0;
+            allCodes.forEach(function(c) {
+                if (!c || c.name === codeName) return;
+                var hasIt = ["A", "B", "C", "D", "E"].some(function(g) {
+                    return Object.prototype.hasOwnProperty.call(d, c.name + "_" + g);
+                });
+                if (hasIt) otherCount++;
             });
-            var list = Object.keys(codes);
-            return list.length ? list.join(", ") : "미설정";
+
+            return mainLine + (otherCount > 0 ? ("  +" + otherCount + "코드") : "");
         },
         // 현재 선택 코드의 hasSetting() 기준 그대로 사용한다 (exact-key, prefix 아님).
         getAllConfiguredDays: function() {
@@ -459,9 +482,16 @@ function _updateDateSelectSummary() {
     el.innerText = list.length ? (list.length + "개 날짜 선택됨: " + list.map(function(d) { return d + "일"; }).join(", ")) : "선택된 날짜: 없음";
 }
 
-// ── 오른쪽 패널: 활성 날짜의 3종 통합 요약 ─────────────────────────────────────
-// 탭과 무관하게 항상 세 종류(특정일 휴무/조별 휴무/조별 근무)를 함께 보여준다.
-// 상세 수정은 현재 선택한 탭의 "새 설정" 입력에서 한다.
+function _escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, function(ch) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[ch];
+    });
+}
+
+// ── 오른쪽 패널: 활성 날짜의 3종 통합 요약 (최대 3줄, compact) ─────────────────
+// 탭과 무관하게 항상 세 종류(특정일 휴무/조별 휴무/조별 근무)의 "실제 값"을
+// 한눈에 보여준다 ("설정됨"처럼 존재 여부만 알려주는 표시는 쓰지 않는다).
+// 현재 활성 탭에 해당하는 줄만 살짝 강조한다. 상세 수정은 "새 설정" 입력에서.
 function _updateDmRightPanel() {
     var bodyEl = document.getElementById("dmDaySummaryBody");
     if (!bodyEl) return;
@@ -469,14 +499,26 @@ function _updateDmRightPanel() {
     var tm = getTargetYearMonth();
     var day = dateManageState.activeDate;
     if (day == null) {
-        bodyEl.innerText = "날짜를 선택하세요";
+        bodyEl.textContent = "날짜를 선택하세요";
         return;
     }
-    var lines = [parseInt(tm.month, 10) + "월 " + day + "일"];
-    lines.push("특정일 휴무   " + DATE_MANAGE_ADAPTERS.SPECIAL_DAY_LIMIT.getSummaryLine(day));
-    lines.push("조별 휴무     " + DATE_MANAGE_ADAPTERS.GROUP_DAY_LIMIT.getSummaryLine(day));
-    lines.push("조별 근무     " + DATE_MANAGE_ADAPTERS.SC_GROUP_DAY_LIMIT.getSummaryLine(day));
-    bodyEl.innerText = lines.join("\n");
+
+    var rows = [
+        { tab: "SPECIAL_DAY_LIMIT", label: "특정일",   text: DATE_MANAGE_ADAPTERS.SPECIAL_DAY_LIMIT.getSummaryLine(day) },
+        { tab: "GROUP_DAY_LIMIT",   label: "조별휴무", text: DATE_MANAGE_ADAPTERS.GROUP_DAY_LIMIT.getSummaryLine(day) },
+        { tab: "SC_GROUP_DAY_LIMIT", label: "조별근무", text: DATE_MANAGE_ADAPTERS.SC_GROUP_DAY_LIMIT.getSummaryLine(day) }
+    ];
+
+    var html = "<div class='dm-summary-date'>" + _escapeHtml(parseInt(tm.month, 10) + "월 " + day + "일") + "</div>";
+    html += rows.map(function(r) {
+        var activeCls = (r.tab === dateManageState.activeTab) ? " active" : "";
+        return "<div class='dm-summary-row" + activeCls + "'>"
+             + "<span class='dm-summary-label'>" + _escapeHtml(r.label) + "</span>"
+             + "<span class='dm-summary-value'>" + _escapeHtml(r.text) + "</span>"
+             + "</div>";
+    }).join("");
+
+    bodyEl.innerHTML = html;
 }
 
 // ── 적용 / 일괄 삭제 (현재 탭 기준) ─────────────────────────────────────────────

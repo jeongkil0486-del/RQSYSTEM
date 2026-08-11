@@ -293,10 +293,12 @@
                             </div>
                         </div>
                         <div class="feature-card-body">
-                            <div class="form-row">
-                                <label class="form-label">최대 인원</label>
-                                <input type="number" id="dayMaxConfig" min="1" max="40" class="form-input small small-num-input" placeholder="10">
-                                <button class="btn btn-primary-sm" onclick="saveDayMaxConstraint()">적용</button>
+                            <div class="feature-card-action">
+                                <div class="form-row" style="margin-bottom:0;">
+                                    <label class="form-label">최대 인원</label>
+                                    <input type="number" id="dayMaxConfig" min="1" max="40" class="form-input small small-num-input" placeholder="10">
+                                    <button class="btn btn-primary-sm" onclick="saveDayMaxConstraint()">적용</button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -312,7 +314,9 @@
                         </div>
                         <div class="feature-card-body">
                             <div id="employeeLimitCardSummary" class="dm-card-summary">개별 제한 0건</div>
-                            <button class="btn btn-primary-sm" onclick="openEmployeeLimitModal()">설정 관리</button>
+                            <div class="feature-card-action">
+                                <button class="btn btn-primary-sm" onclick="openEmployeeLimitModal()">설정 관리</button>
+                            </div>
                         </div>
                     </div>
 
@@ -327,7 +331,9 @@
                         </div>
                         <div class="feature-card-body">
                             <div id="scheduleCodeCardSummary" class="dm-card-summary">등록 코드 0개</div>
-                            <button class="btn btn-primary-sm" onclick="openScheduleCodeModal()">관리</button>
+                            <div class="feature-card-action">
+                                <button class="btn btn-primary-sm" onclick="openScheduleCodeModal()">관리</button>
+                            </div>
                         </div>
                     </div>
 
@@ -342,7 +348,9 @@
                         </div>
                         <div class="feature-card-body">
                             <div class="dm-card-summary">드래그로 조 편성을 관리합니다.</div>
-                            <button class="btn btn-primary-sm" onclick="openGroupAssignmentModal()">조 편성 관리</button>
+                            <div class="feature-card-action">
+                                <button class="btn btn-primary-sm" onclick="openGroupAssignmentModal()">조 편성 관리</button>
+                            </div>
                         </div>
                     </div>
 
@@ -357,7 +365,9 @@
                         </div>
                         <div class="feature-card-body">
                             <div id="dateManageCardSummary" class="dm-card-summary">설정된 날짜 없음</div>
-                            <button class="btn btn-primary-sm" onclick="openDateManageModal()">제한 설정 관리</button>
+                            <div class="feature-card-action">
+                                <button class="btn btn-primary-sm" onclick="openDateManageModal()">제한 설정 관리</button>
+                            </div>
                         </div>
                     </div>
 

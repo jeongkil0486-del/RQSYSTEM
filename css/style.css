@@ -1138,6 +1138,29 @@ body {
 @media (max-width: 640px) {
   .cards-row-5col { grid-template-columns: 1fr; }
 }
+/* 5개 카드의 하단 action(입력/버튼) 영역을 같은 높이선에 맞춘다.
+   grid의 기본 stretch로 5개 카드 높이는 이미 같아지므로, 카드 내부를
+   flex-column으로 만들고 action 영역만 margin-top:auto로 바닥에 붙이면
+   카드마다 요약 텍스트 유무/길이가 달라도 버튼 줄이 항상 같은 위치에 온다.
+   (카드별 임시 margin/padding 보정 없이 공통 구조로 해결 — .cards-row-5col
+   범위로 한정해 다른 페이지의 .feature-card 레이아웃에는 영향 없음) */
+.cards-row-5col .feature-card {
+  display: flex;
+  flex-direction: column;
+}
+.cards-row-5col .feature-card-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+}
+.cards-row-5col .feature-card-action {
+  margin-top: auto;
+}
+@media (max-width: 640px) {
+  /* 1열로 쌓일 때는 카드마다 개별 높이라 stretch 대상이 없으므로 margin-top:auto가
+     불필요한 빈 공간을 만들지 않는다 — 별도 처리 불필요, 명시만 해둔다. */
+  .cards-row-5col .feature-card { flex-direction: column; }
+}
 .group-inputs {
   display: flex;
   align-items: center;
@@ -1582,10 +1605,52 @@ body {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px 12px;
-  white-space: pre-line;
   line-height: 1.6;
   min-height: 44px;
   word-break: break-word;
+}
+/* 현재 설정 요약: 날짜 1줄 + 특정일/조별휴무/조별근무 최대 3줄, 세로로 늘어나지 않게 유지 */
+.dm-summary-date {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-sub);
+  margin-bottom: 4px;
+}
+.dm-summary-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  border-left: 2px solid transparent;
+}
+.dm-summary-label {
+  flex: 0 0 56px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-sub);
+  white-space: nowrap;
+}
+.dm-summary-value {
+  flex: 1 1 auto;
+  font-size: 12.5px;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 현재 활성 탭 줄만 살짝 강조 — 과도한 색/굵기 변화는 피한다 */
+.dm-summary-row.active {
+  background: rgba(37, 99, 235, .08);
+  border-left-color: var(--accent);
+}
+.dm-summary-row.active .dm-summary-label,
+.dm-summary-row.active .dm-summary-value {
+  font-weight: 700;
+  color: var(--accent);
+}
+@media (max-width: 480px) {
+  .dm-summary-value { white-space: normal; overflow: visible; text-overflow: clip; }
 }
 .dm-section-divider {
   border-top: 1px solid var(--border);
