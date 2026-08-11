@@ -278,121 +278,86 @@
 
             <div class="cards-grid">
 
-                <!-- 특정일 휴무 제한 (다른 두 카드와 한 줄 배치) — 날짜별 상세는 공통 관리 팝업에서 처리 -->
-                <div class="feature-card">
-                    <div class="feature-card-header">
-                        <div class="feature-icon blue" style="background:#eff6ff;">🎯</div>
-                        <div>
-                            <div class="feature-card-title">특정일 휴무 제한</div>
-                            <div class="feature-card-desc">특정 날짜의 휴무 신청 가능 인원을 설정합니다.</div>
-                        </div>
-                    </div>
-                    <div class="feature-card-body">
-                        <div id="specialDayCardSummary" class="dm-card-summary">설정된 날짜 0일</div>
-                        <button class="btn btn-primary-sm btn-full" onclick="openDateManageModal('SPECIAL_DAY_LIMIT')">설정 관리</button>
-                    </div>
-                </div>
+                <!-- PC 넓은 화면에서는 5개 카드가 한 줄에 균등 배치된다 (.cards-row-5col).
+                     세부 설정은 각 카드의 버튼으로 여는 팝업에서 처리하고, 카드 자체에는
+                     compact한 요약만 남긴다. -->
+                <div class="cards-row-5col">
 
-                <!-- 월 휴무 제한 -->
-                <div class="feature-card">
-                    <div class="feature-card-header">
-                        <div class="feature-icon orange" style="background:#fff7ed;">📢</div>
-                        <div>
-                            <div class="feature-card-title">월 휴무 제한</div>
-                            <div class="feature-card-desc">하루 최대 휴무 신청 가능 인원을 설정합니다.</div>
+                    <!-- 월 휴무 제한 -->
+                    <div class="feature-card">
+                        <div class="feature-card-header">
+                            <div class="feature-icon orange" style="background:#fff7ed;">📢</div>
+                            <div>
+                                <div class="feature-card-title">월 휴무 제한</div>
+                                <div class="feature-card-desc">하루 최대 휴무 신청 인원</div>
+                            </div>
+                        </div>
+                        <div class="feature-card-body">
+                            <div class="form-row">
+                                <label class="form-label">최대 인원</label>
+                                <input type="number" id="dayMaxConfig" min="1" max="40" class="form-input small small-num-input" placeholder="10">
+                                <button class="btn btn-primary-sm" onclick="saveDayMaxConstraint()">적용</button>
+                            </div>
                         </div>
                     </div>
-                    <div class="feature-card-body">
-                        <div class="form-row">
-                            <label class="form-label">최대 인원</label>
-                            <input type="number" id="dayMaxConfig" min="1" max="40" class="form-input small small-num-input" placeholder="10">
-                            <button class="btn btn-primary-sm" onclick="saveDayMaxConstraint()">적용</button>
-                        </div>
-                    </div>
-                </div>
 
-                <!-- 직원별 신청 제한 -->
-                <div class="feature-card">
-                    <div class="feature-card-header">
-                        <div class="feature-icon purple" style="background:#faf5ff;">📊</div>
-                        <div>
-                            <div class="feature-card-title">직원별 신청 제한</div>
-                            <div class="feature-card-desc">특정 직원의 신청 가능 횟수를 제한합니다.</div>
+                    <!-- 직원별 신청 제한 — 세부 목록은 팝업에서 처리 -->
+                    <div class="feature-card">
+                        <div class="feature-card-header">
+                            <div class="feature-icon purple" style="background:#faf5ff;">📊</div>
+                            <div>
+                                <div class="feature-card-title">직원별 신청 제한</div>
+                                <div class="feature-card-desc">직원별 신청 한도 관리</div>
+                            </div>
+                        </div>
+                        <div class="feature-card-body">
+                            <div id="employeeLimitCardSummary" class="dm-card-summary">개별 제한 0건</div>
+                            <button class="btn btn-primary-sm" onclick="openEmployeeLimitModal()">설정 관리</button>
                         </div>
                     </div>
-                    <div class="feature-card-body">
-                        <div class="form-row">
-                            <label class="form-label">사번</label>
-                            <input type="text" id="limitEmpName" placeholder="사번" class="form-input" style="max-width:100px;">
-                            <label class="form-label" style="min-width:auto;">횟수</label>
-                            <input type="number" id="limitEmpCount" min="0" max="31" class="form-input small small-num-input" placeholder="개">
-                            <button class="btn btn-primary-sm" onclick="setUserRequestLimit(true)">적용</button>
-                        </div>
-                        <div class="form-row">
-                            <label class="form-label">현황</label>
-                        </div>
-                        <div class="custom-floating-tooltip" id="limitListTooltipBoard"></div>
-                    </div>
-                </div>
 
-                <!-- 스케줄 코드 (설정 페이지에서 이동 — 직원별 신청 제한 옆에 배치) -->
-                <div class="feature-card">
-                    <div class="feature-card-header">
-                        <div class="feature-icon purple" style="background:#faf5ff;">🗓️</div>
-                        <div>
-                            <div class="feature-card-title">스케줄 코드</div>
-                            <div class="feature-card-desc">근무 스케줄 코드를 등록하고 관리합니다.</div>
+                    <!-- 스케줄 코드 — 세부 목록은 팝업에서 처리 -->
+                    <div class="feature-card">
+                        <div class="feature-card-header">
+                            <div class="feature-icon purple" style="background:#faf5ff;">🗓️</div>
+                            <div>
+                                <div class="feature-card-title">스케줄 코드</div>
+                                <div class="feature-card-desc">근무 코드 관리</div>
+                            </div>
+                        </div>
+                        <div class="feature-card-body">
+                            <div id="scheduleCodeCardSummary" class="dm-card-summary">등록 코드 0개</div>
+                            <button class="btn btn-primary-sm" onclick="openScheduleCodeModal()">관리</button>
                         </div>
                     </div>
-                    <div class="feature-card-body">
-                        <div class="form-row">
-                            <label class="form-label">코드</label>
-                            <input type="text" id="scheduleCodeInput" placeholder="코드" class="form-input" style="max-width:100px;">
-                            <label class="form-label" style="min-width:auto;">제한</label>
-                            <input type="number" id="scheduleCodeLimit" min="1" max="999" class="form-input small small-num-input" placeholder="제한">
-                            <button class="btn btn-primary-sm" onclick="createScheduleCode()">생성</button>
-                        </div>
-                        <div class="form-row">
-                            <label class="form-label">현황</label>
-                        </div>
-                        <div class="custom-floating-tooltip" id="scheduleCodeTooltipBoard"></div>
-                    </div>
-                </div>
 
-                <!-- 조별 휴무 제한 + 조별 근무 제한 — 같은 행에 나란히, compact 카드.
-                     날짜별 상세/설정은 공통 관리 팝업에서, 조 편성은 별도 팝업에서 처리 -->
-                <div class="cards-row-2col">
-
+                    <!-- 조 편성 관리 — 기존 groupAssignmentModal 재사용 (직원 A~E조 목록은 팝업에서만) -->
                     <div class="feature-card">
                         <div class="feature-card-header">
                             <div class="feature-icon green" style="background:#f0fdf4;">👥</div>
                             <div>
-                                <div class="feature-card-title">조별 휴무 제한</div>
-                                <div class="feature-card-desc">선택한 날짜에 각 조의 휴무 신청 한도를 설정합니다.</div>
+                                <div class="feature-card-title">조 편성 관리</div>
+                                <div class="feature-card-desc">직원을 A~E조로 편성</div>
                             </div>
                         </div>
                         <div class="feature-card-body">
-                            <div id="groupDayCardSummary" class="dm-card-summary">설정된 날짜 0일</div>
-                            <div class="dm-card-btn-row">
-                                <button class="btn btn-primary-sm" onclick="openDateManageModal('GROUP_DAY_LIMIT')">설정 관리</button>
-                                <button class="btn btn-secondary" onclick="openGroupAssignmentModal()">조 편성 관리</button>
-                            </div>
+                            <div class="dm-card-summary">드래그로 조 편성을 관리합니다.</div>
+                            <button class="btn btn-primary-sm" onclick="openGroupAssignmentModal()">조 편성 관리</button>
                         </div>
                     </div>
 
+                    <!-- 날짜별 제한 관리 — 특정일 휴무 / 조별 휴무 / 조별 근무 통합 팝업 -->
                     <div class="feature-card">
                         <div class="feature-card-header">
-                            <div class="feature-icon" style="background:#fef2f2;">🔢</div>
+                            <div class="feature-icon" style="background:#fef2f2;">📅</div>
                             <div>
-                                <div class="feature-card-title">조별 근무 제한</div>
-                                <div class="feature-card-desc">선택한 날짜에 스케줄 코드별 조별 근무 한도를 설정합니다.</div>
+                                <div class="feature-card-title">날짜별 제한 관리</div>
+                                <div class="feature-card-desc">특정일·조별 휴무·조별 근무</div>
                             </div>
                         </div>
                         <div class="feature-card-body">
-                            <div id="scGroupDayCardSummary" class="dm-card-summary">설정된 날짜 없음</div>
-                            <div class="dm-card-btn-row">
-                                <button class="btn btn-primary-sm" onclick="openDateManageModal('SC_GROUP_DAY_LIMIT')">설정 관리</button>
-                            </div>
+                            <div id="dateManageCardSummary" class="dm-card-summary">설정된 날짜 없음</div>
+                            <button class="btn btn-primary-sm" onclick="openDateManageModal()">제한 설정 관리</button>
                         </div>
                     </div>
 
@@ -839,20 +804,35 @@
     </div>
 </div>
 
-<!-- 공통 날짜별 설정 관리 팝업 (특정일 휴무 제한 / 조별 휴무 제한 / 조별 근무 제한 공용)
-     좌: 달력(현황 dot + 복수 선택) / 우: 선택 현황 + 현재 설정 + 새 설정 입력 + 적용/일괄삭제 -->
+<!-- 날짜별 제한 관리 통합 팝업 (특정일 휴무 / 조별 휴무 / 조별 근무 공용)
+     달력은 하나만 존재하고, 탭으로 종류를 바꿔가며 같은 날짜 선택 상태를 공유한다.
+     좌: 달력(3종 현황 dot + 복수 선택) / 우: 선택 현황 + 활성 날짜 현재 설정 요약
+     + 탭별 새 설정 입력 + 적용/일괄삭제 -->
 <div id="dateSelectModal" onclick="if(event.target===this) closeDateManageModal();" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.55); z-index:99999; justify-content:center; align-items:center;">
     <div class="date-manage-box">
         <div class="date-manage-header">
             <div class="date-manage-header-text">
-                <div id="dateSelectTitle" class="date-manage-title">날짜별 설정 관리</div>
+                <div class="date-manage-title">날짜별 제한 관리</div>
                 <div id="dateSelectMonthLabel" class="date-manage-month">—년 —월</div>
             </div>
             <button type="button" onclick="closeDateManageModal()" class="date-select-box-close">✕</button>
         </div>
 
+        <!-- 종류 탭 — 달력/선택 날짜는 공유, 탭은 입력 영역과 적용/삭제 대상만 바꾼다 -->
+        <div class="dm-tabs">
+            <button type="button" class="dm-tab-btn" data-tab="SPECIAL_DAY_LIMIT" onclick="switchDateManageTab('SPECIAL_DAY_LIMIT')">특정일 휴무</button>
+            <button type="button" class="dm-tab-btn" data-tab="GROUP_DAY_LIMIT" onclick="switchDateManageTab('GROUP_DAY_LIMIT')">조별 휴무</button>
+            <button type="button" class="dm-tab-btn" data-tab="SC_GROUP_DAY_LIMIT" onclick="switchDateManageTab('SC_GROUP_DAY_LIMIT')">조별 근무</button>
+        </div>
+
+        <div class="dm-legend">
+            <span class="dm-legend-item"><span class="dm-dot dm-dot-special"></span>특정일 휴무</span>
+            <span class="dm-legend-item"><span class="dm-dot dm-dot-group"></span>조별 휴무</span>
+            <span class="dm-legend-item"><span class="dm-dot dm-dot-sc"></span>조별 근무</span>
+        </div>
+
         <div class="date-manage-body">
-            <!-- 왼쪽: 달력 -->
+            <!-- 왼쪽: 달력 (하나만 존재, 탭 전환과 무관하게 유지) -->
             <div class="date-manage-left">
                 <div class="date-select-weekdays">
                     <span class="date-select-dow sun">일</span><span class="date-select-dow">월</span><span class="date-select-dow">화</span>
@@ -865,31 +845,31 @@
                 </div>
             </div>
 
-            <!-- 오른쪽: 선택 현황 + 현재 설정 + 새 설정 + 적용/일괄삭제 -->
+            <!-- 오른쪽: 선택 현황 + 활성 날짜 현재 설정(3종 요약) + 탭별 새 설정 + 적용/일괄삭제 -->
             <div class="date-manage-right">
                 <div id="dateSelectSummary" class="dm-selection-summary">선택된 날짜: 없음</div>
 
-                <!-- SC_GROUP_DAY_LIMIT 전용: 근무 코드 선택 -->
-                <div id="dmScCodeRow" class="dm-section" style="display:none;">
-                    <label class="form-label">근무 코드</label>
-                    <select id="dmScCodeSelect" class="form-select" onchange="onDmScCodeChange(this.value)"></select>
-                </div>
-
                 <div class="dm-section">
                     <div class="dm-section-title">현재 설정</div>
-                    <div id="dmCurrentSetting" class="dm-current-setting">날짜를 선택하세요</div>
+                    <div id="dmDaySummaryBody" class="dm-current-setting">날짜를 선택하세요</div>
                 </div>
 
                 <div class="dm-section dm-section-divider">
                     <div class="dm-section-title">새 설정</div>
 
-                    <!-- SPECIAL_DAY_LIMIT 전용 -->
+                    <!-- SC_GROUP_DAY_LIMIT 탭 전용: 근무 코드 선택 -->
+                    <div id="dmScCodeRow" class="form-row" style="display:none;">
+                        <label class="form-label">근무코드</label>
+                        <select id="dmScCodeSelect" class="form-select" onchange="onDmScCodeChange(this.value)"></select>
+                    </div>
+
+                    <!-- SPECIAL_DAY_LIMIT 탭 전용 -->
                     <div id="dmSpecialInputRow" class="form-row" style="display:none;">
                         <label class="form-label">제한 인원</label>
                         <input type="number" id="dmSpecialLimitInput" min="0" max="40" class="form-input small small-num-input" placeholder="명">
                     </div>
 
-                    <!-- GROUP_DAY_LIMIT / SC_GROUP_DAY_LIMIT 공용 -->
+                    <!-- GROUP_DAY_LIMIT / SC_GROUP_DAY_LIMIT 탭 공용 -->
                     <div id="dmGroupInputRow" class="form-row group-inputs" style="display:none;">
                         <span class="group-label gl-a">A조</span>
                         <input type="number" id="dmGroupInputA" min="0" max="99" class="form-input small small-num-input" placeholder="-">
@@ -933,6 +913,69 @@
         </div>
         <div class="group-assign-footer">
             <button type="button" class="btn btn-secondary" onclick="closeGroupAssignmentModal()">취소</button>
+        </div>
+    </div>
+</div>
+
+<!-- 직원별 신청 제한 팝업 ("직원별 신청 제한" 카드의 [설정 관리] 버튼에서 열림)
+     내부 폼/보드는 기존 setUserRequestLimit() / updateLimitTooltipBoard() /
+     deleteUserLimitFromBoard() 를 id 그대로 재사용 — 위치만 카드 밖으로 옮겼을 뿐
+     로직은 전혀 수정하지 않았다. -->
+<div id="employeeLimitModal" onclick="if(event.target===this) closeEmployeeLimitModal();" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.55); z-index:99999; justify-content:center; align-items:center;">
+    <div class="mini-manage-box">
+        <div class="group-assign-header">
+            <div>
+                <div class="group-assign-title">직원별 신청 제한</div>
+                <div class="group-assign-desc">특정 직원의 신청 가능 횟수를 제한합니다.</div>
+            </div>
+            <button type="button" onclick="closeEmployeeLimitModal()" class="date-select-box-close">✕</button>
+        </div>
+        <div class="group-assign-body">
+            <div class="form-row">
+                <label class="form-label">사번</label>
+                <input type="text" id="limitEmpName" placeholder="사번" class="form-input" style="max-width:100px;">
+                <label class="form-label" style="min-width:auto;">횟수</label>
+                <input type="number" id="limitEmpCount" min="0" max="31" class="form-input small small-num-input" placeholder="개">
+                <button class="btn btn-primary-sm" onclick="setUserRequestLimit(true)">적용</button>
+            </div>
+            <div class="form-row">
+                <label class="form-label">현황</label>
+            </div>
+            <div class="custom-floating-tooltip" id="limitListTooltipBoard"></div>
+        </div>
+        <div class="group-assign-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeEmployeeLimitModal()">닫기</button>
+        </div>
+    </div>
+</div>
+
+<!-- 스케줄 코드 팝업 ("스케줄 코드" 카드의 [관리] 버튼에서 열림)
+     내부 폼/보드는 기존 createScheduleCode() / drawScheduleCodeBoard() /
+     deleteScheduleCodeFromBoard() 를 id 그대로 재사용 — 로직 무변경. -->
+<div id="scheduleCodeModal" onclick="if(event.target===this) closeScheduleCodeModal();" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.55); z-index:99999; justify-content:center; align-items:center;">
+    <div class="mini-manage-box">
+        <div class="group-assign-header">
+            <div>
+                <div class="group-assign-title">스케줄 코드</div>
+                <div class="group-assign-desc">근무 스케줄 코드를 등록하고 관리합니다.</div>
+            </div>
+            <button type="button" onclick="closeScheduleCodeModal()" class="date-select-box-close">✕</button>
+        </div>
+        <div class="group-assign-body">
+            <div class="form-row">
+                <label class="form-label">코드</label>
+                <input type="text" id="scheduleCodeInput" placeholder="코드" class="form-input" style="max-width:100px;">
+                <label class="form-label" style="min-width:auto;">제한</label>
+                <input type="number" id="scheduleCodeLimit" min="1" max="999" class="form-input small small-num-input" placeholder="제한">
+                <button class="btn btn-primary-sm" onclick="createScheduleCode()">생성</button>
+            </div>
+            <div class="form-row">
+                <label class="form-label">현황</label>
+            </div>
+            <div class="custom-floating-tooltip" id="scheduleCodeTooltipBoard"></div>
+        </div>
+        <div class="group-assign-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeScheduleCodeModal()">닫기</button>
         </div>
     </div>
 </div>

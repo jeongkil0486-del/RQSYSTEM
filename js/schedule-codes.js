@@ -90,6 +90,24 @@ function drawScheduleCodeBoard() {
         deleteScheduleCodeFromBoard(e, badge.getAttribute("data-code"));
     };
     updateScGroupLimitCodeSelect();
+
+    var summaryEl = document.getElementById("scheduleCodeCardSummary");
+    if (summaryEl) summaryEl.innerText = "등록 코드 " + list.length + "개";
+}
+
+// ── 스케줄 코드 팝업 (카드의 [관리] 버튼) ───────────────────────────────────────
+// 팝업을 열고 닫는 것 자체는 아무것도 저장하지 않는다 — 실제 생성/삭제는 기존
+// createScheduleCode()/deleteScheduleCodeFromBoard() (사용자가 직접 눌렀을 때)에서만 일어난다.
+function openScheduleCodeModal() {
+    if (!isAdmin && !isSuperAdmin) return;
+    drawScheduleCodeBoard();
+    var modalEl = document.getElementById("scheduleCodeModal");
+    if (modalEl) modalEl.style.display = "flex";
+}
+
+function closeScheduleCodeModal() {
+    var modalEl = document.getElementById("scheduleCodeModal");
+    if (modalEl) modalEl.style.display = "none";
 }
 
 function deleteScheduleCodeFromBoard(event, codeName) {

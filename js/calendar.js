@@ -228,6 +228,25 @@ function updateLimitTooltipBoard() {
         e.preventDefault();
         deleteUserLimitFromBoard(e, badge.getAttribute("data-empno"));
     };
+
+    var summaryEl = document.getElementById("employeeLimitCardSummary");
+    if (summaryEl) summaryEl.innerText = "개별 제한 " + limitedUsers.length + "건";
+}
+
+// ── 직원별 신청 제한 팝업 (카드의 [설정 관리] 버튼) ─────────────────────────────
+// 팝업을 열고 닫는 것 자체는 아무것도 저장하지 않는다 — updateLimitTooltipBoard()는
+// 순수 렌더링 함수이고, 실제 저장/삭제는 기존 setUserRequestLimit()/
+// deleteUserLimitFromBoard() (사용자가 직접 적용/삭제를 눌렀을 때)에서만 일어난다.
+function openEmployeeLimitModal() {
+    if (!isAdmin && !isSuperAdmin) return;
+    updateLimitTooltipBoard();
+    var modalEl = document.getElementById("employeeLimitModal");
+    if (modalEl) modalEl.style.display = "flex";
+}
+
+function closeEmployeeLimitModal() {
+    var modalEl = document.getElementById("employeeLimitModal");
+    if (modalEl) modalEl.style.display = "none";
 }
 
 // ── Cloud Function 경유 삭제 ──────────────────────────────────────────────────
