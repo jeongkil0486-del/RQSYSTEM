@@ -186,27 +186,32 @@ var DATE_MANAGE_ADAPTERS = {
         // (codeName 자체에 "_"가 포함될 수 있어 기존 exact-key 규칙이 깨질 수 있음).
         // 반드시 등록된 스케줄 코드 목록을 기준으로 codeName+"_A"~"_E" exact key
         // 존재 여부만 확인한다 — bulkDelete/hasSetting과 동일한 exact-key 규칙.
+        // (더 이상 오른쪽 패널에서 직접 쓰지 않음 — 하위 호환용으로 유지.
+        // 패널은 이제 getConfiguredCodes() 로 모든 설정 코드를 한 번에 보여준다.)
         getSummaryLine: function(day) {
             var d = (liveDBData["_scGroupDayLimits"] || {})[String(day)] || {};
             var codeName = dateManageState.scCode;
             if (!codeName || Object.keys(d).length === 0) return "-";
-
-            var mainLine = codeName + "코드 │ " + ["A", "B", "C", "D", "E"].map(function(g) {
+            return codeName + "코드 │ " + ["A", "B", "C", "D", "E"].map(function(g) {
                 var v = d[codeName + "_" + g];
                 return g + (v != null ? v : "-");
             }).join(" · ");
-
+        },
+        // "현재 설정" 통합 패널용: 해당 날짜에 실제로 exact-key 설정이 있는
+        // 코드만, 등록된 스케줄 코드 순서대로 { name, text } 목록으로 반환한다.
+        // ⚠️ key.split("_")[0] 같은 단순 파싱은 쓰지 않는다 — codeName 자체에
+        // "_"가 포함될 수 있어(예: 코드 "D"와 코드 "D_A"가 공존) 반드시 등록된
+        // 코드명 기준 codeName+"_A"~"_E" exact key 존재 여부로만 판단한다.
+        getConfiguredCodes: function(day) {
+            var d = (liveDBData["_scGroupDayLimits"] || {})[String(day)] || {};
             var allCodes = (typeof getScheduleCodeList === "function") ? getScheduleCodeList() : [];
-            var otherCount = 0;
+            var result = [];
             allCodes.forEach(function(c) {
-                if (!c || c.name === codeName) return;
-                var hasIt = ["A", "B", "C", "D", "E"].some(function(g) {
-                    return Object.prototype.hasOwnProperty.call(d, c.name + "_" + g);
-                });
-                if (hasIt) otherCount++;
+                if (!c || !c.name) return;
+                if (!_scHasExactSetting(d, c.name)) return;
+                result.push({ name: c.name, text: _scFormatCodeValues(d, c.name) });
             });
-
-            return mainLine + (otherCount > 0 ? ("  +" + otherCount + "코드") : "");
+            return result;
         },
         // 현재 선택 코드의 hasSetting() 기준 그대로 사용한다 (exact-key, prefix 아님).
         getAllConfiguredDays: function() {
@@ -283,6 +288,21 @@ var DATE_MANAGE_ADAPTERS = {
     }
 };
 
+/** codeName 의 A~E exact key(codeName_A~E) 중 하나라도 dayObj 에 존재하는지 — prefix 매칭 아님 */
+function _scHasExactSetting(dayObj, codeName) {
+    return ["A", "B", "C", "D", "E"].some(function(group) {
+        return Object.prototype.hasOwnProperty.call(dayObj, codeName + "_" + group);
+    });
+}
+
+/** codeName 의 A~E 실제 값을 "A1 · B2 · C- · D1 · E-" 형태로 압축 표시 (0과 미설정을 구분: != null만 값으로 인정) */
+function _scFormatCodeValues(dayObj, codeName) {
+    return ["A", "B", "C", "D", "E"].map(function(g) {
+        var v = dayObj[codeName + "_" + g];
+        return g + (v != null ? v : "-");
+    }).join(" · ");
+}
+
 /** 현재 월의 specialDayLimits 전체를 liveDBData 에서 재구성 (rq_special_limit_{yyyymm}_{day} 키 스캔) */
 function _buildSpecialDayLimitsFromLiveData() {
     var tm = getTargetYearMonth();
@@ -331,8 +351,10 @@ function closeDateManageModal() {
     dateManageState.activeDate = null;
 }
 
-/** 탭 전환 — 달력/선택 날짜/activeDate 는 그대로 유지하고 입력 영역만 바꾼다 */
-function switchDateManageTab(tab) {
+/** 탭 전환 — 달력/선택 날짜/activeDate 는 그대로 유지하고 입력 영역만 바꾼다.
+ *  preferredScCode: SC 탭으로 전환하면서 특정 코드를 미리 선택하고 싶을 때
+ *  (예: "현재 설정" 목록에서 코드 row를 클릭한 경우) 사용. */
+function switchDateManageTab(tab, preferredScCode) {
     if (DATE_SELECT_MODES.indexOf(tab) === -1) return;
     dateManageState.activeTab = tab;
 
@@ -349,7 +371,7 @@ function switchDateManageTab(tab) {
         if (scCodeRow)  scCodeRow.style.display = "";
         if (specialRow) specialRow.style.display = "none";
         if (groupRow)   groupRow.style.display = "";
-        _populateDmScCodeSelect();
+        _populateDmScCodeSelect(preferredScCode);
     } else if (tab === "GROUP_DAY_LIMIT") {
         if (scCodeRow)  scCodeRow.style.display = "none";
         if (specialRow) specialRow.style.display = "none";
@@ -365,7 +387,9 @@ function switchDateManageTab(tab) {
     _updateDmRightPanel();
 }
 
-function _populateDmScCodeSelect() {
+/** preferredCode 를 생략하면 기존과 동일하게 첫 번째 등록 코드를 선택한다.
+ *  preferredCode 가 실제 등록된 코드라면(예: 현재 설정 목록의 row 클릭) 그 코드를 선택한다. */
+function _populateDmScCodeSelect(preferredCode) {
     var sel = document.getElementById("dmScCodeSelect");
     if (!sel) return;
     var list = (typeof getScheduleCodeList === "function") ? getScheduleCodeList() : [];
@@ -376,15 +400,25 @@ function _populateDmScCodeSelect() {
         opt.innerText = c.name;
         sel.appendChild(opt);
     });
-    var first = list.length ? list[0].name : "";
-    dateManageState.scCode = first;
-    sel.value = first;
+    var isValidPreferred = preferredCode && list.some(function(c) { return c.name === preferredCode; });
+    var chosen = isValidPreferred ? preferredCode : (list.length ? list[0].name : "");
+    dateManageState.scCode = chosen;
+    sel.value = chosen;
 }
 
 function onDmScCodeChange(codeName) {
     dateManageState.scCode = codeName;
     renderDateSelectionCalendar();
     _updateDmRightPanel();
+}
+
+/** "현재 설정"의 조별근무 코드 row 클릭 — 하단 편집 코드를 그 코드로 바꾼다.
+ *  DB write는 전혀 하지 않는다(코드 선택 + 폼 다시 그리기까지만).
+ *  selectedDays/activeDate 는 건드리지 않는다 — switchDateManageTab 이 이미
+ *  그 두 값을 그대로 두고 입력 영역/코드 선택만 갱신하도록 되어 있다. */
+function onDmSummaryCodeClick(codeName) {
+    if (!codeName) return;
+    switchDateManageTab("SC_GROUP_DAY_LIMIT", codeName);
 }
 
 function _clearDmInputs() {
@@ -488,10 +522,12 @@ function _escapeHtml(str) {
     });
 }
 
-// ── 오른쪽 패널: 활성 날짜의 3종 통합 요약 (최대 3줄, compact) ─────────────────
+// ── 오른쪽 패널: 활성 날짜의 3종 통합 요약 ───────────────────────────────────
 // 탭과 무관하게 항상 세 종류(특정일 휴무/조별 휴무/조별 근무)의 "실제 값"을
 // 한눈에 보여준다 ("설정됨"처럼 존재 여부만 알려주는 표시는 쓰지 않는다).
-// 현재 활성 탭에 해당하는 줄만 살짝 강조한다. 상세 수정은 "새 설정" 입력에서.
+// 특정일/조별휴무는 기존과 동일한 단일 줄. 조별근무만 해당 날짜에 실제 설정된
+// 모든 근무코드를 세로로 나열한다(등록 코드 전체가 아니라 설정된 코드만).
+// 현재 활성 탭에 해당하는 영역을 살짝 강조한다. 상세 수정은 "새 설정" 입력에서.
 function _updateDmRightPanel() {
     var bodyEl = document.getElementById("dmDaySummaryBody");
     if (!bodyEl) return;
@@ -503,22 +539,55 @@ function _updateDmRightPanel() {
         return;
     }
 
-    var rows = [
-        { tab: "SPECIAL_DAY_LIMIT", label: "특정일",   text: DATE_MANAGE_ADAPTERS.SPECIAL_DAY_LIMIT.getSummaryLine(day) },
-        { tab: "GROUP_DAY_LIMIT",   label: "조별휴무", text: DATE_MANAGE_ADAPTERS.GROUP_DAY_LIMIT.getSummaryLine(day) },
-        { tab: "SC_GROUP_DAY_LIMIT", label: "조별근무", text: DATE_MANAGE_ADAPTERS.SC_GROUP_DAY_LIMIT.getSummaryLine(day) }
-    ];
-
     var html = "<div class='dm-summary-date'>" + _escapeHtml(parseInt(tm.month, 10) + "월 " + day + "일") + "</div>";
-    html += rows.map(function(r) {
+
+    // 특정일 / 조별휴무 — 기존과 동일한 단일 줄 요약 (변경 없음)
+    [
+        { tab: "SPECIAL_DAY_LIMIT", label: "특정일" },
+        { tab: "GROUP_DAY_LIMIT", label: "조별휴무" }
+    ].forEach(function(r) {
         var activeCls = (r.tab === dateManageState.activeTab) ? " active" : "";
-        return "<div class='dm-summary-row" + activeCls + "'>"
-             + "<span class='dm-summary-label'>" + _escapeHtml(r.label) + "</span>"
-             + "<span class='dm-summary-value'>" + _escapeHtml(r.text) + "</span>"
-             + "</div>";
-    }).join("");
+        var text = DATE_MANAGE_ADAPTERS[r.tab].getSummaryLine(day);
+        html += "<div class='dm-summary-row" + activeCls + "'>"
+              + "<span class='dm-summary-label'>" + _escapeHtml(r.label) + "</span>"
+              + "<span class='dm-summary-value'>" + _escapeHtml(text) + "</span>"
+              + "</div>";
+    });
+
+    // 조별근무 — 설정된 모든 코드를 세로로 나열 (등록된 코드 순서, exact-key 기준)
+    var scActiveCls = (dateManageState.activeTab === "SC_GROUP_DAY_LIMIT") ? " active" : "";
+    var codes = DATE_MANAGE_ADAPTERS.SC_GROUP_DAY_LIMIT.getConfiguredCodes(day);
+
+    if (codes.length === 0) {
+        html += "<div class='dm-summary-row" + scActiveCls + "'>"
+              + "<span class='dm-summary-label'>조별근무</span>"
+              + "<span class='dm-summary-value'>-</span>"
+              + "</div>";
+    } else {
+        html += "<div class='dm-summary-row dm-summary-row-sc" + scActiveCls + "'>"
+              + "<span class='dm-summary-label'>조별근무</span>"
+              + "</div>";
+        html += "<div class='dm-sc-summary-list'>";
+        codes.forEach(function(c) {
+            var isCurrent = (c.name === dateManageState.scCode);
+            html += "<div class='dm-sc-summary-item" + (isCurrent ? " current" : "") + "' data-code='" + _escapeHtml(c.name) + "'>"
+                  + "<span class='dm-sc-summary-code'>" + _escapeHtml(c.name) + "코드</span>"
+                  + "<span class='dm-sc-summary-values'>" + _escapeHtml(c.text) + "</span>"
+                  + "</div>";
+        });
+        html += "</div>";
+    }
 
     bodyEl.innerHTML = html;
+
+    // 코드 row 클릭 → 하단 편집 코드 전환 (DB write 없음). innerHTML로 새로
+    // 그려졌으므로 매번 다시 바인딩한다 (inline onclick 대신 위임 없이 직접 바인딩
+    // — data-code 값을 그대로 쓰므로 코드명에 따옴표가 섞여도 안전하다).
+    bodyEl.querySelectorAll(".dm-sc-summary-item").forEach(function(item) {
+        item.addEventListener("click", function() {
+            onDmSummaryCodeClick(item.getAttribute("data-code"));
+        });
+    });
 }
 
 // ── 적용 / 일괄 삭제 (현재 탭 기준) ─────────────────────────────────────────────
