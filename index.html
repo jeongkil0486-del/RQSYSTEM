@@ -283,22 +283,18 @@
                      compact한 요약만 남긴다. -->
                 <div class="cards-row-5col">
 
-                    <!-- 월 휴무 제한 -->
+                    <!-- 월 휴무 제한 — 입력은 mini modal로 이동, 카드에는 요약만 -->
                     <div class="feature-card">
                         <div class="feature-card-header">
                             <div class="feature-icon orange" style="background:#fff7ed;">📢</div>
                             <div>
                                 <div class="feature-card-title">월 휴무 제한</div>
-                                <div class="feature-card-desc">하루 최대 휴무 신청 인원</div>
                             </div>
                         </div>
                         <div class="feature-card-body">
+                            <div id="dayMaxCardSummary" class="dm-card-summary">현재 -명</div>
                             <div class="feature-card-action">
-                                <div class="form-row" style="margin-bottom:0;">
-                                    <label class="form-label">최대 인원</label>
-                                    <input type="number" id="dayMaxConfig" min="1" max="40" class="form-input small small-num-input" placeholder="10">
-                                    <button class="btn btn-primary-sm" onclick="saveDayMaxConstraint()">적용</button>
-                                </div>
+                                <button class="btn btn-primary-sm" onclick="openMonthlyLimitModal()">설정 관리</button>
                             </div>
                         </div>
                     </div>
@@ -309,7 +305,6 @@
                             <div class="feature-icon purple" style="background:#faf5ff;">📊</div>
                             <div>
                                 <div class="feature-card-title">직원별 신청 제한</div>
-                                <div class="feature-card-desc">직원별 신청 한도 관리</div>
                             </div>
                         </div>
                         <div class="feature-card-body">
@@ -326,13 +321,12 @@
                             <div class="feature-icon purple" style="background:#faf5ff;">🗓️</div>
                             <div>
                                 <div class="feature-card-title">스케줄 코드</div>
-                                <div class="feature-card-desc">근무 코드 관리</div>
                             </div>
                         </div>
                         <div class="feature-card-body">
                             <div id="scheduleCodeCardSummary" class="dm-card-summary">등록 코드 0개</div>
                             <div class="feature-card-action">
-                                <button class="btn btn-primary-sm" onclick="openScheduleCodeModal()">관리</button>
+                                <button class="btn btn-primary-sm" onclick="openScheduleCodeModal()">설정 관리</button>
                             </div>
                         </div>
                     </div>
@@ -343,13 +337,12 @@
                             <div class="feature-icon green" style="background:#f0fdf4;">👥</div>
                             <div>
                                 <div class="feature-card-title">조 편성 관리</div>
-                                <div class="feature-card-desc">직원을 A~E조로 편성</div>
                             </div>
                         </div>
                         <div class="feature-card-body">
-                            <div class="dm-card-summary">드래그로 조 편성을 관리합니다.</div>
+                            <div class="dm-card-summary">A~E조 직원 편성</div>
                             <div class="feature-card-action">
-                                <button class="btn btn-primary-sm" onclick="openGroupAssignmentModal()">조 편성 관리</button>
+                                <button class="btn btn-primary-sm" onclick="openGroupAssignmentModal()">설정 관리</button>
                             </div>
                         </div>
                     </div>
@@ -360,13 +353,12 @@
                             <div class="feature-icon" style="background:#fef2f2;">📅</div>
                             <div>
                                 <div class="feature-card-title">날짜별 제한 관리</div>
-                                <div class="feature-card-desc">특정일·조별 휴무·조별 근무</div>
                             </div>
                         </div>
                         <div class="feature-card-body">
                             <div id="dateManageCardSummary" class="dm-card-summary">설정된 날짜 없음</div>
                             <div class="feature-card-action">
-                                <button class="btn btn-primary-sm" onclick="openDateManageModal()">제한 설정 관리</button>
+                                <button class="btn btn-primary-sm" onclick="openDateManageModal()">설정 관리</button>
                             </div>
                         </div>
                     </div>
@@ -923,6 +915,31 @@
         </div>
         <div class="group-assign-footer">
             <button type="button" class="btn btn-secondary" onclick="closeGroupAssignmentModal()">취소</button>
+        </div>
+    </div>
+</div>
+
+<!-- 월 휴무 제한 팝업 ("월 휴무 제한" 카드의 [설정 관리] 버튼에서 열림)
+     내부 입력은 기존 dayMaxConfig id / saveDayMaxConstraint() 를 그대로 재사용 —
+     위치만 카드 밖으로 옮겼을 뿐 저장 로직/Firebase 구조는 전혀 수정하지 않았다. -->
+<div id="monthlyLimitModal" onclick="if(event.target===this) closeMonthlyLimitModal();" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.55); z-index:99999; justify-content:center; align-items:center;">
+    <div class="mini-manage-box">
+        <div class="group-assign-header">
+            <div>
+                <div class="group-assign-title">월 휴무 제한 설정</div>
+                <div class="group-assign-desc">하루 최대 휴무 신청 가능 인원을 설정합니다.</div>
+            </div>
+            <button type="button" onclick="closeMonthlyLimitModal()" class="date-select-box-close">✕</button>
+        </div>
+        <div class="group-assign-body">
+            <div class="form-row" style="margin-bottom:0;">
+                <label class="form-label">최대 인원</label>
+                <input type="number" id="dayMaxConfig" min="1" max="40" class="form-input small small-num-input" placeholder="10">
+                <button class="btn btn-primary-sm" onclick="saveDayMaxConstraint()">적용</button>
+            </div>
+        </div>
+        <div class="group-assign-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeMonthlyLimitModal()">취소</button>
         </div>
     </div>
 </div>

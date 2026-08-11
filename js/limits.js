@@ -141,10 +141,34 @@ function saveDayMaxConstraint() {
     }).then(function() {
         liveDBData["rq_config_day_max"] = val;
         refreshData();
+        _updateDayMaxCardSummary();
         alert("월 휴무 제한이 저장되었습니다.");
     }).catch(function(e) {
         alert((e && e.message) || "저장 실패");
     });
+}
+
+// ── 월 휴무 제한 팝업 (카드의 [설정 관리] 버튼) ─────────────────────────────────
+// 팝업을 열고 닫는 것 자체는 아무것도 저장하지 않는다 — 실제 저장은 기존
+// saveDayMaxConstraint()(사용자가 직접 적용을 눌렀을 때)에서만 일어난다.
+function _updateDayMaxCardSummary() {
+    var el = document.getElementById("dayMaxCardSummary");
+    if (!el) return;
+    var v = getFirebaseItem("rq_config_day_max", null);
+    el.innerText = v !== null ? ("현재 " + v + "명") : "현재 -명";
+}
+
+function openMonthlyLimitModal() {
+    if (!isAdmin && !isSuperAdmin) return;
+    var el = document.getElementById("dayMaxConfig");
+    if (el) el.value = getFirebaseItem("rq_config_day_max", "10");
+    var modalEl = document.getElementById("monthlyLimitModal");
+    if (modalEl) modalEl.style.display = "flex";
+}
+
+function closeMonthlyLimitModal() {
+    var modalEl = document.getElementById("monthlyLimitModal");
+    if (modalEl) modalEl.style.display = "none";
 }
 
 function saveGlobalUserMaxConstraint() {
@@ -494,6 +518,8 @@ function deleteAnnualQuotaFromBoard(event, empNo) {
 
 window.saveYearMonthConfig        = saveYearMonthConfig;
 window.saveDayMaxConstraint       = saveDayMaxConstraint;
+window.openMonthlyLimitModal      = openMonthlyLimitModal;
+window.closeMonthlyLimitModal     = closeMonthlyLimitModal;
 window.saveGlobalUserMaxConstraint = saveGlobalUserMaxConstraint;
 window.saveAnnualUserMaxConstraint = saveAnnualUserMaxConstraint;
 window.setSpecialDayLimit         = setSpecialDayLimit;

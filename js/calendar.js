@@ -290,6 +290,7 @@ function refreshData() {
         if (document.getElementById("targetYear")) initYearMonthSelects(tm.year, tm.month);
         if (document.getElementById("dayMaxConfig"))
             document.getElementById("dayMaxConfig").value          = getFirebaseItem("rq_config_day_max", "10");
+        if (typeof _updateDayMaxCardSummary === "function") _updateDayMaxCardSummary();
         if (document.getElementById("globalUserMaxConfig"))
             document.getElementById("globalUserMaxConfig").value   = getFirebaseItem("rq_config_global_user_max", "4");
         if (document.getElementById("annualUserMaxConfig"))
