@@ -646,6 +646,19 @@ function bulkDeleteDateManageSetting() {
     });
 }
 
+// ── realtime config 동기화: modal이 열려 있으면 순수 렌더링만 다시 수행 ─────────
+// firebase-store.js 의 config realtime listener(onCfgValue) → refreshData() 경로에서
+// 호출된다. 다른 세션(또는 이 세션의 다른 화면)에서 날짜별 제한이 바뀌었을 때
+// dateManageModal이 열려 있으면 dot/현재 설정 패널이 새 값과 다르게 보일 수 있으므로,
+// 저장 함수는 절대 호출하지 않고 selectedDays/activeDate/activeTab/scCode 도
+// 건드리지 않은 채 이미 갱신된 liveDBData 기준으로만 다시 그린다.
+function _dmRerenderIfOpen() {
+    var modalEl = document.getElementById("dateSelectModal");
+    if (!modalEl || modalEl.style.display === "none" || !modalEl.style.display) return;
+    renderDateSelectionCalendar();
+    _updateDmRightPanel();
+}
+
 // ── "날짜별 제한 관리" 카드 요약 텍스트 ─────────────────────────────────────────
 function _updateDateManageCardSummaries() {
     var tm = getTargetYearMonth();

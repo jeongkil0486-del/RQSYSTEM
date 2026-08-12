@@ -389,6 +389,11 @@ function _subscribeRealtimeKeys(dept, yyyymm, initialState, connectToken) {
         if (isDuplicateInitial("cfg", cfg)) return;
         _clearConfigLiveData(yyyymm);
         _applyCfgToLiveData(cfg, yyyymm);
+        // ⚠️ config(날짜별 제한 등) 변경은 _updateAllBadges() 의 counter-diff 캐시가
+        // 알 수 없는 변화다 — 그대로 두면 count는 그대로인데 limit만 바뀐 날짜의
+        // badge 분모가 다음 counter 이벤트 전까지 stale하게 남을 수 있다. 캐시를
+        // 무효화해 다음 _updateAllBadges() 호출이 전체 날짜를 다시 계산하게 한다.
+        _prevCountersCache = null;
         if (currentUser) _throttledRefresh();
     });
     _deptListeners.push({ path: cfgPath, event: "value", fn: onCfgValue });

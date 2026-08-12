@@ -321,6 +321,10 @@ function refreshData() {
         drawScheduleCodeBoard();
         updateScGroupLimitCodeSelect();
         if (typeof _updateDateManageCardSummaries === "function") _updateDateManageCardSummaries();
+        // ⚠️ 날짜별 제한 관리 modal이 열려 있는 상태로 realtime config 이벤트가
+        // 들어오면(다른 세션의 변경 등) dot/현재 설정 패널도 최신 liveDBData 기준으로
+        // 다시 그려야 한다 — 저장 함수는 호출하지 않는 순수 렌더링 갱신만 수행한다.
+        if (typeof _dmRerenderIfOpen === "function") _dmRerenderIfOpen();
         drawAnnualStatusBoard();
     } else {
         var savedConfig    = getFirebaseItem("rq_allowed_start_datetime", null);
