@@ -742,13 +742,24 @@ body {
 .empty:nth-child(7n) { border-right: 0; }
 
 /* Count badges */
+/* ⚠️ "13/40명" 처럼 숫자 뒤 한글 "명" 앞에서 줄바꿈되는 문제 방지 —
+   CJK 문자는 기본적으로 앞에 줄바꿈 기회가 생기므로 white-space:nowrap로
+   강제로 한 줄 유지한다. max-width/overflow는 비정상적으로 긴 값이 들어와도
+   인접 날짜 cell을 침범하지 않도록 하는 안전장치. */
 .count-badge {
   font-size: 10.5px;
   padding: 2px 6px;
   border-radius: 20px;
   margin-top: 2px;
   font-weight: 600;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+  line-height: 1.2;
 }
 .badge-safe { background: #dcfce7; color: #166534; }
 .badge-full { background: #fee2e2; color: #991b1b; }
@@ -2134,7 +2145,7 @@ body {
   .date { height: 90px; max-height: 90px; padding: 4px; overflow-y: auto; }
   .empty { height: 90px; }
   .days { font-size: 10px; padding: 7px 0; }
-  .count-badge { font-size: 8.5px; padding: 1px 4px; display: block; margin-top: 2px; }
+  .count-badge { font-size: 8.5px; padding: 1px 4px; display: inline-flex; margin-top: 2px; }
   .user-note,
   .admin-item { font-size: 8.5px; height: 15px; min-height: 15px; margin-top: 2px; border-radius: 3px; }
   .admin-list { gap: 0; margin-top: 0; }

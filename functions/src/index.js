@@ -63,7 +63,12 @@ async function assertAdmin(callerUid, deptId) {
     return profile;
 }
 
-/** publicCounters 재계산 — adminView/{yyyymm} 전체 집계 */
+/**
+ * publicCounters 재계산 — adminView/{yyyymm} 전체 집계.
+ * ⚠️ publicCounters는 "월/특정일 휴무 제한(dayMax)"의 분자로 쓰인다 — 반드시
+ * 휴무(normal) 신청만 세고, schedule/annual/petition은 절대 포함하지 않는다.
+ * type 필드가 없는 legacy 데이터는 normal로 간주한다(하위호환, getNormalDayRequestCount와 동일 기준).
+ */
 async function recalcCounters(deptId, yyyymm, days) {
     const avSnap = await db.ref("departments/" + deptId + "/adminView/" + yyyymm).once("value");
     const avAll  = avSnap.val() || {};
@@ -72,7 +77,9 @@ async function recalcCounters(deptId, yyyymm, days) {
         const dayStr = String(parseInt(day, 10));
         let count = 0;
         Object.values(avAll).forEach(function(dayMap) {
-            if (dayMap && dayMap[dayStr]) count++;
+            const req = dayMap && dayMap[dayStr];
+            if (!req) return;
+            if ((req.type || "normal") === "normal") count++;
         });
         const path = "departments/" + deptId + "/publicCounters/" + yyyymm + "/" + dayStr;
         updates[path] = count > 0 ? count : null;
@@ -171,12 +178,21 @@ function findMemberGroups(groups, uid, empNo) {
     return matched;
 }
 
-function getDayRequestCount(ledger, day) {
+/**
+ * 월/특정일 휴무 제한(dayMax/specialDayLimits) 판정 전용 카운트.
+ * ⚠️ 반드시 휴무(normal) 신청만 센다 — schedule(근무코드)/annual(연차)/petition(청원)은
+ * 절대 포함하지 않는다. type 필드가 없는 legacy 신청은 다른 곳(예: 프론트 _applyMyRequests,
+ * getStaffDailyAvailability의 existingRequest.type)과 동일하게 `req.type || "normal"` 기준으로
+ * normal로 간주해 하위호환을 유지한다.
+ */
+function getNormalDayRequestCount(ledger, day) {
     const dayStr = String(day);
     let count = 0;
     Object.keys(ledger || {}).forEach(function(uid) {
         const userDays = ledger[uid] || {};
-        if (userDays && hasOwn(userDays, dayStr) && userDays[dayStr]) count++;
+        if (!(userDays && hasOwn(userDays, dayStr) && userDays[dayStr])) return;
+        const req = userDays[dayStr];
+        if ((req.type || "normal") === "normal") count++;
     });
     return count;
 }
@@ -248,7 +264,7 @@ async function validateAndStageRequest(deptId, yyyymm, day, uid, profile, type, 
         }
 
         if (type === "normal") {
-            const dayCount = getDayRequestCount(ledger, dayStr);
+            const dayCount = getNormalDayRequestCount(ledger, dayStr);
             if (dayCount >= effectiveDayLimit) {
                 rejectError = getRequestLimitMessage("closed");
                 return;
@@ -856,13 +872,18 @@ exports.resyncDerivedData = functions.runWith(RUN_OPTS).https.onCall(async (data
     if (!deptId || !yyyymm) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
     await assertAdmin(context.auth.uid, deptId);
 
-    // adminView 전체를 읽어 publicCounters 재계산
+    // adminView 전체를 읽어 publicCounters 재계산.
+    // ⚠️ publicCounters는 휴무(normal) 제한의 분자다 — schedule/annual/petition은 제외하고,
+    // type 필드가 없는 legacy 신청은 normal로 간주한다(recalcCounters/getNormalDayRequestCount와 동일 기준).
     const avSnap = await db.ref("departments/" + deptId + "/adminView/" + yyyymm).once("value");
     const avAll  = avSnap.val() || {};
     const dayCounts = {};
 
     Object.values(avAll).forEach(function(dayMap) {
         Object.keys(dayMap || {}).forEach(function(day) {
+            const req = dayMap[day];
+            if (!req) return;
+            if ((req.type || "normal") !== "normal") return;
             dayCounts[day] = (dayCounts[day] || 0) + 1;
         });
     });
@@ -1273,7 +1294,7 @@ exports.getStaffDailyAvailability = functions.runWith(RUN_OPTS).https.onCall(asy
         // ── normal(휴무) ──
         const specialLimitRaw = cfg.specialDayLimits && hasOwn(cfg.specialDayLimits, dayStr) ? cfg.specialDayLimits[dayStr] : null;
         const effectiveDayLimit = specialLimitRaw != null ? toIntOr(dayMax, specialLimitRaw) : dayMax;
-        const dayCount = getDayRequestCount(ledger, dayStr);
+        const dayCount = getNormalDayRequestCount(ledger, dayStr);
         if (dayCount >= effectiveDayLimit) {
             dayResult.normal = { allowed: false, reasonCode: "DAY_LIMIT" };
         } else {

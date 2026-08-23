@@ -113,9 +113,13 @@ exports.adminCancelRequest = functions
         const avAllSnap = await db.ref(avBasePath).once("value");
         const avAll     = avAllSnap.val() || {};
 
+        // ⚠️ publicCounters는 휴무(normal) 제한의 분자다 — index.js의 recalcCounters와
+        // 동일한 기준(normal 및 type 누락 legacy만 포함, schedule/annual/petition 제외)을 사용한다.
         let newCount = 0;
         Object.values(avAll).forEach(function(days) {
-            if (days && days[dayStr]) newCount++;
+            const req = days && days[dayStr];
+            if (!req) return;
+            if ((req.type || "normal") === "normal") newCount++;
         });
 
         await db.ref(counterPath).set(newCount > 0 ? newCount : null);
