@@ -682,6 +682,12 @@ body {
 .days.sun { color: #ef4444; }
 .days.sat { color: #3b82f6; }
 
+/* ⚠️ .date는 고정 높이(130px) + overflow-y:auto 인 column flex 컨테이너다.
+   신청 bar(.admin-list/.user-note)가 많아 내용이 130px를 넘으면, flex-shrink 기본값(1)을
+   가진 자식들이 overflow 스크롤 대신 먼저 압축된다 — 날짜 숫자(.date-num)와 휴무 count
+   badge(.count-badge)가 flex-shrink:0이 아니면 이 압축에 함께 눌려 거의 사라져 보이는
+   버그가 있었다. 날짜/count badge는 항상 고정 크기를 유지하고, 넘치는 신청 bar만
+   .date의 overflow-y:auto로 스크롤/클립되도록 두 요소에 flex-shrink:0을 지정한다. */
 .date {
   background: var(--white);
   border: 0;
@@ -719,6 +725,7 @@ body {
   color: var(--text-main);
   margin-bottom: 4px;
   line-height: 1;
+  flex-shrink: 0;
 }
 .date.sun .date-num { color: #ef4444; }
 .date.sat .date-num { color: #3b82f6; }
@@ -760,6 +767,7 @@ body {
   overflow: hidden;
   box-sizing: border-box;
   line-height: 1.2;
+  flex-shrink: 0;
 }
 .badge-safe { background: #dcfce7; color: #166534; }
 .badge-full { background: #fee2e2; color: #991b1b; }
