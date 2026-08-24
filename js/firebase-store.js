@@ -620,7 +620,10 @@ function connectDeptDBSafe(dept, overrideYyyymm) {
     return new Promise(function(resolve, reject) {
         // overrideYyyymm이 있으면 그 달 경로로, 없으면 현재 getTargetYearMonth() 사용
         var yyyymm = overrideYyyymm || getTargetYearMonth().fullStr;
-        var path = "departments/" + dept + "/configs/" + yyyymm;
+        // 사전 permission probe도 실제 connect/listener와 동일한 역할별 경로를 사용한다.
+        // staff가 configs를 직접 읽으면 강화된 Rules에서 여기서 먼저 거부되어
+        // connectDeptDB()까지 진입하지 못한다.
+        var path = _cfgReadPath(dept, yyyymm);
         db.ref(path).once("value", function() {
             try {
                 connectDeptDB(dept, function() { resolve(); }, overrideYyyymm);
