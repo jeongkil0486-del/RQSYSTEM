@@ -28,7 +28,8 @@ var _importantCurrent = null; // 현재 팝업에 표시 중인 공지
 function _noticeEsc(str) {
     return String(str || "")
         .replace(/&/g, "&amp;").replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        .replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
 }
 function _fmtNoticeDate(ms) {
     if (!ms) return "";

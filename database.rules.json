@@ -16,6 +16,12 @@
         },
         "configs": {
           "$yyyymm": {
+            ".read": "auth !== null && (root.child('users').child(auth.uid).child('role').val() === 'super_admin' || (root.child('users').child(auth.uid).child('deptId').val() === $deptId && root.child('users').child(auth.uid).child('role').val() === 'admin'))",
+            ".write": false
+          }
+        },
+        "staffConfig": {
+          "$yyyymm": {
             ".read": "auth !== null && (root.child('users').child(auth.uid).child('role').val() === 'super_admin' || root.child('users').child(auth.uid).child('deptId').val() === $deptId)",
             ".write": false
           }

@@ -103,7 +103,7 @@ function drawAllowedUsersBoard() {
               + "border-radius:5px;padding:4px 8px;font-size:12px;color:#2ecc71;"
               + "cursor:" + (term ? "default" : "grab") + ";user-select:none;white-space:normal;word-break:break-word;'"
               + ">"
-              + emp.name + " (" + emp.empNo + ")</span>";
+              + _escapeHtml(emp.name) + " (" + _escapeHtml(emp.empNo) + ")</span>";
     });
     html += "</div>";
     board.innerHTML = html;
@@ -191,7 +191,7 @@ function _normalizeGroupToken(token) {
 function _getGroupBoardTokenLabel(token) {
     var emp = employeeByUid[token] || employeeByEmpNo[String(token).toLowerCase()];
     if (!emp) return "삭제된 직원";
-    return emp.name + (emp.empNo ? " (" + emp.empNo + ")" : "");
+    return _escapeHtml(emp.name) + (emp.empNo ? " (" + _escapeHtml(emp.empNo) + ")" : "");
 }
 
 // ⚠️ read-only 함수 — 로컬 groupBoardState 를 구성할 뿐, Firebase에는 절대 쓰지
@@ -286,7 +286,7 @@ function drawLiveGroupBoards() {
             var bg = isPool ? "rgba(52,152,219,0.2)" : "rgba(46,204,113,0.2)";
             var bd = isPool ? "#3498db" : "#2ecc71";
             var tx = isPool ? "#74b9ff" : "#8af5b2";
-            return "<span class='group-drag-emp group-member-chip' draggable='true' data-token='" + token + "' data-zone='" + zone + "' data-index='" + index + "' style='background:" + bg + ";border:1px solid " + bd + ";border-radius:4px;padding:3px 7px;font-size:12px;color:" + tx + ";cursor:grab;user-select:none;white-space:nowrap;'>" + _getGroupBoardTokenLabel(token) + "</span>";
+            return "<span class='group-drag-emp group-member-chip' draggable='true' data-token='" + _escapeHtml(token) + "' data-zone='" + zone + "' data-index='" + index + "' style='background:" + bg + ";border:1px solid " + bd + ";border-radius:4px;padding:3px 7px;font-size:12px;color:" + tx + ";cursor:grab;user-select:none;white-space:nowrap;'>" + _getGroupBoardTokenLabel(token) + "</span>";
         }).join("") : "<span style='color:#666;font-size:11px;'>" + emptyMsg + "</span>";
         html += "</div></div>";
     });

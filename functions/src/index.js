@@ -424,6 +424,36 @@ const { adminCancelRequest } = require("./adminCancelRequest");
 exports.adminCancelRequest = adminCancelRequest;
 
 // ── 4. saveDeptConfig — 관리자 설정 저장 ─────────────────────────────────────
+/**
+ * configs/{yyyymm} 전체 객체에서 직원(staff)에게 노출해도 안전한 필드만 남긴 사본을
+ * 만든다. departments/{deptId}/staffConfig/{yyyymm}에 미러링되어, 직원 realtime
+ * listener는 이 sanitized path만 읽는다.
+ * ⚠️ configs/{yyyymm} 자체의 RTDB .read는 admin/super_admin 전용으로 제한했으므로,
+ * 이 미러가 없으면 직원 대시보드의 실시간 dayMax/특정일 제한/신청기간 등이 전부
+ * 끊긴다 — database.rules.json 변경과 반드시 함께 적용해야 하는 짝 변경이다.
+ *
+ * ⚠️ blacklist(userLimits만 제거)가 아니라 explicit allowlist를 사용한다 — configs에
+ * 앞으로 새로운 관리자 전용/민감 필드가 추가돼도 이 목록에 명시적으로 추가하지 않는 한
+ * staffConfig에는 절대 노출되지 않는 것이 안전 기본값이다. 목록은 js/firebase-store.js의
+ * _applyCfgToLiveData()가 실제로 읽는 필드 전체(userLimits 제외)와 정확히 일치시킨다.
+ */
+var STAFF_CONFIG_ALLOWLIST = [
+    "openAt", "closeAt", "dayMax", "globalUserMax", "annualUserMax", "targetYearMonth",
+    "groupMaxA", "groupMaxB", "groupMaxC", "groupMaxD", "groupMaxE",
+    "scheduleCodes", "specialDayLimits", "scGroupLimits",
+    "groupDayLimits", "groupDayLimitsEnabled",
+    "scGroupDayLimits", "scGroupDayLimitsEnabled",
+    "groups" // legacy fallback — persistent groups 미전환 지점에서만 _applyCfgToLiveData가 사용
+];
+
+function _buildStaffSafeConfig(merged) {
+    const safe = {};
+    STAFF_CONFIG_ALLOWLIST.forEach(function(key) {
+        if (Object.prototype.hasOwnProperty.call(merged, key)) safe[key] = merged[key];
+    });
+    return safe;
+}
+
 exports.saveDeptConfig = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
     if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
     const deptId = String(data.deptId || "").trim();
@@ -433,8 +463,8 @@ exports.saveDeptConfig = functions.runWith(RUN_OPTS).https.onCall(async (data, c
     if (!deptId || !yyyymm) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
     await assertAdmin(context.auth.uid, deptId);
 
-    const cfgRef  = db.ref("departments/" + deptId + "/configs/" + yyyymm);
-    const cfgSnap = await cfgRef.once("value");
+    const cfgPath = "departments/" + deptId + "/configs/" + yyyymm;
+    const cfgSnap = await db.ref(cfgPath).once("value");
     const existing = cfgSnap.val() || {};
 
     // null 값은 삭제, 나머지는 병합
@@ -444,7 +474,10 @@ exports.saveDeptConfig = functions.runWith(RUN_OPTS).https.onCall(async (data, c
         else merged[k] = config[k];
     });
 
-    await cfgRef.set(merged);
+    const updates = {};
+    updates[cfgPath] = merged;
+    updates["departments/" + deptId + "/staffConfig/" + yyyymm] = _buildStaffSafeConfig(merged);
+    await db.ref().update(updates);
     return { ok: true };
 });
 
@@ -459,9 +492,38 @@ exports.setSpecialDayLimit = functions.runWith(RUN_OPTS).https.onCall(async (dat
     if (!deptId || !yyyymm || !day) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
     await assertAdmin(context.auth.uid, deptId);
 
-    const path = "departments/" + deptId + "/configs/" + yyyymm + "/specialDayLimits/" + day;
-    await db.ref(path).set(limit);
+    // specialDayLimits는 staffConfig 미러에도 포함되므로 두 경로를 함께 갱신한다.
+    const updates = {};
+    updates["departments/" + deptId + "/configs/" + yyyymm + "/specialDayLimits/" + day] = limit;
+    updates["departments/" + deptId + "/staffConfig/" + yyyymm + "/specialDayLimits/" + day] = limit;
+    await db.ref().update(updates);
     return { ok: true };
+});
+
+// ── 5b. backfillStaffConfig — 기존 configs → staffConfig 1회성 안전 백필 ──────
+// ⚠️ saveDeptConfig({config:{}})를 재사용하지 않는 이유: saveDeptConfig는 매번
+// configs/{yyyymm}를 "읽고 → 병합 → 다시 쓰는" 라운드트립을 거치므로, 다른 관리자가
+// 그 사이에 실제로 저장한 값이 있으면 그 변경분을 되돌려 쓰는 lost-update 경쟁
+// 상태가 이론적으로 발생할 수 있다(백필 자체는 내용을 안 바꾸려는 의도라도, 구현이
+// read-then-write 라운드트립인 이상 이 위험은 사라지지 않는다).
+// 이 함수는 configs/{yyyymm}를 오직 읽기만 하고 절대 다시 쓰지 않으며, 파생 데이터인
+// staffConfig/{yyyymm}만(동일한 STAFF_CONFIG_ALLOWLIST 기준으로) (재)생성한다 —
+// 원본(configs)을 전혀 건드리지 않으므로 몇 번을 실행해도 안전하고(idempotent),
+// 동시성 문제가 없다. 배포 순서상 "Functions 배포 → 이 함수로 backfill → Rules 배포"
+// 로 staffConfig를 먼저 채워둔 뒤에 staff의 configs 직접 read를 막을 수 있다.
+exports.backfillStaffConfig = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
+    const deptId = String(data.deptId || "").trim();
+    const yyyymm = String(data.yyyymm || "").trim();
+    if (!deptId || !yyyymm) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
+    await assertAdmin(context.auth.uid, deptId);
+
+    const cfgSnap = await db.ref("departments/" + deptId + "/configs/" + yyyymm).once("value");
+    const existing = cfgSnap.val() || {};
+    const staffSafe = _buildStaffSafeConfig(existing);
+
+    await db.ref("departments/" + deptId + "/staffConfig/" + yyyymm).set(staffSafe);
+    return { ok: true, fields: Object.keys(staffSafe) };
 });
 
 // ── 6. setUserLimit — 직원별 한도 ────────────────────────────────────────────
@@ -517,24 +579,46 @@ exports.resetAllRequests = functions.runWith(RUN_OPTS).https.onCall(async (data,
 });
 
 // ── 8. resetEmployeePassword — 직원 비밀번호 초기화 ──────────────────────────
+// ⚠️ 권한 검증(role/deptId 비교)이 전부 끝나기 전에는 절대 target Auth 계정을
+// 건드리지 않는다. assertAdmin(uid, null)은 호출자가 admin/super_admin인지만
+// 확인하며, target의 role/deptId는 target profile을 조회한 뒤 별도로 검증한다.
+//   - 일반 admin: 자기 지점(deptId)의 role=staff 계정만 초기화 가능.
+//   - super_admin: staff/admin 계정 초기화 가능, 다른 super_admin 계정은 금지.
 exports.resetEmployeePassword = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
     if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
-    await assertAdmin(context.auth.uid, null); // super_admin or admin
+    const callerProfile = await assertAdmin(context.auth.uid, null); // super_admin or admin
+    const callerRole = String(callerProfile.role || "").toLowerCase();
 
     const empNo      = normalizeEmpNo(data.empNo);
     const newPassword = String(data.newPassword || "").trim();
     if (!empNo || newPassword.length < 6) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
 
     const email = empNoToEmail(empNo);
-    let uid;
+    let targetUid;
     try {
         const rec = await auth.getUserByEmail(email);
-        uid = rec.uid;
+        targetUid = rec.uid;
     } catch (e) {
         throw new functions.https.HttpsError("not-found", "해당 사번 없음: " + empNo);
     }
-    await auth.updateUser(uid, { password: newPassword });
-    await db.ref("users/" + uid).update({
+
+    const targetProfile = await getCallerProfile(targetUid);
+    if (!targetProfile) throw new functions.https.HttpsError("not-found", "대상 직원 프로필을 찾을 수 없습니다.");
+    const targetRole = String(targetProfile.role || "staff").toLowerCase();
+    const targetDept = String(targetProfile.deptId || "").trim();
+
+    if (callerRole === "admin") {
+        if (targetRole !== "staff")
+            throw new functions.https.HttpsError("permission-denied", "일반 관리자는 직원(staff) 계정만 초기화할 수 있습니다.");
+        if (targetDept !== String(callerProfile.deptId || "").trim())
+            throw new functions.https.HttpsError("permission-denied", "다른 지점의 계정은 초기화할 수 없습니다.");
+    } else if (callerRole === "super_admin") {
+        if (targetRole === "super_admin")
+            throw new functions.https.HttpsError("permission-denied", "다른 슈퍼관리자 계정은 초기화할 수 없습니다.");
+    }
+
+    await auth.updateUser(targetUid, { password: newPassword });
+    await db.ref("users/" + targetUid).update({
         mustChangePassword: true,
         passwordResetRequired: true
     });
@@ -562,9 +646,15 @@ exports.completeInitialPasswordChange = functions.runWith(RUN_OPTS).https.onCall
 });
 
 // ── 9. createEmployee — 직원 개별 생성 ───────────────────────────────────────
+// ⚠️ deptId 교차 지점 생성은 assertAdmin(uid, deptId)의 dept 비교로 이미 차단되지만
+// (admin이 자기 deptId와 다른 deptId를 보내면 즉시 permission-denied), role은
+// 전혀 검증되지 않아 일반 admin이 role="admin"/"super_admin"을 보내는 권한 상승이
+// 가능했다. role 화이트리스트 + 호출자 role별 생성 가능 role을 auth.createUser()
+// 이전에 강제한다(super_admin role은 이 함수로 생성 불가 — 별도 정책 없음).
 exports.createEmployee = functions.runWith(RUN_OPTS).https.onCall(async (data, context) => {
     if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
     const callerProfile = await assertAdmin(context.auth.uid, data.deptId ? String(data.deptId).trim() : null);
+    const callerRole = String(callerProfile.role || "").toLowerCase();
 
     const empNo        = normalizeEmpNo(data.empNo);
     const name         = String(data.name         || "").trim();
@@ -574,6 +664,13 @@ exports.createEmployee = functions.runWith(RUN_OPTS).https.onCall(async (data, c
 
     if (!empNo || !name || !deptId || tempPassword.length < 6)
         throw new functions.https.HttpsError("invalid-argument", "필수값 누락 (empNo, name, deptId, tempPassword 6자↑)");
+
+    if (["staff", "admin", "super_admin"].indexOf(role) === -1)
+        throw new functions.https.HttpsError("invalid-argument", "유효하지 않은 role입니다.");
+    if (role === "super_admin")
+        throw new functions.https.HttpsError("permission-denied", "super_admin 계정은 이 기능으로 생성할 수 없습니다.");
+    if (callerRole === "admin" && role !== "staff")
+        throw new functions.https.HttpsError("permission-denied", "일반 관리자는 staff 계정만 생성할 수 있습니다.");
 
     const email = empNoToEmail(empNo);
 
@@ -598,9 +695,17 @@ exports.createEmployee = functions.runWith(RUN_OPTS).https.onCall(async (data, c
 });
 
 // ── 10. bulkCreateEmployees — 직원 일괄 생성 ─────────────────────────────────
+// ⚠️ assertAdmin(uid, null)은 호출자가 admin/super_admin인지만 확인하고 deptId는
+// 비교하지 않는다 — 기존 코드는 이후 각 row의 deptId/role을 전혀 검증하지 않아,
+// 일반 admin이 Excel/payload에 다른 지점 deptId나 admin/super_admin role을 섞어
+// 보내면 그대로 생성되는 권한 상승 취약점이 있었다. 각 row마다 auth.createUser()
+// 이전에 반드시 권한 검증을 수행하고, 위반 row는 계정을 만들지 않은 채
+// ok:false로만 기록한다(기존 "행별 성공/실패, 나머지는 계속 처리" 정책은 유지).
 exports.bulkCreateEmployees = functions.runWith({ ...RUN_OPTS, timeoutSeconds: 300 }).https.onCall(async (data, context) => {
     if (!context.auth) throw new functions.https.HttpsError("unauthenticated", "로그인 필요");
-    await assertAdmin(context.auth.uid, null);
+    const callerProfile = await assertAdmin(context.auth.uid, null);
+    const callerRole = String(callerProfile.role || "").toLowerCase();
+    const callerDept = String(callerProfile.deptId || "").trim();
 
     const rows = Array.isArray(data.rows) ? data.rows : [];
     if (rows.length === 0) throw new functions.https.HttpsError("invalid-argument", "rows가 비어있음");
@@ -619,6 +724,24 @@ exports.bulkCreateEmployees = functions.runWith({ ...RUN_OPTS, timeoutSeconds: 3
         if (!empNo || !name || !deptId || tempPassword.length < 6) {
             results.push({ ok: false, empNo, error: "필수값 누락" });
             continue;
+        }
+        if (["staff", "admin", "super_admin"].indexOf(role) === -1) {
+            results.push({ ok: false, empNo, error: "유효하지 않은 role입니다." });
+            continue;
+        }
+        if (role === "super_admin") {
+            results.push({ ok: false, empNo, error: "super_admin 계정은 이 기능으로 생성할 수 없습니다." });
+            continue;
+        }
+        if (callerRole === "admin") {
+            if (deptId !== callerDept) {
+                results.push({ ok: false, empNo, error: "다른 지점 직원은 생성할 수 없습니다." });
+                continue;
+            }
+            if (role !== "staff") {
+                results.push({ ok: false, empNo, error: "일반 관리자는 staff 계정만 생성할 수 있습니다." });
+                continue;
+            }
         }
         const email = empNoToEmail(empNo);
         try {

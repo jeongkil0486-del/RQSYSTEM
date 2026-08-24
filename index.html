@@ -1455,12 +1455,16 @@ function updateRecentFeed(items, targetId) {
     }
     var html = '';
     items.forEach(function(item) {
+        // ⚠️ typeLabel은 refreshRecentFeed()가 고정 문자열(휴무/청원/연차/스케줄코드)만
+        // 넣는 값이라 escape하지 않는다. name/id/time은 직원 프로필(admin이 입력한
+        // name/empNo)에서 온 값이라 반드시 escape한다 — DOM API를 쓰지 않는 순수
+        // Escape 처리(_escapeHtml)로 XSS를 방지한다.
         var typeLabel = item.type || '휴무';
         html += '<div class="request-item">'
             + '<div class="request-meta">'
-            + '<span class="request-time">' + (item.time || '') + '</span>'
-            + '<span class="request-name">' + (item.name || '') + '</span>'
-            + '<span class="request-id">' + (item.id || '') + '</span>'
+            + '<span class="request-time">' + _escapeHtml(item.time || '') + '</span>'
+            + '<span class="request-name">' + _escapeHtml(item.name || '') + '</span>'
+            + '<span class="request-id">' + _escapeHtml(item.id || '') + '</span>'
             + '<span class="request-type-badge badge-' + typeLabel + '">' + typeLabel + '</span>'
             + '</div>'
             + '</div>';

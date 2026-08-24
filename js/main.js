@@ -553,7 +553,7 @@ function drawSuperAdminPanel() {
     depts.forEach(function(d) {
       var days   = summary[d];
       var counts = Object.keys(days).map(function(day) { return day + "일:" + days[day]; }).join(", ") || "-";
-      html += "<tr><td style='padding:8px;border:1px solid #ddd;font-weight:bold;'>" + d + "</td><td style='padding:8px;border:1px solid #ddd;font-size:12px;color:#555;'>" + counts + "</td></tr>";
+      html += "<tr><td style='padding:8px;border:1px solid #ddd;font-weight:bold;'>" + _escapeHtml(d) + "</td><td style='padding:8px;border:1px solid #ddd;font-size:12px;color:#555;'>" + counts + "</td></tr>";
     });
     html += "</table>";
     container.innerHTML = html;

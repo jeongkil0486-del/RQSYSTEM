@@ -6,6 +6,19 @@
 var _countersCache = {};
 var _deptConnectToken = 0;
 
+/**
+ * config 실시간 read 경로 선택 — RTDB Rules 보안 패치(userLimits 등 민감 필드 보호)에 맞춰
+ * departments/{dept}/configs/{yyyymm} 의 parent .read를 admin/super_admin 전용으로
+ * 제한했으므로, staff는 더 이상 이 경로를 직접 구독할 수 없다. 대신 staff에게 필요한
+ * 필드만(민감한 userLimits 제외) 서버(saveDeptConfig/setSpecialDayLimit)가 함께
+ * 미러링해 두는 departments/{dept}/staffConfig/{yyyymm} 를 구독한다. 이 경로가 반환하는
+ * 필드 구성은 configs와 동일한 shape이므로 _applyCfgToLiveData() 등 하위 로직은 무변경.
+ */
+function _cfgReadPath(dept, yyyymm) {
+    var base = "departments/" + dept + "/";
+    return base + ((isAdmin || isSuperAdmin) ? "configs/" : "staffConfig/") + yyyymm;
+}
+
 function _rebuildEmployeeMaps(rows) {
     // role === "staff" 인 계정만 운영 직원으로 취급.
     // admin/super_admin은 직원 목록·연차현황·조편성·다운로드 등 운영 화면에서 제외.
@@ -160,7 +173,7 @@ function connectDeptDB(dept, onFirstLoad, overrideYyyymm) {
     }
     var tm = getTargetYearMonth();
     var yyyymm = overrideYyyymm || tm.fullStr;
-    var cfgPath = "departments/" + dept + "/configs/" + yyyymm;
+    var cfgPath = _cfgReadPath(dept, yyyymm);
     var counterPath = "departments/" + dept + "/publicCounters/" + yyyymm;
     var myReqPath = "userRequests/" + currentUid + "/" + yyyymm;
     var avPath = "departments/" + dept + "/adminView/" + yyyymm;
@@ -389,7 +402,7 @@ function _subscribeRealtimeKeys(dept, yyyymm, initialState, connectToken) {
         initialState[kind] = null;
         return false;
     }
-    var cfgPath = "departments/" + dept + "/configs/" + yyyymm;
+    var cfgPath = _cfgReadPath(dept, yyyymm);
     var onCfgValue = db.ref(cfgPath).on("value", function(snap) {
         var cfg = snap.val() || {};
         if (isDuplicateInitial("cfg", cfg)) return;

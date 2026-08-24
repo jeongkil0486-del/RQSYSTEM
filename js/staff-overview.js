@@ -354,10 +354,16 @@ function renderStaffAvailabilityList(data) {
         : html;
 }
 
+// ⚠️ js/date-select.js에도 동일한 이름의 _escapeHtml()가 있고, 이 파일이 스크립트
+// 로드 순서상 더 나중이라(index.html) 전역에서는 이 정의가 이긴다 — 두 정의가
+// 서로 다르면(예: 작은따옴표 escape 누락) date-select.js의 data-code='...' 같은
+// 홑따옴표 속성 보호가 조용히 약화된다. 반드시 두 파일에서 동일한 5개 문자
+// (& < > " ') 를 이스케이프하도록 유지한다.
 function _escapeHtml(str) {
     return String(str == null ? "" : str)
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;");
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
 }

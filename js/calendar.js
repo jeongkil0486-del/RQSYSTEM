@@ -214,10 +214,10 @@ function updateLimitTooltipBoard() {
     } else {
         limitHtml += "<div style='display:flex;flex-wrap:wrap;gap:5px;'>";
         limitedUsers.sort(function(a, b) { return a.name.localeCompare(b.name); }).forEach(function(item) {
-            limitHtml += "<span class='lim-badge' data-empno='" + item.empNo + "'"
+            limitHtml += "<span class='lim-badge' data-empno='" + _escapeHtml(item.empNo) + "'"
                        + " style='background:rgba(52,152,219,0.25);border:1px solid #3498db;border-radius:5px;"
                        + "padding:4px 8px;font-size:12px;color:#74b9ff;font-weight:bold;cursor:context-menu;white-space:nowrap;'>"
-                       + item.name + ": " + item.count + "개</span>";
+                       + _escapeHtml(item.name) + ": " + item.count + "개</span>";
         });
         limitHtml += "</div>";
     }
@@ -300,7 +300,7 @@ function refreshData() {
             if (el) el.value = getFirebaseItem("rq_config_group_max_" + g, "2");
         });
 
-        var deptLabel = currentDept ? " [" + currentDept + "]" : "";
+        var deptLabel = currentDept ? " [" + _escapeHtml(currentDept) + "]" : "";
         document.getElementById("welcomeMessage").innerHTML =
             "👑 " + tm.label + deptLabel + " [관리자 모드]<br>" +
             "<span style='font-size:13px;color:#d9534f;font-weight:bold;'>날짜 클릭 시 특정 직원의 신청 내역 개별 삭제 가능</span>";
@@ -369,13 +369,13 @@ function refreshData() {
         var scInfoStr = "";
         if (scList.length > 0) {
             scInfoStr = "<br><span class='wm-row'><span class='wm-label'>근무 코드</span> " + scList.map(function(c) {
-                return c.name + ": " + getMyScheduleCodeCount(c.name) + "/" + c.limit + "개";
+                return _escapeHtml(c.name) + ": " + getMyScheduleCodeCount(c.name) + "/" + c.limit + "개";
             }).join(" | ") + "</span>";
         }
 
         document.getElementById("welcomeMessage").innerHTML =
             "<span class='wm-period'>" + tm.label + "</span><br>" +
-            "<span style='font-size:13px;color:#007bff;font-weight:bold;'>[" + currentUser + "]님 로그인함 (날짜 클릭 시 즉시 신청/취소)<br>" +
+            "<span style='font-size:13px;color:#007bff;font-weight:bold;'>[" + _escapeHtml(currentUser) + "]님 로그인함 (날짜 클릭 시 즉시 신청/취소)<br>" +
             "<span class='wm-row'><span class='wm-label'>휴무</span> <mark style='background:#e6f2ff;color:#0056b3;font-weight:bold;padding:2px 4px;border-radius:3px;'>" + myCurrentCount + " / " + maxLimit + "</mark>" +
             " | 연차 <mark style='background:#e6f4ea;color:#137333;font-weight:bold;padding:2px 4px;border-radius:3px;'>" + myAnnualCount + " / " + annualMaxLimit + "</mark>" +
             " (※ 청원 무제한)</span>" + scInfoStr + "<br>" +
@@ -426,7 +426,7 @@ function _updateMyStatusSummary(tm) {
 
     welcomeEl.innerHTML =
         "<span class='wm-period'>" + tm.label + "</span><br>" +
-        "<span style='font-size:13px;color:#007bff;font-weight:bold;'>[" + currentUser + "]님 로그인함 (날짜 클릭 시 즉시 신청/취소)<br>" +
+        "<span style='font-size:13px;color:#007bff;font-weight:bold;'>[" + _escapeHtml(currentUser) + "]님 로그인함 (날짜 클릭 시 즉시 신청/취소)<br>" +
         "<span class='wm-row'><span class='wm-label'>휴무</span> <mark style='background:#e6f2ff;color:#0056b3;font-weight:bold;padding:2px 4px;border-radius:3px;'>" + myCurrentCount + " / " + maxLimit + "</mark>" +
         " | 연차 <mark style='background:#e6f4ea;color:#137333;font-weight:bold;padding:2px 4px;border-radius:3px;'>" + myAnnualCount + " / " + annualMaxLimit + "</mark>" +
         " (※ 청원 무제한)</span>" + scInfoStr + "<br>" +

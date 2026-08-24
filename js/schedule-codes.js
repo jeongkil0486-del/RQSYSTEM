@@ -75,10 +75,10 @@ function drawScheduleCodeBoard() {
     } else {
         html += "<div style='display:flex;flex-wrap:wrap;gap:5px;'>";
         list.forEach(function(c) {
-            html += "<span class='sc-code-badge' data-code='" + c.name + "'"
+            html += "<span class='sc-code-badge' data-code='" + _escapeHtml(c.name) + "'"
                   + " style='background:rgba(233,30,140,0.3);color:#ff80b0;border:1px solid #e91e8c;"
                   + "border-radius:5px;padding:4px 10px;font-size:12px;font-weight:bold;white-space:nowrap;cursor:context-menu;'>"
-                  + c.name + " <span style='color:#f8bbd0;font-weight:normal;pointer-events:none;'>제한 " + c.limit + "개</span></span>";
+                  + _escapeHtml(c.name) + " <span style='color:#f8bbd0;font-weight:normal;pointer-events:none;'>제한 " + c.limit + "개</span></span>";
         });
         html += "</div>";
     }

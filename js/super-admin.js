@@ -186,9 +186,14 @@ function _renderBulkDeletePreview(parsed) {
     preview._bulkDeleteData = parsed;
 }
 
-// HTML 이스케이프 (XSS 방지)
+// HTML 이스케이프 (XSS 방지) — text/attribute 컨텍스트 모두 안전하도록 & < > " ' 전부 처리
 function _esc(str) {
-    return String(str || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    return String(str || "")
+        .replace(/&/g,"&amp;")
+        .replace(/</g,"&lt;")
+        .replace(/>/g,"&gt;")
+        .replace(/"/g,"&quot;")
+        .replace(/'/g,"&#39;");
 }
 
 // ── 최종 삭제 실행 ─────────────────────────────────────────────────────────────
