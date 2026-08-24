@@ -85,7 +85,13 @@ function _resolveEmployeeToken(token) {
 }
 
 function _clearAdminRequestLiveData(yyyymm) {
+    // ⚠️ "rq_" + "_{yyyymm}_" 부분 문자열만으로 지울 key를 판단하면, 관리자 신청
+    // 렌더링 key(rq_{이름}_{yyyymm}_{day}[_petition|_annual])뿐 아니라 config-derived
+    // 값인 rq_special_limit_{yyyymm}_{day} 까지 함께 삭제된다 — adminView realtime
+    // 갱신(예: 근무코드 신청)이 올 때마다 특정일 휴무 제한이 사라져 월 기본값으로
+    // fallback되는 버그의 원인이었다. 특정일 휴무 제한은 반드시 보존한다.
     Object.keys(liveDBData).forEach(function(k) {
+        if (k.startsWith("rq_special_limit_")) return;
         if (k.startsWith("rq_") && k.indexOf("_" + yyyymm + "_") >= 0) delete liveDBData[k];
         if (k.startsWith("sc_") && !k.startsWith("sc_glimit_") && k.indexOf("_" + yyyymm + "_") >= 0) delete liveDBData[k];
     });
