@@ -682,12 +682,15 @@ body {
 .days.sun { color: #ef4444; }
 .days.sat { color: #3b82f6; }
 
-/* ⚠️ .date는 고정 높이(130px) + overflow-y:auto 인 column flex 컨테이너다.
-   신청 bar(.admin-list/.user-note)가 많아 내용이 130px를 넘으면, flex-shrink 기본값(1)을
-   가진 자식들이 overflow 스크롤 대신 먼저 압축된다 — 날짜 숫자(.date-num)와 휴무 count
-   badge(.count-badge)가 flex-shrink:0이 아니면 이 압축에 함께 눌려 거의 사라져 보이는
-   버그가 있었다. 날짜/count badge는 항상 고정 크기를 유지하고, 넘치는 신청 bar만
-   .date의 overflow-y:auto로 스크롤/클립되도록 두 요소에 flex-shrink:0을 지정한다. */
+/* ⚠️ .date는 고정 높이(130px)를 가진 column flex 컨테이너다. 예전에는 .date 자체가
+   overflow-y:auto 스크롤 컨테이너였는데, 그러면 스크롤할 때 날짜 숫자(.date-num)와
+   휴무 count badge(.count-badge)까지 신청 목록(.admin-list)과 함께 밀려 올라가
+   화면 밖으로 사라지는 문제가 있었다. 이제 .date 자체는 스크롤하지 않고(overflow:hidden),
+   신청 목록만 담당하는 .admin-list가 자체 overflow-y:auto 스크롤 영역이 되어 날짜/count
+   badge는 항상 같은 위치에 고정되고 신청 목록만 그 아래에서 스크롤된다.
+   (참고: 같은 uid는 하루에 신청을 최대 1건만 가질 수 있어(중복 신청 금지 정책) 직원모드
+   .user-note는 실제로 130px를 넘길 만큼 쌓이지 않는다 — 이 overflow:hidden 변경으로
+   직원모드 신청 내역이 잘리는 회귀는 발생하지 않는다.) */
 .date {
   background: var(--white);
   border: 0;
@@ -699,16 +702,13 @@ body {
   justify-content: flex-start !important;
   padding: 8px 10px;
   transition: background .15s;
-  overflow-y: auto;
+  overflow: hidden;
   user-select: none;
   height: 130px;       /* 고정 높이 — 신청자가 많아도 달력 전체 크기는 유지 */
   max-height: 130px;
   position: relative;
   display: flex;
 }
-.date::-webkit-scrollbar { width: 5px; }
-.date::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-.date::-webkit-scrollbar-thumb:hover { background: var(--text-light); }
 .date:nth-child(7n) { border-right: 0; }
 .date:hover { background: #f0f7ff; }
 .date.today { background: #eff6ff; }
@@ -807,14 +807,26 @@ body {
 .admin-item.schedule-item { background: #3b82f6 !important; color: #fff !important; border: none !important; } /* 근무코드: 파랑 */
 
 /* Admin list: 관리자 모드도 직원 모드와 동일하게 1열로 쌓이는 형태로 통일
-   (기존 3열 그리드는 작은 태그 느낌이라 요청에 따라 제거) */
+   (기존 3열 그리드는 작은 태그 느낌이라 요청에 따라 제거)
+   ⚠️ .date(column flex 부모)가 더 이상 스크롤하지 않으므로, 신청 목록만 담당하는
+   이 요소가 자체 스크롤 영역이 된다. flex:1 1 auto로 .date-num/.count-badge가 쓰고
+   남은 공간을 차지하고, min-height:0이 있어야 column flex 안에서 overflow-y:auto가
+   실제로 동작한다(없으면 flex item의 기본 min-height:auto가 콘텐츠 높이만큼 자식을
+   밀어내 부모 .date 밖으로 넘쳐버리고 스크롤이 생기지 않는다 — 실제 브라우저로 검증됨). */
 .admin-list {
   width: 100%;
   display: flex;
   flex-direction: column;
   gap: 0;
   margin-top: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
+.admin-list::-webkit-scrollbar { width: 5px; }
+.admin-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.admin-list::-webkit-scrollbar-thumb:hover { background: var(--text-light); }
 
 /* ─── Right Panel ─── */
 .right-panel {
@@ -2150,7 +2162,7 @@ body {
   .right-panel { display: flex; flex-direction: column; }
 
   .calendar-grid { grid-auto-rows: 90px; }
-  .date { height: 90px; max-height: 90px; padding: 4px; overflow-y: auto; }
+  .date { height: 90px; max-height: 90px; padding: 4px; overflow: hidden; }
   .empty { height: 90px; }
   .days { font-size: 10px; padding: 7px 0; }
   .count-badge { font-size: 8.5px; padding: 1px 4px; display: inline-flex; margin-top: 2px; }
