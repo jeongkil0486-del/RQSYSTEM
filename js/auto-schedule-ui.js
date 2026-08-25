@@ -227,12 +227,12 @@ function _renderAutoCodeLinkList() {
 
     var restrictions = _getAutoCodeLinkRestrictions();
     if (!restrictions.length) {
-        listEl.innerHTML = "<span style='color:#aaa;font-size:12px;'>설정된 연결 제한 없음</span>";
+        listEl.innerHTML = "<span class='auto-schedule-codelink-empty'>설정된 연결 제한 없음</span>";
         return;
     }
     listEl.innerHTML = restrictions.map(function (r, idx) {
         return "<div class='auto-codelink-row' style='display:flex;align-items:center;gap:6px;margin-bottom:4px;'>"
-            + "<span style='font-size:12px;color:#eee;'>" + _escapeHtml(r.from) + " → " + _escapeHtml(r.to) + " 금지</span>"
+            + "<span class='auto-schedule-codelink-row'>" + _escapeHtml(r.from) + " → " + _escapeHtml(r.to) + " 금지</span>"
             + "<button type='button' class='btn btn-secondary' style='padding:2px 8px;font-size:11px;' onclick='removeAutoCodeLinkRestriction(" + idx + ")'>삭제</button>"
             + "</div>";
     }).join("");
@@ -377,7 +377,7 @@ function toggleAutoScheduleCandidates(conflictIndex) {
 function _renderCandidateListHtml(conflictIndex) {
     var candidates = _autoScheduleCandidatesFor(conflictIndex);
     if (!candidates.length) {
-        return "<div style='color:#e57373;font-size:12px;padding:4px 0;'>조정 가능한 직원 없음</div>";
+        return "<div class='auto-schedule-candidate-empty'>조정 가능한 직원 없음</div>";
     }
     return candidates.map(function (c) {
         return "<button type='button' class='btn btn-secondary' style='margin:2px;font-size:11px;padding:3px 8px;' "
@@ -479,16 +479,16 @@ function _renderAutoScheduleModal() {
 
     var html = "";
     if (!_autoScheduleState.previousMonthTailLoaded) {
-        html += "<div style='color:#aaa;font-size:12px;margin-bottom:8px;'>전월 확정 스케줄 데이터를 불러오는 중...</div>";
+        html += "<div class='auto-schedule-loading'>전월 확정 스케줄 데이터를 불러오는 중...</div>";
     } else if (_autoScheduleState.previousMonthTailWarning) {
-        html += "<div style='color:#ffd54f;font-size:11px;margin-bottom:8px;'>⚠ " + _escapeHtml(_autoScheduleState.previousMonthTailWarning) + "</div>";
+        html += "<div class='auto-schedule-warning'>⚠ " + _escapeHtml(_autoScheduleState.previousMonthTailWarning) + "</div>";
     } else {
-        html += "<div style='color:#aaa;font-size:11px;margin-bottom:8px;'>※ 전월 연속근무는 전월 확정 스케줄(finalSchedules) 기준으로 정확히 계산되었습니다.</div>";
+        html += "<div class='auto-schedule-hint'>※ 전월 연속근무는 전월 확정 스케줄(finalSchedules) 기준으로 정확히 계산되었습니다.</div>";
     }
 
     if (_autoScheduleState.existingFinalScheduleChecked && _autoScheduleState.existingFinalSchedule) {
         var m = _autoScheduleState.existingFinalSchedule.meta || {};
-        html += "<div style='color:#8af5b2;font-size:12px;margin-bottom:8px;border:1px solid #2e7d32;border-radius:4px;padding:6px 8px;'>"
+        html += "<div class='auto-schedule-success-banner'>"
             + "✅ 이 달은 이미 확정된 스케줄이 있습니다"
             + (m.confirmedAt ? " (확정: " + _escapeHtml(new Date(m.confirmedAt).toLocaleString()) + ")" : "")
             + ". 재확정(덮어쓰기)은 지원하지 않습니다.</div>";
@@ -502,19 +502,19 @@ function _renderAutoScheduleModal() {
 
     var draft = _autoScheduleState.draft;
     if (!draft) {
-        html += "<div style='color:#aaa;font-size:13px;'>아직 생성된 초안이 없습니다.</div>";
+        html += "<div class='auto-schedule-hint'>아직 생성된 초안이 없습니다.</div>";
         body.innerHTML = html;
         return;
     }
 
     if (draft.ok) {
-        html += "<div style='color:#8af5b2;font-size:13px;margin-bottom:8px;'>✅ 보호 모드(신청휴무 100% 유지)로 조건을 모두 만족하는 초안을 생성했습니다.</div>";
+        html += "<div class='auto-schedule-success-banner'>✅ 보호 모드(신청휴무 100% 유지)로 조건을 모두 만족하는 초안을 생성했습니다.</div>";
     } else {
-        html += "<div style='color:#ff8a80;font-size:13px;margin-bottom:8px;'>⚠ 신청휴무를 유지한 상태에서는 충족할 수 없는 조건이 " + draft.conflicts.length + "건 있습니다.</div>";
-        html += "<div class='auto-schedule-conflict-list' style='max-height:220px;overflow-y:auto;margin-bottom:10px;'>";
+        html += "<div class='auto-schedule-error-summary'>⚠ 신청휴무를 유지한 상태에서는 충족할 수 없는 조건이 " + draft.conflicts.length + "건 있습니다.</div>";
+        html += "<div class='auto-schedule-conflict-list'>";
         draft.conflicts.forEach(function (c, idx) {
             var label = AUTO_SCHEDULE_CONFLICT_LABEL[c.kind] || c.kind;
-            html += "<div style='border:1px solid #444;border-radius:4px;padding:6px 8px;margin-bottom:6px;font-size:12px;color:#eee;'>"
+            html += "<div class='auto-schedule-conflict-card'>"
                 + "<strong>[" + _escapeHtml(label) + "]</strong> " + _escapeHtml(c.message || "")
                 + (c.kind === "work_shortfall" && !locked
                     ? "<div><button type='button' class='btn btn-secondary' style='font-size:11px;padding:2px 8px;margin-top:4px;' onclick='toggleAutoScheduleCandidates(" + idx + ")'>신청휴무 조정 후보 보기</button>"
@@ -532,11 +532,11 @@ function _renderAutoScheduleModal() {
 
     var revalidation = _autoScheduleState.revalidation;
     if (revalidation) {
-        html += "<div style='font-size:12px;color:" + (revalidation.passed ? "#8af5b2" : "#ff8a80") + ";margin-bottom:6px;'>"
+        html += "<div class='auto-schedule-revalidation-summary " + (revalidation.passed ? "is-pass" : "is-fail") + "'>"
             + (revalidation.passed ? "✅ 14개 항목 전체 통과" : "⚠ 일부 항목 실패 — 확정 불가") + "</div>";
-        html += "<div style='max-height:180px;overflow-y:auto;font-size:11px;color:#ccc;margin-bottom:10px;'>";
+        html += "<div class='auto-schedule-check-list'>";
         revalidation.checks.forEach(function (check) {
-            html += "<div style='padding:2px 0;'>" + (check.ok ? "✅" : "❌") + " " + _escapeHtml(check.name)
+            html += "<div class='" + (check.ok ? "" : "auto-schedule-check-fail") + "' style='padding:2px 0;'>" + (check.ok ? "✅" : "❌") + " " + _escapeHtml(check.name)
                 + (check.ok ? "" : " — " + _escapeHtml(check.detail || "")) + "</div>";
         });
         html += "</div>";

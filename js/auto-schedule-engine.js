@@ -418,6 +418,61 @@ function _fallbackBacktrack(input, greedyDraft) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 3c) conflict 표시용 집계 (reporting 전용 — 스케줄 계산/제약조건 semantics는
+//     전혀 건드리지 않는다. 이미 확정된 grid와 이미 확정된 conflicts 목록을
+//     "관리자가 읽기 좋은 형태로 묶어서 다시 표현"만 한다.)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * greedy가 하루/조마다 후보를 하나씩 순회하며 "이 사람은 오늘 이 사유로 배정
+ * 못 함"을 매번 개별 conflict로 남긴 것(day_off_cap/group_off_cap/no_valid_assignment)을
+ * (kind, day, group) 단위로 묶어 "그 날 그 사유로 배정 못 한 사람이 N명"이라는
+ * 하나의 항목으로 재표현한다. work_shortfall/monthly_off_shortfall/
+ * search_limit_exceeded/iteration_limit은 이미 day/group/code 단위(또는 직원당
+ * 정확히 1건)로만 발생하므로 그대로 둔다 — 실제 원인/직원/조/코드 detail은
+ * employees 배열에 전부 보존되며, message에도 대표 이름 몇 명 + 나머지 인원수를
+ * 표기해 숨기지 않는다.
+ */
+function _aggregateConflicts(conflicts) {
+    var AGGREGATABLE = { day_off_cap: 1, group_off_cap: 1, no_valid_assignment: 1 };
+    var buckets = {};
+    var order = [];
+    var passthrough = [];
+
+    conflicts.forEach(function (c) {
+        if (!AGGREGATABLE[c.kind]) { passthrough.push(c); return; }
+        var key = c.kind + "|" + c.day + "|" + (c.group || "");
+        if (!buckets[key]) {
+            buckets[key] = { kind: c.kind, day: c.day, group: c.group, cap: c.cap, target: c.target, employees: [] };
+            order.push(key);
+        }
+        buckets[key].employees.push({ uid: c.empKey, name: c.empName });
+    });
+
+    var aggregated = order.map(function (key) {
+        var b = buckets[key];
+        var names = b.employees.map(function (e) { return e.name || e.uid; });
+        var label = names.length > 3 ? (names.slice(0, 3).join(", ") + " 외 " + (names.length - 3) + "명") : names.join(", ");
+        var message;
+        if (b.kind === "day_off_cap") {
+            message = b.day + "일 전체 휴무 정원(" + b.cap + "명) 으로 " + names.length + "명(" + label + ") 추가 배정 불가.";
+        } else if (b.kind === "group_off_cap") {
+            message = b.day + "일 " + b.group + "조 휴무 정원(" + b.cap + "명) 으로 " + names.length + "명(" + label + ") 추가 배정 불가.";
+        } else {
+            message = b.day + "일 " + b.group + "조 — " + names.length + "명(" + label + ")이 월 휴무 목표(" + b.target + ")에 이미 도달해 근무/휴무 배정 불가.";
+        }
+        return {
+            kind: b.kind, day: b.day, group: b.group, cap: b.cap, target: b.target,
+            empKey: b.employees[0].uid, empName: b.employees[0].name, // 하위호환(단일 직원 케이스와 동일한 필드 유지)
+            employees: b.employees, count: b.employees.length,
+            message: message,
+        };
+    });
+
+    return passthrough.concat(aggregated);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 4) 메인 생성 함수 (보호 모드 — 고정 신청 절대 변경 없음)
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -592,7 +647,7 @@ function generateDraft(input) {
                 if (remainingBudget <= 0) {
                     conflicts.push({
                         kind: "no_valid_assignment",
-                        day: day, group: group, empKey: emp.uid, empName: emp.name,
+                        day: day, group: group, empKey: emp.uid, empName: emp.name, target: monthlyOffTarget,
                         message: day + "일 " + group + "조 " + (emp.name || emp.uid) + " — 근무 슬롯도 없고 월 휴무 목표(" + monthlyOffTarget + ")도 이미 도달해 배정 불가.",
                     });
                     return;
@@ -600,7 +655,7 @@ function generateDraft(input) {
                 if (groupOffUsed >= groupOffCap) {
                     conflicts.push({
                         kind: "group_off_cap",
-                        day: day, group: group, empKey: emp.uid, empName: emp.name,
+                        day: day, group: group, empKey: emp.uid, empName: emp.name, cap: groupOffCap,
                         message: day + "일 " + group + "조 휴무 정원(" + groupOffCap + "명) 초과로 " + (emp.name || emp.uid) + " 배정 불가.",
                     });
                     return;
@@ -608,7 +663,7 @@ function generateDraft(input) {
                 if (dayOffUsed >= dayOffCapTotal) {
                     conflicts.push({
                         kind: "day_off_cap",
-                        day: day, empKey: emp.uid, empName: emp.name,
+                        day: day, empKey: emp.uid, empName: emp.name, cap: dayOffCapTotal,
                         message: day + "일 전체 휴무 정원(" + dayOffCapTotal + "명) 초과로 " + (emp.name || emp.uid) + " 배정 불가.",
                     });
                     return;
@@ -671,7 +726,12 @@ function generateDraft(input) {
         }
     });
 
-    return { ok: conflicts.length === 0, totalDays: totalDays, grid: grid, conflicts: conflicts, monthlyOffCount: monthlyOffCount, greedyFailed: greedyFailed, fallback: fallback };
+    // ⚠️ ok 판정은 집계 전 원본 conflicts 기준(집계는 표시 형태만 바꿀 뿐 위반
+    // 존재 여부 자체는 절대 바꾸지 않는다 — 병합해도 원소가 하나도 사라지지 않으므로
+    // 사실 conflicts.length===0 ⇔ 집계 후 길이===0 이지만, 의도를 명확히 하기 위해
+    // 집계 전 값으로 명시적으로 판정한다).
+    var ok = conflicts.length === 0;
+    return { ok: ok, totalDays: totalDays, grid: grid, conflicts: _aggregateConflicts(conflicts), monthlyOffCount: monthlyOffCount, greedyFailed: greedyFailed, fallback: fallback };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -899,6 +959,7 @@ return {
     isCodeLinkForbidden: isCodeLinkForbidden,
     _prevCodeAt: _prevCodeAt,
     _groupCodeQuota: _groupCodeQuota,
+    _aggregateConflicts: _aggregateConflicts,
     generateDraft: generateDraft,
     findOverrideCandidates: findOverrideCandidates,
     applyOverride: applyOverride,

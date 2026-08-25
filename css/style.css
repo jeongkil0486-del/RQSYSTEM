@@ -1872,6 +1872,101 @@ body {
   .mini-manage-box { width: calc(100vw - 24px); max-height: 92vh; }
 }
 
+/* ─── 자동 스케줄링 모달 전용 텍스트/카드 ───
+   group-assign-box/mini-manage-box(흰 배경 var(--bg-card)) 위에서 읽혀야 하므로,
+   어두운 배경을 전제로 한 밝은 회색/파스텔 색(#aaa,#ccc,#eee,#8af5b2 등)은 쓰지
+   않는다. "실제로 읽어야 하는 본문/경고/오류"와 "보조 설명"과 "비활성 UI"를
+   확실히 구분되는 대비로 나눈다. */
+.auto-schedule-hint {
+  color: var(--text-sub);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.auto-schedule-loading {
+  color: var(--text-light);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.auto-schedule-warning {
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.auto-schedule-success-banner {
+  color: #065f46;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.auto-schedule-error-summary {
+  color: #991b1b;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.auto-schedule-conflict-list {
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 10px;
+}
+.auto-schedule-conflict-card {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--danger);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--text-main);
+  background: var(--bg-card);
+}
+.auto-schedule-conflict-card strong { color: var(--danger); }
+.auto-schedule-candidate-empty {
+  color: var(--danger);
+  font-size: 12px;
+  padding: 4px 0;
+}
+.auto-schedule-codelink-empty {
+  color: var(--text-sub);
+  font-size: 12px;
+}
+.auto-schedule-codelink-row {
+  color: var(--text-main);
+  font-size: 12px;
+}
+.auto-schedule-check-list {
+  max-height: 180px;
+  overflow-y: auto;
+  font-size: 11px;
+  color: var(--text-main);
+  margin-bottom: 10px;
+}
+.auto-schedule-check-list .auto-schedule-check-fail { color: var(--danger); }
+.auto-schedule-revalidation-summary {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.auto-schedule-revalidation-summary.is-pass { color: #065f46; }
+.auto-schedule-revalidation-summary.is-fail { color: var(--danger); }
+
+/* 비활성 버튼: 배경색이 그대로 남아 "누를 수 있는 버튼"처럼 보이지 않도록 명시적으로
+   흐리게 처리 — 기존 .staff-filter-btn:disabled와 동일한 opacity 관례를 재사용. */
+.btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
 /* ─── Super Admin Panel ─── */
 #superAdminPanel {
   padding: 0 !important;
