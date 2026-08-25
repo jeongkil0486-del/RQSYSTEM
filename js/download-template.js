@@ -7,8 +7,8 @@ function downloadExcelTemplate() {
 
     var rows = [
         ["이름", "사번", "지점", "권한", "임시비밀번호", "이메일"],
-        ["홍길동", "1001", sampleDept, "staff", "Temp1234!", ""],
-        ["관리자샘플", "9001", sampleDept, "admin", "Temp1234!", ""]
+        ["홍길동", "1001", sampleDept, "staff", "Temp1234!A", ""],
+        ["관리자샘플", "9001", sampleDept, "admin", "Temp1234!A", ""]
     ];
 
     var ws = XLSX.utils.aoa_to_sheet(rows);

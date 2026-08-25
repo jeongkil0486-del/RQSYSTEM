@@ -377,10 +377,8 @@ function submitForcedPasswordChange() {
   var newPassword = newPassEl ? newPassEl.value.trim() : "";
   var confirmPassword = confirmEl ? confirmEl.value.trim() : "";
 
-  if (newPassword.length < 6) {
-    alert("비밀번호는 6자 이상이어야 합니다.");
-    return;
-  }
+  var forcePwErr = validatePasswordPolicy(newPassword);
+  if (forcePwErr) { alert(forcePwErr); return; }
   if (newPassword !== confirmPassword) {
     alert("비밀번호 확인이 일치하지 않습니다.");
     return;
@@ -405,7 +403,8 @@ function submitForcedPasswordChange() {
 function changeMyPassword() {
   var newPassInput = document.getElementById("newAdminPassInput");
   var newPass = newPassInput ? newPassInput.value.trim() : "";
-  if (newPass.length < 6) { alert("비밀번호는 6자 이상이어야 합니다."); return; }
+  var myPwErr = validatePasswordPolicy(newPass);
+  if (myPwErr) { alert(myPwErr); return; }
   if (!auth.currentUser)  { alert("로그인 세션이 없습니다."); return; }
 
   auth.currentUser.updatePassword(newPass).then(function() {
@@ -430,7 +429,8 @@ function resetUserPassword() {
 
   if (!empNo)            { alert("사번을 입력해주세요."); return; }
   if (!newPass)          { alert("새 비밀번호를 입력해주세요."); return; }
-  if (newPass.length < 6){ alert("비밀번호는 6자 이상이어야 합니다."); return; }
+  var resetPwErr = validatePasswordPolicy(newPass);
+  if (resetPwErr) { alert(resetPwErr); return; }
 
   fn.resetEmployeePassword({ empNo: empNo, newPassword: newPass }).then(function() {
     alert("[" + empNo + "] 비밀번호가 초기화되었습니다.");

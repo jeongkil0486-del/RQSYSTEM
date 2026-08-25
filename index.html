@@ -13,7 +13,10 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-functions.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- SheetJS CE 0.20.3 — self-hosted (vendor/README.md 참고). 이전 jsDelivr CDN의 구버전
+         xlsx 패키지에 알려진 Prototype Pollution/ReDoS 취약점이 있어, 공식 SheetJS CDN에서
+         checksum 검증 후 로컬로 vendoring한 patched 버전으로 교체했다. -->
+    <script src="vendor/xlsx.full.min.js"></script>
 
     <script>
     (function() {
@@ -483,7 +486,7 @@
                         </div>
                         <div class="form-row">
                             <label class="form-label">새 비밀번호</label>
-                            <input type="password" id="targetEmpPassword" placeholder="6자 이상" class="form-input" autocomplete="new-password">
+                            <input type="password" id="targetEmpPassword" placeholder="10자 이상, 대/소문자·숫자·특수문자 각 1개↑" class="form-input" autocomplete="new-password">
                             <button class="btn btn-warning" onclick="resetUserPassword()">초기화</button>
                         </div>
                     </div>
@@ -500,7 +503,7 @@
                     </div>
                     <div class="feature-card-body">
                         <div class="form-row">
-                            <input type="password" id="newAdminPassInput" placeholder="새 비밀번호 (6자 이상)" class="form-input">
+                            <input type="password" id="newAdminPassInput" placeholder="새 비밀번호 (10자 이상, 대/소문자·숫자·특수문자 각 1개↑)" class="form-input">
                             <button class="btn btn-primary-sm" onclick="changeMyPassword()">변경</button>
                         </div>
                     </div>
@@ -850,7 +853,7 @@
         <div style="font-size:18px; font-weight:bold; color:#222; margin-bottom:10px; text-align:center;">비밀번호를 변경해주세요</div>
         <div style="font-size:13px; color:#666; margin-bottom:18px; line-height:1.6; text-align:center;">최초 로그인 계정입니다. 비밀번호 변경 완료 전까지 시스템을 사용할 수 없습니다.</div>
         <div style="display:flex; flex-direction:column; gap:10px;">
-            <input type="password" id="forcePasswordNew" placeholder="새 비밀번호 (6자 이상)" style="padding:10px 12px; border:1px solid #ccc; border-radius:6px; font-size:13px;">
+            <input type="password" id="forcePasswordNew" placeholder="새 비밀번호 (10자 이상, 대/소문자·숫자·특수문자 각 1개↑)" style="padding:10px 12px; border:1px solid #ccc; border-radius:6px; font-size:13px;">
             <input type="password" id="forcePasswordConfirm" placeholder="새 비밀번호 확인" style="padding:10px 12px; border:1px solid #ccc; border-radius:6px; font-size:13px;">
             <button type="button" onclick="submitForcedPasswordChange()" style="background:#1a2744;color:#fff;border:none;border-radius:8px;padding:12px;font-size:14px;font-weight:bold;cursor:pointer;">비밀번호 변경</button>
             <button type="button" onclick="auth.signOut()" style="background:#9e9e9e;color:#fff;border:none;border-radius:8px;padding:11px;font-size:13px;font-weight:bold;cursor:pointer;">로그아웃</button>
@@ -1099,6 +1102,7 @@
 <script src="js/download-template.js"></script>
 <script src="js/staff-overview.js"></script>
 <script src="js/main.js"></script>
+<script src="js/idle-session.js"></script>
 <script src="js/notices.js"></script>
 
 <!-- ── UI Bridge Script ── -->

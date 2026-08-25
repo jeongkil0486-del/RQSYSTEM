@@ -37,6 +37,42 @@ async function getCallerProfile(uid) {
     return snap.exists() ? snap.val() : null;
 }
 
+// ── 비밀번호 정책 (2차 보안 개선) ──────────────────────────────────────────────
+// 최소 10자, 영문 대문자/소문자/숫자/특수문자 각 1개 이상 포함.
+// ⚠️ 특수문자 판정에서 공백(whitespace)은 제외한다 — 공백만으로 "특수문자" 조건을
+// 우회해 실질적으로 약한 비밀번호가 통과하는 것을 막기 위함이다. 이 함수는 모든
+// password mutation(auth.updateUser/auth.createUser) 이전에 반드시 호출되어야 한다.
+const PASSWORD_MIN_LEN = 10;
+const PASSWORD_MAX_LEN = 128; // Firebase Auth 제한과 충돌하지 않는 합리적 상한(과도하게 낮추지 않음)
+const PASSWORD_POLICY_MESSAGE =
+    "비밀번호는 10자 이상이며 영문 대문자, 소문자, 숫자, 특수문자를 각각 1개 이상 포함해야 합니다.";
+const PW_UPPER_RE   = /[A-Z]/;
+const PW_LOWER_RE   = /[a-z]/;
+const PW_DIGIT_RE   = /[0-9]/;
+// 공백은 제외한 일반적인 ASCII 특수문자 집합
+const PW_SPECIAL_RE = /[!"#$%&'()*+,\-./:;<=>?@[\]^_`{|}~\\]/;
+
+/** true/false만 반환 — bulkCreateEmployees처럼 "행별로 계속 처리"해야 해서
+ *  throw 대신 boolean 판정이 필요한 호출부에서 사용 (validatePasswordPolicy와
+ *  동일한 정규식 상수를 공유해 두 판정이 어긋나지 않도록 한다). */
+function isPasswordPolicyValid(password) {
+    const pw = String(password == null ? "" : password);
+    return (
+        pw.length >= PASSWORD_MIN_LEN &&
+        pw.length <= PASSWORD_MAX_LEN &&
+        PW_UPPER_RE.test(pw) &&
+        PW_LOWER_RE.test(pw) &&
+        PW_DIGIT_RE.test(pw) &&
+        PW_SPECIAL_RE.test(pw)
+    );
+}
+
+function validatePasswordPolicy(password) {
+    if (!isPasswordPolicyValid(password)) {
+        throw new functions.https.HttpsError("invalid-argument", PASSWORD_POLICY_MESSAGE);
+    }
+}
+
 function isPasswordChangeRequired(profile) {
     return !!(
         profile &&
@@ -591,7 +627,8 @@ exports.resetEmployeePassword = functions.runWith(RUN_OPTS).https.onCall(async (
 
     const empNo      = normalizeEmpNo(data.empNo);
     const newPassword = String(data.newPassword || "").trim();
-    if (!empNo || newPassword.length < 6) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
+    if (!empNo) throw new functions.https.HttpsError("invalid-argument", "필수값 누락");
+    validatePasswordPolicy(newPassword);
 
     const email = empNoToEmail(empNo);
     let targetUid;
@@ -630,8 +667,7 @@ exports.completeInitialPasswordChange = functions.runWith(RUN_OPTS).https.onCall
 
     const uid = context.auth.uid;
     const newPassword = String(data.newPassword || "").trim();
-    if (newPassword.length < 6)
-        throw new functions.https.HttpsError("invalid-argument", "새 비밀번호는 6자 이상이어야 합니다.");
+    validatePasswordPolicy(newPassword);
 
     const profile = await getCallerProfile(uid);
     if (!profile) throw new functions.https.HttpsError("not-found", "프로필 없음");
@@ -662,8 +698,9 @@ exports.createEmployee = functions.runWith(RUN_OPTS).https.onCall(async (data, c
     const role         = String(data.role         || "staff").toLowerCase();
     const tempPassword = String(data.tempPassword || "").trim();
 
-    if (!empNo || !name || !deptId || tempPassword.length < 6)
-        throw new functions.https.HttpsError("invalid-argument", "필수값 누락 (empNo, name, deptId, tempPassword 6자↑)");
+    if (!empNo || !name || !deptId)
+        throw new functions.https.HttpsError("invalid-argument", "필수값 누락 (empNo, name, deptId)");
+    validatePasswordPolicy(tempPassword);
 
     if (["staff", "admin", "super_admin"].indexOf(role) === -1)
         throw new functions.https.HttpsError("invalid-argument", "유효하지 않은 role입니다.");
@@ -721,8 +758,12 @@ exports.bulkCreateEmployees = functions.runWith({ ...RUN_OPTS, timeoutSeconds: 3
         const tempPassword = String(row.tempPassword || "").trim();
         const recoveryEmail = row.recoveryEmail ? String(row.recoveryEmail).trim() : null;
 
-        if (!empNo || !name || !deptId || tempPassword.length < 6) {
+        if (!empNo || !name || !deptId) {
             results.push({ ok: false, empNo, error: "필수값 누락" });
+            continue;
+        }
+        if (!isPasswordPolicyValid(tempPassword)) {
+            results.push({ ok: false, empNo, error: PASSWORD_POLICY_MESSAGE });
             continue;
         }
         if (["staff", "admin", "super_admin"].indexOf(role) === -1) {

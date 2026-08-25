@@ -21,10 +21,10 @@ function drawSuperResetPanel() {
         + "<label style='font-weight:bold;min-width:92px;'>사번/관리자ID</label>"
         + "<input type='text' id='superResetEmpNo' placeholder='사번 또는 관리자ID' style='width:160px;padding:8px;border:1px solid #ccc;border-radius:6px;'>"
         + "<label style='font-weight:bold;min-width:72px;'>새 비밀번호</label>"
-        + "<input type='password' id='superResetPassword' placeholder='6자 이상' style='width:150px;padding:8px;border:1px solid #ccc;border-radius:6px;'>"
+        + "<input type='password' id='superResetPassword' placeholder='10자 이상, 대/소문자·숫자·특수문자 각 1개↑' style='width:260px;padding:8px;border:1px solid #ccc;border-radius:6px;'>"
         + "<button type='button' onclick='performSuperAdminPasswordReset()' style='background:#e65100;color:#fff;border:none;border-radius:6px;padding:9px 16px;font-weight:bold;cursor:pointer;'>비밀번호 초기화</button>"
         + "</div>"
-        + "<div style='font-size:12px;color:#666;margin-top:10px;line-height:1.6;'>직원/관리자 계정 모두 초기화할 수 있습니다. 새 비밀번호는 6자 이상이어야 합니다.</div>";
+        + "<div style='font-size:12px;color:#666;margin-top:10px;line-height:1.6;'>직원/관리자 계정 모두 초기화할 수 있습니다. " + PASSWORD_POLICY_MESSAGE + "</div>";
 }
 
 function drawSuperDeletePanel() {
@@ -276,10 +276,8 @@ function performSuperAdminPasswordReset() {
         alert("사번 또는 관리자ID를 입력해주세요.");
         return;
     }
-    if (newPassword.length < 6) {
-        alert("새 비밀번호는 6자 이상이어야 합니다.");
-        return;
-    }
+    var superPwErr = validatePasswordPolicy(newPassword);
+    if (superPwErr) { alert(superPwErr); return; }
 
     fn.resetEmployeePassword({ empNo: empNo, newPassword: newPassword }).then(function() {
         alert("[" + empNo + "] 비밀번호가 초기화되었습니다.");

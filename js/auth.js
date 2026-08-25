@@ -24,6 +24,24 @@ function empNoToEmail(empNo) {
     return normalizeEmpNo(empNo) + "@trinity-staff.internal";
 }
 
+// ── 비밀번호 정책 (2차 보안 개선) — functions/src/index.js의 validatePasswordPolicy와
+// 반드시 동일한 규칙을 유지한다. ⚠️ 이 frontend 검증은 UX(즉시 안내) 용도일 뿐이며
+// 실제 강제는 서버(Cloud Functions)가 담당한다 — 여기서 통과했다고 서버 검증을
+// 생략해서는 안 된다. 공백은 특수문자로 인정하지 않는다(공백만으로 조건 우회 방지). */
+var PASSWORD_POLICY_MESSAGE =
+    "비밀번호는 10자 이상이며 영문 대문자, 소문자, 숫자, 특수문자를 각각 1개 이상 포함해야 합니다.";
+var PASSWORD_MIN_LEN = 10;
+var PASSWORD_MAX_LEN = 128;
+var PW_SPECIAL_RE = /[!"#$%&'()*+,\-./:;<=>?@[\]^_`{|}~\\]/;
+
+/** 유효하면 null, 유효하지 않으면 사용자에게 보여줄 한국어 안내 메시지를 반환한다. */
+function validatePasswordPolicy(password) {
+    var pw = String(password || "");
+    var valid = pw.length >= PASSWORD_MIN_LEN && pw.length <= PASSWORD_MAX_LEN
+        && /[A-Z]/.test(pw) && /[a-z]/.test(pw) && /[0-9]/.test(pw) && PW_SPECIAL_RE.test(pw);
+    return valid ? null : PASSWORD_POLICY_MESSAGE;
+}
+
 function checkAuth() {
     var rawEmpNo = document.getElementById("username").value;
     var pass     = document.getElementById("password").value.trim();

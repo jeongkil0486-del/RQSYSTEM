@@ -400,11 +400,10 @@ function addAllowedUser() {
         return;
     }
 
-    var tempPass = window.prompt("임시 비밀번호 (6자 이상):");
-    if (!tempPass || tempPass.length < 6) {
-        alert("비밀번호는 6자 이상이어야 합니다.");
-        return;
-    }
+    var tempPass = window.prompt("임시 비밀번호 (10자 이상, 대/소문자·숫자·특수문자 각 1개↑):");
+    if (!tempPass) return;
+    var pwErr = validatePasswordPolicy(tempPass);
+    if (pwErr) { alert(pwErr); return; }
 
     var deptId = currentDept;
     if (!deptId) { alert("지점 정보가 없습니다. 다시 로그인해주세요."); return; }
