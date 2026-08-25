@@ -93,10 +93,16 @@ var AutoScheduleEngine = (function () {
 
 /**
  * existingRequests: { [empKey]: { [day]: { type, scheduleCode? } } }
- * → grid: { [empKey]: { [day]: { type, scheduleCode?, source: "requested" } } }
- * (얕은 복사 — 원본 existingRequests는 절대 변형하지 않는다)
+ * forcedOverrides: [{ uid, day, scheduleCode, originalRequest?:{type}, override?:{changedBy,changedAt,reason} }]
+ *   — 관리자가 "신청휴무 조정 후보"에서 이미 [적용]을 눌러 확정한 override 목록.
+ *   재편성(re-solve) 때마다 이 목록 전체를 고정 제약으로 다시 주입해, greedy/fallback이
+ *   그 칸을 절대 건드리지 않고(=freeCells에서 자동 제외, source가 "auto"/"auto_off"가
+ *   아니므로) 나머지만 다시 배치하도록 만든다. 원본 신청은 여기서 지우지 않고
+ *   originalRequest 안에 그대로 보존한다.
+ * → grid: { [empKey]: { [day]: { type, scheduleCode?, source: "requested"|"override", originalRequest?, override? } } }
+ * (얕은 복사 — 원본 existingRequests/forcedOverrides는 절대 변형하지 않는다)
  */
-function buildFixedGrid(existingRequests) {
+function buildFixedGrid(existingRequests, forcedOverrides) {
     var grid = {};
     Object.keys(existingRequests || {}).forEach(function (empKey) {
         grid[empKey] = {};
@@ -110,6 +116,23 @@ function buildFixedGrid(existingRequests) {
                 source: "requested",
             };
         });
+    });
+    (forcedOverrides || []).forEach(function (ov) {
+        if (!ov || !ov.uid || ov.day == null || !ov.scheduleCode) return;
+        var dayStr = String(ov.day);
+        if (!grid[ov.uid]) grid[ov.uid] = {};
+        var original = ov.originalRequest || { type: "normal" };
+        grid[ov.uid][dayStr] = {
+            type: "schedule",
+            scheduleCode: ov.scheduleCode,
+            source: "override",
+            originalRequest: { type: original.type },
+            override: {
+                changedBy: (ov.override && ov.override.changedBy) || null,
+                changedAt: (ov.override && ov.override.changedAt) || Date.now(),
+                reason: (ov.override && ov.override.reason) || "auto_schedule_conflict",
+            },
+        };
     });
     return grid;
 }
@@ -489,6 +512,8 @@ function _aggregateConflicts(conflicts) {
  *   autoConfig: { monthlyOffTarget, maxConsecutiveWork, codeLinkRestrictions:[{from,to}] },
  *   existingRequests: { [empKey]: { [day]: {type, scheduleCode?} } },
  *   previousMonthWorkTail: { [empKey]: number },   // 없으면 0 취급
+ *   forcedOverrides: [{ uid, day, scheduleCode, originalRequest?, override? }],  // 없으면 [] 취급 —
+ *     관리자가 이미 [적용]한 신청휴무 조정. 재편성 때마다 고정 제약으로 다시 주입된다.
  * }
  */
 function generateDraft(input) {
@@ -505,7 +530,7 @@ function generateDraft(input) {
     var prevTail = input.previousMonthWorkTail || {};
     var prevLastCode = input.previousMonthLastScheduleCode || {};
 
-    var grid = buildFixedGrid(input.existingRequests);
+    var grid = buildFixedGrid(input.existingRequests, input.forcedOverrides);
     var conflicts = [];
     var iterations = 0;
 
@@ -741,9 +766,10 @@ function generateDraft(input) {
 /**
  * conflict(kind:"work_shortfall")를 해결할 수 있는 신청휴무 조정 후보를 찾는다.
  * 후보 조건: 해당 조 소속 + 그 날짜 "신청(requested) normal" + 연차/청원 아님 +
- * 해당 코드로 바꿔도 연속근무/연결제한 위반 없음 + (다른 필수 조건을 새로 깨지 않음
- * — 이 조정은 그 직원의 그 날짜 normal 1건만 schedule로 바꾸는 것이므로 다른 날짜/
- * 다른 직원에는 영향이 없다).
+ * 해당 코드로 바꿔도 연속근무/연결제한 위반 없음. 선택일 이전만 추정하지 않고
+ * 해당 직원의 normal 1건을 임시 grid에서 schedule로 바꾼 뒤, 선택일을 포함한
+ * 전체 월 streak와 전월→1일/previous→selected/selected→next를 모두 검사한다.
+ * 원본 draft/grid는 절대 변형하지 않는다.
  */
 function findOverrideCandidates(draft, conflict, employees, groups, autoConfig, previousMonthWorkTail, previousMonthLastScheduleCode) {
     if (!conflict || conflict.kind !== "work_shortfall") return [];
@@ -765,11 +791,19 @@ function findOverrideCandidates(draft, conflict, employees, groups, autoConfig, 
         var entry = (draft.grid[emp.uid] || {})[dayStr];
         if (!entry || entry.type !== "normal" || entry.source !== "requested") return; // 신청 normal만(연차/청원/이미 근무 제외)
 
-        var streak = consecutiveWorkStreakAt(draft.grid, emp.uid, day - 1, prevTail[emp.uid]);
-        if (maxConsecutiveWork > 0 && streak + 1 > maxConsecutiveWork) return;
+        // 실제 적용과 같은 임시 상태를 만든다. 바깥 grid와 해당 직원의 day map만
+        // 복제하므로 다른 직원/날짜/기존 고정 셀은 그대로이고 원본 draft는 불변이다.
+        var candidateGrid = Object.assign({}, draft.grid);
+        candidateGrid[emp.uid] = Object.assign({}, draft.grid[emp.uid]);
+        candidateGrid[emp.uid][dayStr] = {
+            type: "schedule", scheduleCode: codeName, source: "override",
+        };
 
-        var prevCode = _prevCodeAt(draft.grid, emp.uid, day, prevLastCode);
-        if (isCodeLinkForbidden(codeLinkRestrictions, prevCode, codeName)) return;
+        // fallback/revalidation과 동일한 전체 월 semantics를 재사용한다. 이에 따라
+        // 선택일이 양쪽 work streak를 연결하는 경우와 selected→next 고정 코드
+        // transition도 후보 단계에서 즉시 제외된다.
+        if (!_fullMonthStreakOk(candidateGrid, [emp], draft.totalDays, prevTail, maxConsecutiveWork)) return;
+        if (!_fullMonthCodeLinkOk(candidateGrid, [emp], draft.totalDays, codeLinkRestrictions, prevLastCode)) return;
 
         candidates.push({ uid: emp.uid, empNo: emp.empNo, name: emp.name });
     });

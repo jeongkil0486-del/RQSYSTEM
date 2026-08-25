@@ -37,7 +37,13 @@ var _autoScheduleState = {
     existingFinalSchedule: null, // 이번 달 finalSchedules가 이미 존재하면 그 meta를 담는다
     existingFinalScheduleChecked: false,
     confirmedJustNow: false,
+    forcedOverrides: [],      // 관리자가 이미 [적용]한 신청휴무 조정 누적 목록 — 재편성 때마다 고정 제약으로 재주입
+    selectedCandidate: null,  // 후보 이름을 클릭해 "선택만" 한 상태(아직 draft에 반영 안 됨) — {conflictIndex,uid,name,day,group,scheduleCode,originalType}
 };
+
+function _isAutoScheduleLocked() {
+    return _autoScheduleState.confirmedJustNow || (_autoScheduleState.existingFinalScheduleChecked && !!_autoScheduleState.existingFinalSchedule);
+}
 
 // ── 입력 데이터 매핑 ──────────────────────────────────────────────────────────
 
@@ -316,6 +322,8 @@ function openAutoScheduleModal() {
     _autoScheduleState.confirmedJustNow = false;
     _autoScheduleState.existingFinalScheduleChecked = false;
     _autoScheduleState.previousMonthTailLoaded = false;
+    _autoScheduleState.forcedOverrides = [];
+    _autoScheduleState.selectedCandidate = null;
     var el = document.getElementById("autoScheduleModal");
     if (el) el.style.display = "flex";
     _renderAutoScheduleModal();
@@ -344,6 +352,8 @@ function generateAutoScheduleDraft() {
     }
     var input = _buildAutoScheduleInput();
     _autoScheduleState.input = input;
+    _autoScheduleState.forcedOverrides = []; // 새로 생성하면 이전 override 누적은 초기화
+    _autoScheduleState.selectedCandidate = null;
     _autoScheduleState.draft = AutoScheduleEngine.generateDraft(input);
     _autoScheduleState.revalidation = null;
     _renderAutoScheduleModal();
@@ -381,20 +391,66 @@ function _renderCandidateListHtml(conflictIndex) {
     }
     return candidates.map(function (c) {
         return "<button type='button' class='btn btn-secondary' style='margin:2px;font-size:11px;padding:3px 8px;' "
-            + "onclick='applyAutoScheduleOverride(" + conflictIndex + ", \"" + c.uid.replace(/"/g, "") + "\")'>"
+            + "onclick='selectAutoScheduleCandidate(" + conflictIndex + ", \"" + c.uid.replace(/"/g, "") + "\")'>"
             + _escapeHtml(c.name || c.uid) + "</button>";
     }).join("");
 }
 
-function applyAutoScheduleOverride(conflictIndex, uid) {
-    if (_autoScheduleState.confirmedJustNow || (_autoScheduleState.existingFinalScheduleChecked && _autoScheduleState.existingFinalSchedule)) return; // 확정 후에는 초안 편집 잠금
+/** 후보 이름 클릭 — "선택"만 한다. draft/engine은 전혀 건드리지 않는다(side effect 0). */
+function selectAutoScheduleCandidate(conflictIndex, uid) {
+    if (_isAutoScheduleLocked()) return;
     var draft = _autoScheduleState.draft;
     var conflict = draft && draft.conflicts[conflictIndex];
     if (!conflict || conflict.kind !== "work_shortfall") return;
 
-    var newDraft = AutoScheduleEngine.applyOverride(draft, uid, conflict.day, conflict.scheduleCode, currentUid, "auto_schedule_conflict");
-    _autoScheduleState.draft = newDraft;
-    _autoScheduleState.revalidation = null;
+    var candidates = _autoScheduleCandidatesFor(conflictIndex);
+    var cand = candidates.filter(function (c) { return c.uid === uid; })[0];
+    if (!cand) return;
+
+    var dayStr = String(conflict.day);
+    var entry = (draft.grid[uid] || {})[dayStr];
+    _autoScheduleState.selectedCandidate = {
+        conflictIndex: conflictIndex,
+        uid: uid,
+        name: cand.name || cand.uid,
+        day: conflict.day,
+        group: conflict.group,
+        scheduleCode: conflict.scheduleCode,
+        originalType: entry ? entry.type : "normal",
+    };
+    _renderAutoScheduleModal();
+}
+
+/** [취소] — 선택 상태만 해제한다. draft/original request 변경 없음(side effect 0). */
+function cancelAutoScheduleCandidateSelection() {
+    _autoScheduleState.selectedCandidate = null;
+    _renderAutoScheduleModal();
+}
+
+/** [적용] — 이 순간에만 실제로 override를 확정하고, forcedOverrides에 누적한 뒤
+ *  월 전체를 처음부터 다시 생성(re-solve)한다. 한 칸만 patch하는 대신 엔진 전체를
+ *  다시 돌려서, 잃어버린 일반휴무를 다른 날짜에 자동으로 재배치하고 conflict/재검사
+ *  결과도 전부 새 draft 기준으로 갱신되게 한다. */
+function confirmApplyAutoScheduleCandidate() {
+    var sel = _autoScheduleState.selectedCandidate;
+    if (!sel) return;
+    if (_isAutoScheduleLocked()) return;
+    if (!_autoScheduleState.input) return;
+
+    var forcedOverrides = (_autoScheduleState.forcedOverrides || []).concat([{
+        uid: sel.uid,
+        day: sel.day,
+        scheduleCode: sel.scheduleCode,
+        originalRequest: { type: sel.originalType },
+        override: { changedBy: currentUid, changedAt: Date.now(), reason: "auto_schedule_conflict" },
+    }]);
+
+    var input = Object.assign({}, _autoScheduleState.input, { forcedOverrides: forcedOverrides });
+    _autoScheduleState.input = input;
+    _autoScheduleState.forcedOverrides = forcedOverrides;
+    _autoScheduleState.draft = AutoScheduleEngine.generateDraft(input); // 월 전체 재편성(re-solve)
+    _autoScheduleState.revalidation = null; // 이전 draft 기준 재검사 결과는 절대 재사용하지 않는다
+    _autoScheduleState.selectedCandidate = null;
     _renderAutoScheduleModal();
 }
 
@@ -494,7 +550,7 @@ function _renderAutoScheduleModal() {
             + ". 재확정(덮어쓰기)은 지원하지 않습니다.</div>";
     }
 
-    var locked = _autoScheduleState.confirmedJustNow || (_autoScheduleState.existingFinalScheduleChecked && !!_autoScheduleState.existingFinalSchedule);
+    var locked = _isAutoScheduleLocked();
 
     html += "<div class='feature-card-action' style='margin-bottom:10px;'>"
         + "<button class='btn btn-primary-sm' onclick='generateAutoScheduleDraft()'>자동 스케줄 생성</button>"
@@ -512,14 +568,31 @@ function _renderAutoScheduleModal() {
     } else {
         html += "<div class='auto-schedule-error-summary'>⚠ 신청휴무를 유지한 상태에서는 충족할 수 없는 조건이 " + draft.conflicts.length + "건 있습니다.</div>";
         html += "<div class='auto-schedule-conflict-list'>";
+        var sel = _autoScheduleState.selectedCandidate;
         draft.conflicts.forEach(function (c, idx) {
             var label = AUTO_SCHEDULE_CONFLICT_LABEL[c.kind] || c.kind;
+            var candidateArea = "";
+            if (c.kind === "work_shortfall" && !locked) {
+                if (sel && sel.conflictIndex === idx) {
+                    var origLabel = (typeof AUTO_SCHEDULE_CODE_LABEL !== "undefined" && AUTO_SCHEDULE_CODE_LABEL[sel.originalType]) || sel.originalType;
+                    candidateArea = "<div class='auto-schedule-override-preview'>"
+                        + "<div class='auto-schedule-override-preview-title'>신청휴무 조정 미리보기</div>"
+                        + "<div class='auto-schedule-override-preview-row'><span class='auto-schedule-override-preview-label'>이름</span>" + _escapeHtml(sel.name) + "</div>"
+                        + "<div class='auto-schedule-override-preview-row'><span class='auto-schedule-override-preview-label'>날짜</span>" + sel.day + "일</div>"
+                        + "<div class='auto-schedule-override-preview-row'><span class='auto-schedule-override-preview-label'>원 신청</span>" + _escapeHtml(origLabel) + "</div>"
+                        + "<div class='auto-schedule-override-preview-row'><span class='auto-schedule-override-preview-label'>변경 후</span>" + _escapeHtml(sel.scheduleCode) + "근무</div>"
+                        + "<div class='feature-card-action' style='gap:8px;margin-top:8px;'>"
+                        + "<button type='button' class='btn btn-secondary' onclick='cancelAutoScheduleCandidateSelection()'>취소</button>"
+                        + "<button type='button' class='btn btn-primary-sm' onclick='confirmApplyAutoScheduleCandidate()'>적용</button>"
+                        + "</div></div>";
+                } else {
+                    candidateArea = "<div><button type='button' class='btn btn-secondary' style='font-size:11px;padding:2px 8px;margin-top:4px;' onclick='toggleAutoScheduleCandidates(" + idx + ")'>신청휴무 조정 후보 보기</button>"
+                        + "<div id='autoScheduleCandidates_" + idx + "' style='display:none;margin-top:4px;'></div></div>";
+                }
+            }
             html += "<div class='auto-schedule-conflict-card'>"
                 + "<strong>[" + _escapeHtml(label) + "]</strong> " + _escapeHtml(c.message || "")
-                + (c.kind === "work_shortfall" && !locked
-                    ? "<div><button type='button' class='btn btn-secondary' style='font-size:11px;padding:2px 8px;margin-top:4px;' onclick='toggleAutoScheduleCandidates(" + idx + ")'>신청휴무 조정 후보 보기</button>"
-                    + "<div id='autoScheduleCandidates_" + idx + "' style='display:none;margin-top:4px;'></div></div>"
-                    : "")
+                + candidateArea
                 + "</div>";
         });
         html += "</div>";
