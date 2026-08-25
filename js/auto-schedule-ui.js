@@ -377,6 +377,15 @@ function generateAutoScheduleDraft() {
             return;
         }
     }
+    // ⚠️ 다시 생성은 기존 forcedOverrides(수동/일괄 조정 내역)를 초기화하는 기존
+    // Production semantics를 그대로 유지한다(재편성 알고리즘 자체는 이번 작업에서
+    // 손대지 않음) — 다만 이미 초안이 있고 조정 내역이 존재하는 상태에서 실수로
+    // 다시 누르면 그 내역을 잃을 수 있으므로, 그 경우에만 명시적으로 확인한다.
+    if (_autoScheduleState.draft && _autoScheduleState.forcedOverrides && _autoScheduleState.forcedOverrides.length > 0) {
+        if (!confirm("현재 조정 내역이 초기화됩니다. 다시 생성하시겠습니까?")) {
+            return;
+        }
+    }
     var input = _buildAutoScheduleInput();
     _autoScheduleState.input = input;
     _autoScheduleState.forcedOverrides = []; // 새로 생성하면 이전 override 누적은 초기화
@@ -709,12 +718,13 @@ function _renderAutoScheduleModal() {
     }
 
     var locked = _isAutoScheduleLocked();
+    var draft = _autoScheduleState.draft;
+    var hasDraft = !!draft; // 초안 존재 여부만으로 버튼 label을 결정 — 실제 로직(생성/재생성 알고리즘)은 무변경
 
     html += "<div class='feature-card-action' style='margin-bottom:10px;'>"
-        + "<button class='btn btn-primary-sm' onclick='generateAutoScheduleDraft()'>자동 스케줄 생성</button>"
+        + "<button class='btn btn-primary-sm' onclick='generateAutoScheduleDraft()'>" + (hasDraft ? "자동 스케줄 다시 생성" : "자동 스케줄 생성") + "</button>"
         + "</div>";
 
-    var draft = _autoScheduleState.draft;
     if (!draft) {
         html += "<div class='auto-schedule-hint'>아직 생성된 초안이 없습니다.</div>";
         body.innerHTML = html;

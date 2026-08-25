@@ -130,7 +130,14 @@ function _clearConfigLiveData(yyyymm) {
     // → cfg에 targetYearMonth가 있으면 _applyCfgToLiveData에서 덮어씀
     // → cfg에 없어도(새 달 등) 기존 값이 유지되어 달 이탈 방지
     Object.keys(liveDBData).forEach(function(k) {
-        if (k === "rq_allowed_start_datetime" || k === "rq_allowed_end_datetime" || k === "schedule_codes_list" || k === "_userLimits") {
+        // ⚠️ rq_auto_monthly_off_target/_minimum도 여기서 함께 지워야 한다 — 안 지우면
+        // 새 달(아직 자동스케줄 설정을 저장한 적 없는 달)로 전환했을 때 _applyCfgToLiveData가
+        // "cfg에 값이 없으면 아무것도 안 함"(추가 전용 미러링)이라 이전 달의 값이 그대로
+        // 남아 새 달에 leak된다(월별 config 격리 위반). saveDeptConfig가 실제로 매 달
+        // 독립적으로 저장하는 필드이므로, 월 전환 시에는 반드시 초기화 후 그 달의
+        // authoritative cfg로만 다시 채워야 한다.
+        if (k === "rq_allowed_start_datetime" || k === "rq_allowed_end_datetime" || k === "schedule_codes_list" || k === "_userLimits"
+            || k === "rq_auto_monthly_off_target" || k === "rq_auto_monthly_off_minimum") {
             delete liveDBData[k];
             return;
         }
@@ -287,6 +294,14 @@ function _applyCfgToLiveData(cfg, yyyymm) {
     // ── 자동 스케줄링 전용 설정(추가 전용) ─────────────────────────────────────
     // 기존 필드 매핑은 위/아래 어디도 건드리지 않고, 새 필드 3종만 추가로 미러링한다.
     if (cfg.monthlyOffTarget != null) liveDBData["rq_auto_monthly_off_target"] = cfg.monthlyOffTarget;
+    // ⚠️ monthlyOffMinimum(권장/최소 휴무 정책의 hard floor)은 monthlyOffTarget보다
+    // 나중에 추가된 필드인데, 이 미러링 함수에 대응 라인이 누락되어 있었다 — 그 결과
+    // 저장(saveDeptConfig)은 정상 동작해도, 새로고침/월 전환 시 fresh config를 다시
+    // 읽어 liveDBData를 재구성할 때 minimum만 절대 채워지지 않아 getFirebaseItem이
+    // 항상 null을 반환하고, UI가 "미설정(legacy)"으로 오인해 target과 동일한 값으로
+    // 되돌아가 보이는 실제 QA 재현 버그의 root cause였다. 0(명시적 최소 0일)도
+    // 유효값이므로 target과 동일하게 "!= null"만으로 판단한다(0 !== null이므로 정상 반영).
+    if (cfg.monthlyOffMinimum != null) liveDBData["rq_auto_monthly_off_minimum"] = cfg.monthlyOffMinimum;
     if (cfg.maxConsecutiveWork != null) liveDBData["rq_auto_max_consecutive_work"] = cfg.maxConsecutiveWork;
     if (cfg.codeLinkRestrictions != null) liveDBData["_autoCodeLinkRestrictions"] = cfg.codeLinkRestrictions;
 
