@@ -1533,3 +1533,7 @@ exports.getStaffDailyAvailability = functions.runWith(RUN_OPTS).https.onCall(asy
 
     return { yyyymm: yyyymm, myGroups: matchedGroups, days: days };
 });
+
+// ── 26. confirmAutoSchedule — 자동 스케줄링 확정(finalSchedules 저장) ──────────
+const { confirmAutoSchedule } = require("./confirmAutoSchedule");
+exports.confirmAutoSchedule = confirmAutoSchedule;

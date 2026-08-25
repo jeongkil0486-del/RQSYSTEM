@@ -284,6 +284,12 @@ function _applyCfgToLiveData(cfg, yyyymm) {
 
     if (cfg.scheduleCodes) liveDBData["schedule_codes_list"] = cfg.scheduleCodes;
 
+    // ── 자동 스케줄링 전용 설정(추가 전용) ─────────────────────────────────────
+    // 기존 필드 매핑은 위/아래 어디도 건드리지 않고, 새 필드 3종만 추가로 미러링한다.
+    if (cfg.monthlyOffTarget != null) liveDBData["rq_auto_monthly_off_target"] = cfg.monthlyOffTarget;
+    if (cfg.maxConsecutiveWork != null) liveDBData["rq_auto_max_consecutive_work"] = cfg.maxConsecutiveWork;
+    if (cfg.codeLinkRestrictions != null) liveDBData["_autoCodeLinkRestrictions"] = cfg.codeLinkRestrictions;
+
     if (cfg.specialDayLimits) {
         Object.keys(cfg.specialDayLimits).forEach(function(day) {
             liveDBData["rq_special_limit_" + yyyymm + "_" + day] = cfg.specialDayLimits[day];

@@ -429,6 +429,25 @@
                         </div>
                     </div>
 
+                    <!-- 자동 스케줄 관리 — 신청휴무를 유지한 채 나머지 배정을 자동으로 채워 초안을 생성한다.
+                         생성/확정 관련 로직은 js/auto-schedule-engine.js(순수 계산) + js/auto-schedule-ui.js(배선)에서 처리하며,
+                         Production 데이터(userRequests/adminView/requestsLedger)에는 어떤 경우에도 쓰지 않는다. -->
+                    <div class="feature-card">
+                        <div class="feature-card-header">
+                            <div class="feature-icon green" style="background:#f0fdf4;">🧮</div>
+                            <div>
+                                <div class="feature-card-title">자동 스케줄 관리</div>
+                            </div>
+                        </div>
+                        <div class="feature-card-body">
+                            <div id="autoScheduleCardSummary" class="dm-card-summary">설정 필요 (월 총 휴무일수 / 최대 연속근무)</div>
+                            <div class="feature-card-action" style="gap:6px;">
+                                <button class="btn btn-secondary" style="font-size:12px;" onclick="openAutoScheduleSettingsModal()">설정 관리</button>
+                                <button class="btn btn-primary-sm" onclick="openAutoScheduleModal()">자동 스케줄 생성</button>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
 
             </div>
@@ -985,6 +1004,62 @@
     </div>
 </div>
 
+<!-- 자동 스케줄링 설정 팝업 (월 총 휴무일수 / 최대 연속근무 / 근무코드 연결 제한)
+     기존 "월 휴무 제한"(직원이 스스로 신청 가능한 최대치)과는 별개의, 자동 스케줄링 전용 설정이다. -->
+<div id="autoScheduleSettingsModal" onclick="if(event.target===this) closeAutoScheduleSettingsModal();" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.55); z-index:99999; justify-content:center; align-items:center;">
+    <div class="mini-manage-box">
+        <div class="group-assign-header">
+            <div>
+                <div class="group-assign-title">자동 스케줄링 설정</div>
+                <div class="group-assign-desc">월 총 휴무일수(연차/청원 제외)와 최대 연속근무, 근무코드 연결 제한을 설정합니다.</div>
+            </div>
+            <button type="button" onclick="closeAutoScheduleSettingsModal()" class="date-select-box-close">✕</button>
+        </div>
+        <div class="group-assign-body">
+            <div class="form-row" style="margin-bottom:8px;">
+                <label class="form-label">월 총 휴무일수</label>
+                <input type="number" id="autoScheduleMonthlyOffTarget" min="0" max="31" class="form-input small small-num-input" placeholder="예: 10">
+            </div>
+            <div class="form-row" style="margin-bottom:12px;">
+                <label class="form-label">최대 연속근무</label>
+                <input type="number" id="autoScheduleMaxConsecutive" min="1" max="31" class="form-input small small-num-input" placeholder="예: 5">
+            </div>
+            <div class="form-row" style="margin-bottom:4px;">
+                <label class="form-label">근무코드 연결 제한</label>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+                <select id="autoCodeLinkFrom" class="form-input small"></select>
+                <span style="color:#ccc;font-size:12px;">→</span>
+                <select id="autoCodeLinkTo" class="form-input small"></select>
+                <span style="color:#ccc;font-size:12px;">금지</span>
+                <button type="button" class="btn btn-secondary" style="font-size:11px;padding:3px 8px;" onclick="addAutoCodeLinkRestriction()">추가</button>
+            </div>
+            <div id="autoCodeLinkList" style="margin-bottom:4px;"></div>
+        </div>
+        <div class="group-assign-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAutoScheduleSettingsModal()">취소</button>
+            <button type="button" class="btn btn-primary-sm" onclick="saveAutoScheduleSettings()">적용</button>
+        </div>
+    </div>
+</div>
+
+<!-- 자동 스케줄 생성/미리보기 팝업 — 초안 생성, 충돌 목록, 신청휴무 조정 후보, 조건 재검사, 확정, Excel 다운로드 -->
+<div id="autoScheduleModal" onclick="if(event.target===this) closeAutoScheduleModal();" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.55); z-index:99999; justify-content:center; align-items:center;">
+    <div class="group-assign-box" style="max-width:640px;">
+        <div class="group-assign-header">
+            <div>
+                <div class="group-assign-title">자동 스케줄 생성</div>
+                <div class="group-assign-desc">신청휴무/연차/청원/신청 근무코드는 절대 변경하지 않고, 나머지 배정만 자동으로 채웁니다.</div>
+            </div>
+            <button type="button" onclick="closeAutoScheduleModal()" class="date-select-box-close">✕</button>
+        </div>
+        <div class="group-assign-body" id="autoScheduleModalBody"></div>
+        <div class="group-assign-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeAutoScheduleModal()">닫기</button>
+        </div>
+    </div>
+</div>
+
 <!-- 월 휴무 제한 팝업 ("월 휴무 제한" 카드의 [설정 관리] 버튼에서 열림)
      내부 입력은 기존 dayMaxConfig id / saveDayMaxConstraint() 를 그대로 재사용 —
      위치만 카드 밖으로 옮겼을 뿐 저장 로직/Firebase 구조는 전혀 수정하지 않았다. -->
@@ -1099,6 +1174,9 @@
 <script src="js/date-select.js"></script>
 <script src="js/calendar.js"></script>
 <script src="js/excel.js"></script>
+<script src="js/auto-schedule-engine.js"></script>
+<script src="js/auto-schedule-excel.js"></script>
+<script src="js/auto-schedule-ui.js"></script>
 <script src="js/download-template.js"></script>
 <script src="js/staff-overview.js"></script>
 <script src="js/main.js"></script>
