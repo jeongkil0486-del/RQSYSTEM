@@ -289,6 +289,14 @@ exports.confirmAutoSchedule = functions
     const scheduleCodeNames = {};
     scheduleCodesAuth.forEach(function (c) { if (c && c.name) scheduleCodeNames[c.name] = true; });
     const monthlyOffTarget = cfg.monthlyOffTarget != null ? parseInt(cfg.monthlyOffTarget, 10) : null;
+    // 월 일반휴무 "최소 허용치"(hard floor) — js/auto-schedule-engine.js _monthlyOffMinimum과
+    // 정확히 동일한 semantics: authoritative cfg에 monthlyOffMinimum이 명시적으로
+    // 없으면(레거시 config) target과 동일하게 취급(=기존 "정확히 target" exact
+    // 정책과 100% 동일 동작). client가 보낸 어떤 minimum/limit 값도 신뢰하지 않고
+    // 오직 cfg(방금 authoritative하게 읽은 config)만 사용한다.
+    const monthlyOffMinimum = Object.prototype.hasOwnProperty.call(cfg, "monthlyOffMinimum") && cfg.monthlyOffMinimum != null
+        ? parseInt(cfg.monthlyOffMinimum, 10)
+        : monthlyOffTarget;
     const maxConsecutiveWork = cfg.maxConsecutiveWork != null ? parseInt(cfg.maxConsecutiveWork, 10) : null;
     const codeLinkRestrictions = Array.isArray(cfg.codeLinkRestrictions) ? cfg.codeLinkRestrictions : [];
 
@@ -432,14 +440,17 @@ exports.confirmAutoSchedule = functions
         // 구조 검증에서 걸러졌으므로 여기서는 추가 조치 불필요.
     });
 
-    // 5-3) 월 총 일반휴무 정확성(annual/petition 제외, normal만 카운트)
-    if (monthlyOffTarget != null) {
+    // 5-3) 월 일반휴무 최소치(hard floor, annual/petition 제외, normal만 카운트).
+    // ⚠️ target(권장)은 soft다 — target 미달만으로는 절대 reject하지 않는다
+    // (client가 이미 warning으로 보여준 뒤 관리자가 확정을 선택한 상태이므로).
+    // minimum(레거시 fallback=target) 미달일 때만 hard reject한다.
+    if (monthlyOffMinimum != null) {
         validUids.forEach(function (uid) {
             const days = sanitizedGrid[uid] || {};
             let offCount = 0;
             dayKeysExpected.forEach(function (d) { if (days[d] && days[d].type === "normal") offCount++; });
-            if (offCount !== monthlyOffTarget) {
-                pushViolation({ type: "MONTHLY_OFF_TARGET_MISMATCH", uid: uid, expected: monthlyOffTarget, actual: offCount, message: "월 총 일반휴무 개수가 설정값과 다릅니다." });
+            if (offCount < monthlyOffMinimum) {
+                pushViolation({ type: "MONTHLY_OFF_MINIMUM_SHORTFALL", uid: uid, expected: monthlyOffMinimum, actual: offCount, message: "월 최소 일반휴무를 충족하지 못했습니다." });
             }
         });
     }
@@ -554,6 +565,7 @@ exports.confirmAutoSchedule = functions
 
     const settingsSnapshot = {
         monthlyOffTarget: monthlyOffTarget,
+        monthlyOffMinimum: monthlyOffMinimum,
         maxConsecutiveWork: maxConsecutiveWork,
         codeLinkRestrictions: codeLinkRestrictions,
         dayMax: cfg.dayMax != null ? cfg.dayMax : null,

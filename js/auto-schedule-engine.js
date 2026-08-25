@@ -135,6 +135,38 @@ function _fullMonthCodeLimitOk(grid, employees, scheduleCodes) {
     return true;
 }
 
+/** 월 일반휴무 "최소 허용치"(hard floor). monthlyOffTarget(권장/soft)과 분리된
+ *  개념 — autoConfig.monthlyOffMinimum이 명시적으로 설정돼 있으면 그 값(0 포함,
+ *  hasOwnProperty로 미설정과 구분)을 쓰고, 없으면(레거시 config) monthlyOffTarget과
+ *  동일하게 취급한다("target=minimum" ⇔ 기존 "정확히 target일" exact 정책과
+ *  100% 동일하게 동작 — 기존 Production 데이터/동작을 갑자기 바꾸지 않는다).
+ *  관리자가 신규 설정 화면에서 minimum을 명시적으로 저장한 달부터만 "target은
+ *  권장, minimum은 hard" 정책이 활성화된다. */
+function _monthlyOffMinimum(autoConfig) {
+    var cfg = autoConfig || {};
+    var target = Number(cfg.monthlyOffTarget || 0);
+    if (!Object.prototype.hasOwnProperty.call(cfg, "monthlyOffMinimum") || cfg.monthlyOffMinimum == null) return target;
+    var n = Number(cfg.monthlyOffMinimum);
+    return Number.isFinite(n) ? n : target;
+}
+
+/** 전체 달 기준으로 모든 직원의 월 일반휴무가 minimum 이상인지 재확인한다
+ *  (fallback backtracking의 leafOk에서 사용 — streak/codeLink/codeLimit과 동일한
+ *  "scope 밖까지 포함한 전체 재검증" 패턴). */
+function _fullMonthOffMinimumOk(grid, employees, totalDays, minimum) {
+    for (var i = 0; i < employees.length; i++) {
+        var emp = employees[i];
+        var count = 0;
+        var days = grid[emp.uid] || {};
+        for (var d = 1; d <= totalDays; d++) {
+            var e = days[String(d)];
+            if (e && e.type === "normal") count++;
+        }
+        if (count < minimum) return false;
+    }
+    return true;
+}
+
 // ⚠️ UMD 스타일: index.html의 <script> 태그(브라우저, module 없음)와 Node의
 // require()(테스트, module.exports 있음) 양쪽에서 동일하게 동작해야 한다.
 var AutoScheduleEngine = (function () {
@@ -355,6 +387,7 @@ function _fallbackBacktrack(input, greedyDraft) {
     var config = input.config || {};
     var autoConfig = input.autoConfig || {};
     var monthlyOffTarget = Number(autoConfig.monthlyOffTarget || 0);
+    var monthlyOffMinimum = _monthlyOffMinimum(autoConfig);
     var maxConsecutiveWork = Number(autoConfig.maxConsecutiveWork || 0);
     var codeLinkRestrictions = autoConfig.codeLinkRestrictions || [];
     var scheduleCodes = Array.isArray(config.scheduleCodes) ? config.scheduleCodes : [];
@@ -430,6 +463,7 @@ function _fallbackBacktrack(input, greedyDraft) {
         if (!_fullMonthStreakOk(grid, employees, totalDays, prevTail, maxConsecutiveWork)) return false;
         if (!_fullMonthCodeLinkOk(grid, employees, totalDays, codeLinkRestrictions, prevLastCode)) return false;
         if (!_fullMonthCodeLimitOk(grid, employees, scheduleCodes)) return false;
+        if (!_fullMonthOffMinimumOk(grid, employees, totalDays, monthlyOffMinimum)) return false;
         return true;
     }
 
@@ -457,6 +491,11 @@ function _fallbackBacktrack(input, greedyDraft) {
                 // 다음 freeCell 조합을 계속 탐색 — infeasible이면 leafOk에서도 다시 걸러진다).
                 var codeLimitFb = _scheduleCodeMonthlyLimit(scheduleCodes, candidate.scheduleCode);
                 if (codeLimitFb != null && _employeeScheduleCodeCount(grid, fc.emp.uid, candidate.scheduleCode) >= codeLimitFb) continue;
+
+                // 월 일반휴무 최소치(hard floor) — 오늘 근무를 배정하면 남은 날짜를
+                // 전부 휴무로 줘도 minimum에 도달할 수 없는 직원은 후보에서 제외한다
+                // (streak/codeLink pruning과 동일한 "필요조건 위반 시 즉시 제외" 패턴).
+                if (monthlyOffCountFor(fc.emp.uid) + (totalDays - fc.day) < monthlyOffMinimum) continue;
 
                 var streak = consecutiveWorkStreakAt(grid, fc.emp.uid, fc.day - 1, prevTail[fc.emp.uid]);
                 if (maxConsecutiveWork > 0 && streak + 1 > maxConsecutiveWork) continue;
@@ -584,6 +623,7 @@ function generateDraft(input) {
     var config = input.config || {};
     var autoConfig = input.autoConfig || {};
     var monthlyOffTarget = Number(autoConfig.monthlyOffTarget || 0);
+    var monthlyOffMinimum = _monthlyOffMinimum(autoConfig);
     var maxConsecutiveWork = Number(autoConfig.maxConsecutiveWork || 0);
     var codeLinkRestrictions = autoConfig.codeLinkRestrictions || [];
     var scheduleCodes = Array.isArray(config.scheduleCodes) ? config.scheduleCodes : [];
@@ -714,6 +754,14 @@ function generateDraft(input) {
                     var codeLimit = _scheduleCodeMonthlyLimit(scheduleCodes, codeName);
                     if (codeLimit != null && (monthlyCodeCount[emp.uid][codeName] || 0) >= codeLimit) continue; // 월간 코드 상한 도달 — 후보 제외
 
+                    // 월 일반휴무 최소치(hard floor) — 오늘 근무를 배정하면 남은 날짜를
+                    // 전부 휴무로 줘도 minimum(최소 허용 휴무)에 도달할 수 없는 직원은
+                    // 후보에서 제외한다. target(권장)은 soft이므로 이 가드에는 쓰지
+                    // 않는다 — offDeficit(target 기준) 정렬이 "이미 휴무를 많이 채운
+                    // 사람 우선 근무"를 자연히 달성하므로, 이 가드는 그 위에 겹쳐지는
+                    // 순수한 hard floor 안전장치일 뿐이다.
+                    if ((monthlyOffCount[emp.uid] || 0) + (totalDays - day) < monthlyOffMinimum) continue;
+
                     var streak = consecutiveWorkStreakAt(grid, emp.uid, day - 1, prevTail[emp.uid]);
                     if (streak + 1 > maxConsecutiveWork && maxConsecutiveWork > 0) continue; // 이 코드로 배정하면 연속근무 초과
 
@@ -836,17 +884,28 @@ function generateDraft(input) {
         });
     });
 
-    // ⚠️ 월말 사후 검증 — 지금까지의 충돌 검사는 "목표를 초과하는" 상황만 잡아냈다.
-    // "근무 배정이 우선되어 결과적으로 목표에 못 미치는" 미달 상황도 반드시 별도로
-    // 검출해야 한다(그렇지 않으면 conflicts가 0인데 실제로는 목표 미달인 채 ok:true를
-    // 반환하는 조용한 버그가 된다 — 실제 fixture 테스트로 이 문제를 확인했다).
+    // ⚠️ 월말 사후 검증 — "권장 target(10) 미달"과 "최소 minimum(9) 미달"을 반드시
+    // 분리한다. minimum 미달은 hard(확정 불가), target 미달은 soft warning(확정
+    // 가능, 안내만) — target===minimum인 legacy config는 두 검사가 항상 동시에
+    // 트리거되므로 기존 "정확히 target" exact 정책과 100% 동일하게 동작한다.
+    // (그렇지 않으면 conflicts가 0인데 실제로는 minimum 미달인 채 ok:true를 반환하는
+    // 조용한 버그가 된다 — 실제 fixture 테스트로 이 문제를 확인했다.)
+    var warnings = [];
     employees.forEach(function (emp) {
-        if (monthlyOffCount[emp.uid] < monthlyOffTarget) {
+        var count = monthlyOffCount[emp.uid];
+        if (count < monthlyOffMinimum) {
             conflicts.push({
-                kind: "monthly_off_shortfall",
+                kind: "monthly_off_minimum_shortfall",
                 empKey: emp.uid, empName: emp.name,
-                needed: monthlyOffTarget, actual: monthlyOffCount[emp.uid],
-                message: (emp.name || emp.uid) + " 월 총 일반휴무가 목표(" + monthlyOffTarget + ")에 " + (monthlyOffTarget - monthlyOffCount[emp.uid]) + "일 미달.",
+                needed: monthlyOffMinimum, actual: count,
+                message: (emp.name || emp.uid) + " 월 최소 일반휴무(" + monthlyOffMinimum + ")에 " + (monthlyOffMinimum - count) + "일 미달.",
+            });
+        } else if (count < monthlyOffTarget) {
+            warnings.push({
+                kind: "monthly_off_target_shortfall",
+                empKey: emp.uid, empName: emp.name,
+                needed: monthlyOffTarget, actual: count,
+                message: (emp.name || emp.uid) + " 월 권장 일반휴무(" + monthlyOffTarget + ")에 " + (monthlyOffTarget - count) + "일 미달(최소 기준은 충족).",
             });
         }
     });
@@ -854,9 +913,10 @@ function generateDraft(input) {
     // ⚠️ ok 판정은 집계 전 원본 conflicts 기준(집계는 표시 형태만 바꿀 뿐 위반
     // 존재 여부 자체는 절대 바꾸지 않는다 — 병합해도 원소가 하나도 사라지지 않으므로
     // 사실 conflicts.length===0 ⇔ 집계 후 길이===0 이지만, 의도를 명확히 하기 위해
-    // 집계 전 값으로 명시적으로 판정한다).
+    // 집계 전 값으로 명시적으로 판정한다). warnings는 절대 ok/conflicts에 영향을
+    // 주지 않는다 — soft target 미달만으로는 확정을 막지 않는다.
     var ok = conflicts.length === 0;
-    return { ok: ok, totalDays: totalDays, grid: grid, conflicts: _aggregateConflicts(conflicts), monthlyOffCount: monthlyOffCount, greedyFailed: greedyFailed, fallback: fallback };
+    return { ok: ok, totalDays: totalDays, grid: grid, conflicts: _aggregateConflicts(conflicts), warnings: warnings, monthlyOffCount: monthlyOffCount, greedyFailed: greedyFailed, fallback: fallback };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -880,6 +940,7 @@ function findOverrideCandidates(draft, conflict, employees, groups, autoConfig, 
     var prevTail = previousMonthWorkTail || {};
     var prevLastCode = previousMonthLastScheduleCode || {};
     var codeLimit = _scheduleCodeMonthlyLimit(scheduleCodes, codeName);
+    var monthlyOffMinimum = _monthlyOffMinimum(autoConfig);
 
     var groupByEmp = {};
     Object.keys(groups || {}).forEach(function (g) {
@@ -896,6 +957,22 @@ function findOverrideCandidates(draft, conflict, employees, groups, autoConfig, 
         // (requested+auto+override 합산) 후보가 될 수 없다. 신청휴무 개별/일괄
         // 조정 둘 다 findOverrideCandidates를 그대로 재사용하므로 자연히 동일하게 적용된다.
         if (codeLimit != null && _employeeScheduleCodeCount(draft.grid, emp.uid, codeName) >= codeLimit) return;
+
+        // 월 일반휴무 최소치(hard floor) — 이 override로 normal 1건이 근무로
+        // 바뀌면 최악의 경우(다른 날짜로 재배치 불가) 이 직원의 월 일반휴무가
+        // 정확히 1 감소한다. 그 결과가 minimum 미만이 되면 후보에서 제외한다.
+        // 재배치가 실제로 성공하면 결과는 이보다 좋아질 뿐이므로, 이 worst-case
+        // 가드만으로 "9→8은 후보 제외, 10→9(재배치 불가)는 허용"이 정확히 성립한다.
+        //
+        // ⚠️ 이 pre-filter는 target > minimum(실제 슬랙이 선언된 신규 정책)일 때만
+        // 적용한다. minimum이 legacy fallback으로 target과 같아지는(=슬랙 0) 기존
+        // exact 모드에서는 "현재 정확히 target인 사람"이 항상 worst-case에서 걸려
+        // 100%의 후보가 차단되는 회귀가 생긴다 — 기존 exact 모드는 애초에 candidate
+        // 단계에서 이런 pre-filter가 없었고, 재배치 성공 여부는 실제 적용 후
+        // fresh generateDraft의 monthly_off_minimum_shortfall 최종 검증으로만
+        // 판정되던 기존 동작을 그대로 보존한다(target=minimum ⇔ 기존 exact 정책과
+        // 100% 동일 동작 유지 원칙).
+        if (monthlyOffMinimum < Number((autoConfig || {}).monthlyOffTarget || 0) && (draft.monthlyOffCount[emp.uid] || 0) - 1 < monthlyOffMinimum) return;
 
         // 실제 적용과 같은 임시 상태를 만든다. 바깥 grid와 해당 직원의 day map만
         // 복제하므로 다른 직원/날짜/기존 고정 셀은 그대로이고 원본 draft는 불변이다.
@@ -963,20 +1040,21 @@ function _totalShortageSeats(draft) {
     return total;
 }
 
-/** work_shortfall/monthly_off_shortfall을 제외한 "새로 나타났거나 악화된" hard
- *  conflict 종류(day_off_cap/group_off_cap/no_valid_assignment/search_limit_exceeded/
- *  iteration_limit) 개수 — 2순위(새 hard conflict 최소화) 판정에 사용한다. */
+/** work_shortfall/monthly_off_minimum_shortfall을 제외한 "새로 나타났거나 악화된"
+ *  hard conflict 종류(day_off_cap/group_off_cap/no_valid_assignment/
+ *  search_limit_exceeded/iteration_limit/schedule_code_monthly_limit) 개수 —
+ *  2순위(새 hard conflict 최소화) 판정에 사용한다. */
 function _otherHardConflictCount(draft) {
     var n = 0;
     (draft.conflicts || []).forEach(function (c) {
-        if (c.kind !== "work_shortfall" && c.kind !== "monthly_off_shortfall") n++;
+        if (c.kind !== "work_shortfall" && c.kind !== "monthly_off_minimum_shortfall") n++;
     });
     return n;
 }
 
 function _monthlyOffShortfallCount(draft) {
     var n = 0;
-    (draft.conflicts || []).forEach(function (c) { if (c.kind === "monthly_off_shortfall") n++; });
+    (draft.conflicts || []).forEach(function (c) { if (c.kind === "monthly_off_minimum_shortfall") n++; });
     return n;
 }
 
@@ -1166,12 +1244,14 @@ function planBulkOverrides(input, options) {
 
 function revalidateDraft(draft, input) {
     var checks = [];
+    var warnings = [];
     function push(name, ok, detail) { checks.push({ name: name, ok: !!ok, detail: detail || "" }); }
 
     var employees = input.employees || [];
     var groups = input.groups || {};
     var config = input.config || {};
     var autoConfig = input.autoConfig || {};
+    var monthlyOffMinimum = _monthlyOffMinimum(autoConfig);
     var scheduleCodes = Array.isArray(config.scheduleCodes) ? config.scheduleCodes : [];
     var totalDays = draft.totalDays;
     var grid = draft.grid;
@@ -1201,17 +1281,30 @@ function revalidateDraft(draft, input) {
     push("청원 유지", true, "");
     push("신청 근무코드 유지", true, "");
 
-    // 5) 직원별 월 총 일반휴무 개수
-    var offMismatch = [];
+    // 5) 직원별 월 일반휴무 — 최소(hard)/권장(soft warning) 분리.
+    var offMinimumViolations = [];
+    var offTargetShortfalls = [];
+    var monthlyOffTargetNum = Number(autoConfig.monthlyOffTarget || 0);
     employees.forEach(function (emp) {
         var count = 0;
         for (var d = 1; d <= totalDays; d++) {
             var e = (grid[emp.uid] || {})[String(d)];
             if (e && e.type === "normal") count++;
         }
-        if (count !== Number(autoConfig.monthlyOffTarget || 0)) offMismatch.push(emp.name + ":" + count);
+        if (count < monthlyOffMinimum) {
+            offMinimumViolations.push(emp.name + " " + count + "/" + monthlyOffMinimum);
+        } else if (count < monthlyOffTargetNum) {
+            offTargetShortfalls.push({ empKey: emp.uid, empName: emp.name, actual: count, needed: monthlyOffTargetNum });
+        }
     });
-    push("직원별 월 총 일반휴무 개수 = 목표", offMismatch.length === 0, offMismatch.join(", "));
+    push("최소 월 일반휴무 준수", offMinimumViolations.length === 0, offMinimumViolations.join(", "));
+    if (offTargetShortfalls.length) {
+        warnings.push({
+            kind: "monthly_off_target_shortfall_summary",
+            employees: offTargetShortfalls,
+            message: "권장 월 일반휴무(" + monthlyOffTargetNum + ") 미달: " + offTargetShortfalls.map(function (e) { return e.empName + " " + e.actual + "일"; }).join(", "),
+        });
+    }
 
     // 6/7) 최대 연속근무(전월 꼬리 포함)
     var streakViolations = [];
@@ -1302,8 +1395,8 @@ function revalidateDraft(draft, input) {
     push("override는 관리자 선택으로 발생한 건만 존재", badOverrides.filter(function (m) { return m.indexOf("관리자 정보 없음") !== -1; }).length === 0, "");
     push("연차/청원 override 0건", badOverrides.filter(function (m) { return m.indexOf("연차/청원") !== -1; }).length === 0, badOverrides.join(", "));
 
-    // 14) 월 총 휴무 초과/미달 없음 (5번과 동일 기준 재확인 — 실패 목록만 별도 표기)
-    push("월 총 휴무 초과/미달 없음", offMismatch.length === 0, offMismatch.join(", "));
+    // 14) 월 최소 휴무 미달 없음 (5번과 동일 기준 재확인 — 실패 목록만 별도 표기)
+    push("월 최소 일반휴무 미달 없음", offMinimumViolations.length === 0, offMinimumViolations.join(", "));
 
     // 15) 직원별 월 근무코드 제한 준수 — requested/auto/override 합산 최종 배정 기준.
     var codeLimitViolations = [];
@@ -1323,7 +1416,7 @@ function revalidateDraft(draft, input) {
     push("직원별 월 근무코드 제한 준수", codeLimitViolations.length === 0, codeLimitViolations.join(", "));
 
     var allPassed = checks.every(function (c) { return c.ok; });
-    return { passed: allPassed, checks: checks };
+    return { passed: allPassed, checks: checks, warnings: warnings };
 }
 
 return {
@@ -1335,6 +1428,7 @@ return {
     _groupCodeQuota: _groupCodeQuota,
     _scheduleCodeMonthlyLimit: _scheduleCodeMonthlyLimit,
     _employeeScheduleCodeCount: _employeeScheduleCodeCount,
+    _monthlyOffMinimum: _monthlyOffMinimum,
     _aggregateConflicts: _aggregateConflicts,
     generateDraft: generateDraft,
     findOverrideCandidates: findOverrideCandidates,

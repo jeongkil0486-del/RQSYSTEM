@@ -1011,14 +1011,18 @@
         <div class="group-assign-header">
             <div>
                 <div class="group-assign-title">자동 스케줄링 설정</div>
-                <div class="group-assign-desc">월 총 휴무일수(연차/청원 제외)와 최대 연속근무, 근무코드 연결 제한을 설정합니다.</div>
+                <div class="group-assign-desc">자동스케줄은 권장 휴무일수를 우선 충족하며, 편성상 필요한 경우 최소 휴무일수까지 허용합니다(연차/청원 제외). 최대 연속근무·근무코드 연결 제한도 함께 설정합니다.</div>
             </div>
             <button type="button" onclick="closeAutoScheduleSettingsModal()" class="date-select-box-close">✕</button>
         </div>
         <div class="group-assign-body">
             <div class="form-row" style="margin-bottom:8px;">
-                <label class="form-label">월 총 휴무일수</label>
+                <label class="form-label">권장 월 휴무</label>
                 <input type="number" id="autoScheduleMonthlyOffTarget" min="0" max="31" class="form-input small small-num-input" placeholder="예: 10">
+            </div>
+            <div class="form-row" style="margin-bottom:8px;">
+                <label class="form-label">최소 월 휴무</label>
+                <input type="number" id="autoScheduleMonthlyOffMinimum" min="0" max="31" class="form-input small small-num-input" placeholder="예: 9">
             </div>
             <div class="form-row" style="margin-bottom:12px;">
                 <label class="form-label">최대 연속근무</label>

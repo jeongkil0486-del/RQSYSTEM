@@ -91,6 +91,11 @@ function exportAutoScheduleToExcel(draft, employees, groupByEmp, revalidation, f
     (revalidation && revalidation.checks ? revalidation.checks : []).forEach(function (check) {
         rows3.push([check.name, check.ok ? "정상" : "실패", check.ok ? "" : check.detail]);
     });
+    // 권장 월 일반휴무 미달은 hard FAIL이 아니라 "참고"(soft warning) — 최소 휴무만
+    // 충족하면 확정 가능한 상태이므로 "실패"로 표시하지 않는다.
+    (revalidation && revalidation.warnings ? revalidation.warnings : []).forEach(function (w) {
+        rows3.push(["권장 월 일반휴무 달성 현황", "참고", w.message || ""]);
+    });
     if (meta && meta.previousMonthWarning) {
         rows3.push(["전월 연속근무 데이터", "참고", meta.previousMonthWarning]);
     }

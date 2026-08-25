@@ -103,8 +103,13 @@ function _buildAutoScheduleInput() {
         config["groupMax" + g] = v != null ? parseInt(v, 10) : null;
     });
 
+    var monthlyOffTargetVal = parseInt(getFirebaseItem("rq_auto_monthly_off_target", "0"), 10) || 0;
+    var monthlyOffMinimumRaw = getFirebaseItem("rq_auto_monthly_off_minimum", null);
     var autoConfig = {
-        monthlyOffTarget: parseInt(getFirebaseItem("rq_auto_monthly_off_target", "0"), 10) || 0,
+        monthlyOffTarget: monthlyOffTargetVal,
+        // 레거시 fallback: minimum이 저장된 적 없으면 target과 동일하게 취급
+        // (AutoScheduleEngine._monthlyOffMinimum과 정확히 동일한 semantics).
+        monthlyOffMinimum: monthlyOffMinimumRaw != null ? (parseInt(monthlyOffMinimumRaw, 10) || 0) : monthlyOffTargetVal,
         maxConsecutiveWork: parseInt(getFirebaseItem("rq_auto_max_consecutive_work", "0"), 10) || 0,
         codeLinkRestrictions: _getAutoCodeLinkRestrictions(),
     };
@@ -208,8 +213,16 @@ function _checkExistingFinalSchedule() {
 function openAutoScheduleSettingsModal() {
     if (!isAdmin && !isSuperAdmin) return;
     var elTarget = document.getElementById("autoScheduleMonthlyOffTarget");
+    var elMinimum = document.getElementById("autoScheduleMonthlyOffMinimum");
     var elMaxConsec = document.getElementById("autoScheduleMaxConsecutive");
     if (elTarget) elTarget.value = getFirebaseItem("rq_auto_monthly_off_target", "");
+    // 레거시 config(minimum 미설정)면 입력창은 target과 같은 값으로 채워 보여준다 —
+    // 저장을 누르지 않는 한 실제 semantics는 여전히 "미설정=target과 동일" fallback을
+    // 그대로 따르므로 화면 표시만을 위한 것이고, 데이터를 임의로 변경하지 않는다.
+    if (elMinimum) {
+        var rawMinimum = getFirebaseItem("rq_auto_monthly_off_minimum", null);
+        elMinimum.value = rawMinimum != null ? rawMinimum : getFirebaseItem("rq_auto_monthly_off_target", "");
+    }
     if (elMaxConsec) elMaxConsec.value = getFirebaseItem("rq_auto_max_consecutive_work", "");
     _renderAutoCodeLinkList();
     var el = document.getElementById("autoScheduleSettingsModal");
@@ -274,11 +287,15 @@ function removeAutoCodeLinkRestriction(index) {
 function saveAutoScheduleSettings() {
     if (!isAdmin && !isSuperAdmin) return;
     var elTarget = document.getElementById("autoScheduleMonthlyOffTarget");
+    var elMinimum = document.getElementById("autoScheduleMonthlyOffMinimum");
     var elMaxConsec = document.getElementById("autoScheduleMaxConsecutive");
     var target = parseInt((elTarget && elTarget.value) || "0", 10);
+    var minimum = parseInt((elMinimum && elMinimum.value) || "0", 10);
     var maxConsec = parseInt((elMaxConsec && elMaxConsec.value) || "0", 10);
 
-    if (isNaN(target) || target < 0) { alert("월 총 휴무일수는 0 이상의 숫자여야 합니다."); return; }
+    if (isNaN(target) || target < 0) { alert("권장 월 휴무일수는 0 이상의 숫자여야 합니다."); return; }
+    if (isNaN(minimum) || minimum < 0) { alert("최소 월 휴무일수는 0 이상의 숫자여야 합니다."); return; }
+    if (target < minimum) { alert("권장 월 휴무일수는 최소 월 휴무일수보다 작을 수 없습니다."); return; }
     if (isNaN(maxConsec) || maxConsec < 1) { alert("최대 연속근무는 1 이상의 숫자여야 합니다."); return; }
 
     var codeLinkRestrictions = _getAutoCodeLinkRestrictions();
@@ -288,11 +305,13 @@ function saveAutoScheduleSettings() {
         yyyymm: getTargetYearMonth().fullStr,
         config: {
             monthlyOffTarget: target,
+            monthlyOffMinimum: minimum,
             maxConsecutiveWork: maxConsec,
             codeLinkRestrictions: codeLinkRestrictions,
         },
     }).then(function () {
         liveDBData["rq_auto_monthly_off_target"] = target;
+        liveDBData["rq_auto_monthly_off_minimum"] = minimum;
         liveDBData["rq_auto_max_consecutive_work"] = maxConsec;
         liveDBData["_autoCodeLinkRestrictions"] = codeLinkRestrictions;
         alert("자동 스케줄링 설정이 저장되었습니다.");
@@ -307,11 +326,13 @@ function _updateAutoScheduleCardSummary() {
     var el = document.getElementById("autoScheduleCardSummary");
     if (!el) return;
     var target = getFirebaseItem("rq_auto_monthly_off_target", null);
+    var minimumRaw = getFirebaseItem("rq_auto_monthly_off_minimum", null);
+    var minimum = minimumRaw != null ? minimumRaw : target; // 레거시 fallback = target(엔진과 동일 semantics)
     var maxConsec = getFirebaseItem("rq_auto_max_consecutive_work", null);
     if (target == null || maxConsec == null) {
         el.textContent = "설정 필요 (월 총 휴무일수 / 최대 연속근무)";
     } else {
-        el.textContent = "월 휴무 " + target + "일 · 최대 연속근무 " + maxConsec + "일";
+        el.textContent = "월 휴무 권장 " + target + "일/최소 " + minimum + "일 · 최대 연속근무 " + maxConsec + "일";
     }
 }
 
@@ -609,7 +630,7 @@ var AUTO_SCHEDULE_CONFLICT_LABEL = {
     no_valid_assignment: "배정 불가(월 휴무 목표 초과)",
     group_off_cap: "조별 휴무 정원 초과",
     day_off_cap: "특정일 휴무 정원 초과",
-    monthly_off_shortfall: "월 총 휴무일수 미달",
+    monthly_off_minimum_shortfall: "월 최소 휴무일수 미달",
     schedule_code_monthly_limit: "월 근무코드 제한 초과",
 };
 
@@ -702,7 +723,15 @@ function _renderAutoScheduleModal() {
 
     if (draft.ok) {
         html += "<div class='auto-schedule-success-banner'>✅ 보호 모드(신청휴무 100% 유지)로 조건을 모두 만족하는 초안을 생성했습니다.</div>";
-    } else {
+    }
+    if (draft.warnings && draft.warnings.length) {
+        // ⚠️ 권장 휴무 미달은 hard conflict가 아니라 안내용 warning이다 — draft.ok/
+        // 확정 가능 여부에 절대 영향을 주지 않는다(최소 휴무만 충족하면 확정 가능).
+        html += "<div class='auto-schedule-warning'>⚠ 권장 월 일반휴무 미달(최소 기준은 충족, 확정 가능):<br>"
+            + draft.warnings.map(function (w) { return "- " + _escapeHtml(w.empName || w.empKey) + ": " + w.actual + "일"; }).join("<br>")
+            + "</div>";
+    }
+    if (!draft.ok) {
         html += "<div class='auto-schedule-error-summary'>⚠ 신청휴무를 유지한 상태에서는 충족할 수 없는 조건이 " + draft.conflicts.length + "건 있습니다.</div>";
 
         var workShortfallCount = draft.conflicts.filter(function (c) { return c.kind === "work_shortfall"; }).length;
@@ -749,13 +778,20 @@ function _renderAutoScheduleModal() {
     var revalidation = _autoScheduleState.revalidation;
     if (revalidation) {
         html += "<div class='auto-schedule-revalidation-summary " + (revalidation.passed ? "is-pass" : "is-fail") + "'>"
-            + (revalidation.passed ? "✅ 14개 항목 전체 통과" : "⚠ 일부 항목 실패 — 확정 불가") + "</div>";
+            + (revalidation.passed ? "✅ " + revalidation.checks.length + "개 항목 전체 통과" : "⚠ 일부 항목 실패 — 확정 불가") + "</div>";
         html += "<div class='auto-schedule-check-list'>";
         revalidation.checks.forEach(function (check) {
             html += "<div class='" + (check.ok ? "" : "auto-schedule-check-fail") + "' style='padding:2px 0;'>" + (check.ok ? "✅" : "❌") + " " + _escapeHtml(check.name)
                 + (check.ok ? "" : " — " + _escapeHtml(check.detail || "")) + "</div>";
         });
         html += "</div>";
+        if (revalidation.warnings && revalidation.warnings.length) {
+            // ⚠️ 권장 휴무 미달 warning은 checks와 별도로 표시하고 passed에는 영향 없음
+            // (확정 버튼은 여전히 revalidation.passed만으로 gating된다 — 아래 그대로).
+            html += "<div class='auto-schedule-warning' style='margin-top:6px;'>";
+            revalidation.warnings.forEach(function (w) { html += "⚠ " + _escapeHtml(w.message || "") + "<br>"; });
+            html += "</div>";
+        }
     }
 
     html += "<div class='feature-card-action'>"
