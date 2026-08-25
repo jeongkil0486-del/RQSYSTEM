@@ -83,6 +83,58 @@ function _dayOffCap(config, day) {
     return special != null ? Number(special) : Number(config.dayMax);
 }
 
+/** 근무코드의 "직원 1명당 월간 최대 배정 횟수" 상한. scheduleCodes 배열의
+ *  {name, limit}에서 codeName과 일치하는 항목을 찾아 limit을 반환한다.
+ *
+ *  ⚠️ "미설정"과 "명시적 0"을 절대 같은 값으로 뭉개면 안 된다(_groupCodeQuota와
+ *  동일한 원칙) — hasOwnProperty로 필드 존재 여부를 먼저 확인해, 없으면 null
+ *  (상한 없음), 있으면 그 숫자(0 포함, 0이면 그 코드로 단 한 번도 배정 불가)를
+ *  반환한다. 코드 자체가 목록에 없으면(레거시 데이터 등) 상한 없음으로 취급한다
+ *  — 이는 기존 스케줄 코드 신청 제한 기능(functions/src/index.js validateAndStageRequest의
+ *  toIntOr(999, ...) fallback)과 동일한 방향의 안전한 기본값이며, 이 필드가
+ *  원래부터 갖고 있던 "직원 직접 신청 가능 횟수" semantics는 이 함수가 전혀
+ *  건드리지 않는다 — 동일한 저장값을 최종 자동스케줄의 hard cap으로도 재사용할 뿐이다. */
+function _scheduleCodeMonthlyLimit(scheduleCodes, codeName) {
+    var item = (scheduleCodes || []).filter(function (c) { return c && c.name === codeName; })[0];
+    if (!item || !Object.prototype.hasOwnProperty.call(item, "limit") || item.limit == null) return null;
+    var n = Number(item.limit);
+    return Number.isFinite(n) ? n : null;
+}
+
+/** grid 전체(scope 제한 없음)에서 empKey의 codeName 근무 배정 횟수를 센다.
+ *  requested/auto/override source를 구분하지 않고 최종 type==="schedule"만 카운트
+ *  (normal/auto_off/annual/petition은 제외 — 스펙의 "count 대상" 원칙과 동일). */
+function _employeeScheduleCodeCount(grid, empKey, codeName) {
+    var days = grid[empKey] || {};
+    var count = 0;
+    Object.keys(days).forEach(function (d) {
+        var e = days[d];
+        if (e && e.type === "schedule" && e.scheduleCode === codeName) count++;
+    });
+    return count;
+}
+
+/** 전체 달 기준으로 모든 직원의 모든 근무코드 월간 상한 준수 여부를 재확인한다
+ *  (_fullMonthStreakOk/_fullMonthCodeLinkOk와 동일한 "scope 밖까지 포함한 전체
+ *  재검증" 패턴 — fallback backtracking의 leafOk에서 사용). */
+function _fullMonthCodeLimitOk(grid, employees, scheduleCodes) {
+    for (var i = 0; i < employees.length; i++) {
+        var emp = employees[i];
+        var days = grid[emp.uid] || {};
+        var counts = {};
+        Object.keys(days).forEach(function (d) {
+            var e = days[d];
+            if (e && e.type === "schedule" && e.scheduleCode) counts[e.scheduleCode] = (counts[e.scheduleCode] || 0) + 1;
+        });
+        var codeNames = Object.keys(counts);
+        for (var j = 0; j < codeNames.length; j++) {
+            var limit = _scheduleCodeMonthlyLimit(scheduleCodes, codeNames[j]);
+            if (limit != null && counts[codeNames[j]] > limit) return false;
+        }
+    }
+    return true;
+}
+
 // ⚠️ UMD 스타일: index.html의 <script> 태그(브라우저, module 없음)와 Node의
 // require()(테스트, module.exports 있음) 양쪽에서 동일하게 동작해야 한다.
 var AutoScheduleEngine = (function () {
@@ -377,6 +429,7 @@ function _fallbackBacktrack(input, greedyDraft) {
         if (_localConflicts(grid, employees, employeesByGroup, config, scheduleCodes, scopeDays, scopeGroups).length > 0) return false;
         if (!_fullMonthStreakOk(grid, employees, totalDays, prevTail, maxConsecutiveWork)) return false;
         if (!_fullMonthCodeLinkOk(grid, employees, totalDays, codeLinkRestrictions, prevLastCode)) return false;
+        if (!_fullMonthCodeLimitOk(grid, employees, scheduleCodes)) return false;
         return true;
     }
 
@@ -397,6 +450,13 @@ function _fallbackBacktrack(input, greedyDraft) {
                     return acc + (e && e.type === "schedule" && e.scheduleCode === candidate.scheduleCode ? 1 : 0);
                 }, 0);
                 if (usedNow >= quota) continue;
+
+                // 월간 코드 상한 — fallback도 greedy와 동일한 hard constraint를 지킨다.
+                // exact staffing을 맞추기 위해 이미 상한에 도달한 직원에게 억지로
+                // 추가 배정하지 않는다(그 경우 이 후보는 그냥 건너뛰고 다음 candidateValue/
+                // 다음 freeCell 조합을 계속 탐색 — infeasible이면 leafOk에서도 다시 걸러진다).
+                var codeLimitFb = _scheduleCodeMonthlyLimit(scheduleCodes, candidate.scheduleCode);
+                if (codeLimitFb != null && _employeeScheduleCodeCount(grid, fc.emp.uid, candidate.scheduleCode) >= codeLimitFb) continue;
 
                 var streak = consecutiveWorkStreakAt(grid, fc.emp.uid, fc.day - 1, prevTail[fc.emp.uid]);
                 if (maxConsecutiveWork > 0 && streak + 1 > maxConsecutiveWork) continue;
@@ -561,6 +621,21 @@ function generateDraft(input) {
         });
     });
 
+    // 월 누적 근무코드별 배정 횟수(직원별) — "직원 1명당 월간 코드별 최대 배정
+    // 횟수" hard cap을 greedy가 실시간으로 지키기 위한 카운터. 고정 신청/override로
+    // 이미 확정된 배정도 시작값에 포함한다(requested+auto를 합산해야 하므로).
+    var monthlyCodeCount = {};
+    employees.forEach(function (emp) { monthlyCodeCount[emp.uid] = {}; });
+    employees.forEach(function (emp) {
+        var days = grid[emp.uid] || {};
+        Object.keys(days).forEach(function (day) {
+            var e = days[day];
+            if (e.type === "schedule" && e.scheduleCode) {
+                monthlyCodeCount[emp.uid][e.scheduleCode] = (monthlyCodeCount[emp.uid][e.scheduleCode] || 0) + 1;
+            }
+        });
+    });
+
     // ⚠️ 균형 배치용 — "월 휴무 목표까지 남은 여유(deficit)가 적은 사람"부터 우선
     // 근무를 배정한다. 단순 누적 근무일수 기준으로는, 이미 고정 신청(연차/청원/휴무)이
     // 있어 근무 경쟁에 늦게 합류하는 직원이 계속 "근무일수가 적다"고 오판되어 남은
@@ -636,6 +711,9 @@ function generateDraft(input) {
                     var emp = candidates[mi];
                     if (isAssignedThatDay(emp.uid, day)) continue; // 이미 그 날 뭔가 배정됨(고정 or 이전 코드에서 auto 배정)
 
+                    var codeLimit = _scheduleCodeMonthlyLimit(scheduleCodes, codeName);
+                    if (codeLimit != null && (monthlyCodeCount[emp.uid][codeName] || 0) >= codeLimit) continue; // 월간 코드 상한 도달 — 후보 제외
+
                     var streak = consecutiveWorkStreakAt(grid, emp.uid, day - 1, prevTail[emp.uid]);
                     if (streak + 1 > maxConsecutiveWork && maxConsecutiveWork > 0) continue; // 이 코드로 배정하면 연속근무 초과
 
@@ -644,6 +722,7 @@ function generateDraft(input) {
 
                     ensureGridDay(emp.uid);
                     grid[emp.uid][dayStr] = { type: "schedule", scheduleCode: codeName, source: "auto" };
+                    monthlyCodeCount[emp.uid][codeName] = (monthlyCodeCount[emp.uid][codeName] || 0) + 1;
                     assignedNow++;
                 }
 
@@ -736,6 +815,27 @@ function generateDraft(input) {
         }
     }
 
+    // ⚠️ 직원별 월간 근무코드 상한 초과 검사 — greedy/fallback 모두 배정 시점에
+    // 이미 상한을 넘지 않도록 후보에서 제외하지만(위 monthlyCodeCount 가드),
+    // "신청(requested)/override만으로 이미 상한을 초과한" 경우는 auto-fill로
+    // 해결할 수 없는 진짜 충돌이므로(신청 근무코드/override는 절대 임의로
+    // 변경하지 않는다는 기존 정책과 동일) 여기서 최종 grid 기준으로 별도 검출한다.
+    scheduleCodes.forEach(function (codeItem) {
+        var codeLimitFinal = _scheduleCodeMonthlyLimit(scheduleCodes, codeItem.name);
+        if (codeLimitFinal == null) return;
+        employees.forEach(function (emp) {
+            var count = _employeeScheduleCodeCount(grid, emp.uid, codeItem.name);
+            if (count > codeLimitFinal) {
+                conflicts.push({
+                    kind: "schedule_code_monthly_limit",
+                    empKey: emp.uid, empName: emp.name, scheduleCode: codeItem.name,
+                    limit: codeLimitFinal, actual: count,
+                    message: (emp.name || emp.uid) + " " + codeItem.name + "코드 월 제한(" + codeLimitFinal + "회)을 초과했습니다(현재 " + count + "회).",
+                });
+            }
+        });
+    });
+
     // ⚠️ 월말 사후 검증 — 지금까지의 충돌 검사는 "목표를 초과하는" 상황만 잡아냈다.
     // "근무 배정이 우선되어 결과적으로 목표에 못 미치는" 미달 상황도 반드시 별도로
     // 검출해야 한다(그렇지 않으면 conflicts가 0인데 실제로는 목표 미달인 채 ok:true를
@@ -771,7 +871,7 @@ function generateDraft(input) {
  * 전체 월 streak와 전월→1일/previous→selected/selected→next를 모두 검사한다.
  * 원본 draft/grid는 절대 변형하지 않는다.
  */
-function findOverrideCandidates(draft, conflict, employees, groups, autoConfig, previousMonthWorkTail, previousMonthLastScheduleCode) {
+function findOverrideCandidates(draft, conflict, employees, groups, autoConfig, previousMonthWorkTail, previousMonthLastScheduleCode, scheduleCodes) {
     if (!conflict || conflict.kind !== "work_shortfall") return [];
     var day = conflict.day, group = conflict.group, codeName = conflict.scheduleCode;
     var dayStr = String(day);
@@ -779,6 +879,7 @@ function findOverrideCandidates(draft, conflict, employees, groups, autoConfig, 
     var codeLinkRestrictions = (autoConfig || {}).codeLinkRestrictions || [];
     var prevTail = previousMonthWorkTail || {};
     var prevLastCode = previousMonthLastScheduleCode || {};
+    var codeLimit = _scheduleCodeMonthlyLimit(scheduleCodes, codeName);
 
     var groupByEmp = {};
     Object.keys(groups || {}).forEach(function (g) {
@@ -790,6 +891,11 @@ function findOverrideCandidates(draft, conflict, employees, groups, autoConfig, 
         if (groupByEmp[emp.uid] !== group) return;
         var entry = (draft.grid[emp.uid] || {})[dayStr];
         if (!entry || entry.type !== "normal" || entry.source !== "requested") return; // 신청 normal만(연차/청원/이미 근무 제외)
+
+        // 월간 코드 상한 — 이 직원이 이미 codeName 코드로 상한만큼 배정되어 있으면
+        // (requested+auto+override 합산) 후보가 될 수 없다. 신청휴무 개별/일괄
+        // 조정 둘 다 findOverrideCandidates를 그대로 재사용하므로 자연히 동일하게 적용된다.
+        if (codeLimit != null && _employeeScheduleCodeCount(draft.grid, emp.uid, codeName) >= codeLimit) return;
 
         // 실제 적용과 같은 임시 상태를 만든다. 바깥 grid와 해당 직원의 day map만
         // 복제하므로 다른 직원/날짜/기존 고정 셀은 그대로이고 원본 draft는 불변이다.
@@ -835,6 +941,223 @@ function applyOverride(draft, empKey, day, newScheduleCode, adminUid, reason) {
     if (original.type === "normal") newMonthlyOffCount[empKey] = Math.max(0, (newMonthlyOffCount[empKey] || 0) - 1);
 
     return { ok: draft.ok, totalDays: draft.totalDays, grid: newGrid, conflicts: draft.conflicts, monthlyOffCount: newMonthlyOffCount };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 5b) 신청휴무 일괄 자동조정 — "1건 선택 → 가상 적용 → fresh generateDraft →
+//     fresh conflicts → 다음 conflict 선택" 을 반복하는 순수 계획(planning) 함수.
+// ═══════════════════════════════════════════════════════════════════════════
+var AUTO_SCHEDULE_BULK_MAX_ITERATIONS = 4000;   // "평가 시도" 총량 상한(후보 평가 1회당 1) — freeze 방지
+var AUTO_SCHEDULE_BULK_TIME_BUDGET_MS = 8000;   // 벽시계 상한 — 두 상한 중 먼저 도달하는 쪽에서 중단
+var AUTO_SCHEDULE_BULK_MAX_OVERRIDES_DEFAULT = 200; // plan에 담을 수 있는 override 최대 개수(안전판)
+
+/** work_shortfall conflict들의 "부족 좌석 수" 총합(needed-available 합) — 이 값을
+ *  최우선으로 줄이는 후보를 고른다. work_shortfall이 아닌 conflict는 집계하지 않는다. */
+function _totalShortageSeats(draft) {
+    var total = 0;
+    (draft.conflicts || []).forEach(function (c) {
+        if (c.kind === "work_shortfall" && c.needed != null && c.available != null) {
+            total += Math.max(0, c.needed - c.available);
+        }
+    });
+    return total;
+}
+
+/** work_shortfall/monthly_off_shortfall을 제외한 "새로 나타났거나 악화된" hard
+ *  conflict 종류(day_off_cap/group_off_cap/no_valid_assignment/search_limit_exceeded/
+ *  iteration_limit) 개수 — 2순위(새 hard conflict 최소화) 판정에 사용한다. */
+function _otherHardConflictCount(draft) {
+    var n = 0;
+    (draft.conflicts || []).forEach(function (c) {
+        if (c.kind !== "work_shortfall" && c.kind !== "monthly_off_shortfall") n++;
+    });
+    return n;
+}
+
+function _monthlyOffShortfallCount(draft) {
+    var n = 0;
+    (draft.conflicts || []).forEach(function (c) { if (c.kind === "monthly_off_shortfall") n++; });
+    return n;
+}
+
+/** candidate 하나를 가상 적용한 tempDraft를 스펙의 6단계 우선순위로 채점한다.
+ *  배열의 앞 원소일수록 우선순위가 높고, 모든 항목은 "작을수록 좋다". */
+function _scoreBulkCandidate(tempDraft, candidateUid, monthlyOffTarget, bulkOverrideCountSoFar) {
+    var ownOffCount = (tempDraft.monthlyOffCount && tempDraft.monthlyOffCount[candidateUid]) || 0;
+    return [
+        _totalShortageSeats(tempDraft),                          // 1순위: 부족 좌석 총량
+        _otherHardConflictCount(tempDraft),                       // 2순위: 새 hard conflict 최소화
+        ownOffCount === monthlyOffTarget ? 0 : 1,                 // 3순위: 해당 직원 월 휴무 목표 복구 여부
+        _monthlyOffShortfallCount(tempDraft),                     // 4순위: 전체 월 휴무 부족 총량
+        tempDraft.conflicts.length,                               // 5순위: 전체 hard conflict 개수
+        (bulkOverrideCountSoFar[candidateUid] || 0),              // fairness: 이번 bulk 실행에서 이미 조정된 횟수
+    ];
+}
+
+/** 점수 배열을 사전식으로 비교한다 — a가 더 좋으면(=더 작으면) 음수를 반환. */
+function _compareBulkScores(a, b) {
+    for (var i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return a[i] - b[i];
+    }
+    return 0;
+}
+
+/**
+ * planBulkOverrides(input, options) → {
+ *   plan: [{uid, name, day, group, scheduleCode, originalType}],
+ *   previewDraft, beforeSummary, afterSummary, unresolvedConflicts,
+ *   stoppedReason, iterations, truncated
+ * }
+ *
+ * ⚠️ 이 함수는 input을 전혀 변형하지 않고, 순수하게 "계획"만 계산한다 — 실제
+ * live draft/forcedOverrides는 호출부가 plan을 받아본 뒤 명시적으로 적용해야
+ * 바뀐다(이 함수 자체는 side effect가 없다). 이미 존재하는 input.forcedOverrides는
+ * 그대로 시작점으로 유지되며 절대 제거/변경되지 않는다 — 이번 실행에서 새로
+ * 결정한 override만 plan에 추가된다.
+ *
+ * 반복마다 findOverrideCandidates()(기존 manual 조정과 완전히 동일한 함수)로
+ * 후보를 구하고, 후보별로 실제 generateDraft()를 다시 돌려(=가상 적용) 결과를
+ * 평가한 뒤 가장 좋은 후보를 선택한다 — 절대 "현재 후보 목록의 첫 번째"를
+ * 기계적으로 고르지 않는다. 개선되지 않는 후보(부족 좌석이 줄지 않고 전체 상태도
+ * 나아지지 않는 경우)는 채택하지 않는다.
+ */
+function planBulkOverrides(input, options) {
+    var opts = options || {};
+    var maxIterations = opts.maxIterations || AUTO_SCHEDULE_BULK_MAX_ITERATIONS;
+    var timeBudgetMs = opts.timeBudgetMs || AUTO_SCHEDULE_BULK_TIME_BUDGET_MS;
+
+    var requestedNormalCount = 0;
+    Object.keys(input.existingRequests || {}).forEach(function (uid) {
+        Object.keys((input.existingRequests || {})[uid] || {}).forEach(function (day) {
+            if ((input.existingRequests[uid][day] || {}).type === "normal") requestedNormalCount++;
+        });
+    });
+    var maxBulkOverrides = opts.maxBulkOverrides || Math.min(AUTO_SCHEDULE_BULK_MAX_OVERRIDES_DEFAULT, requestedNormalCount);
+
+    var monthlyOffTarget = Number((input.autoConfig || {}).monthlyOffTarget || 0);
+    var startTime = Date.now();
+    var iterations = 0;
+    var truncated = false;
+
+    // 기존에 이미 적용된 forcedOverrides(수동 조정분 포함)는 절대 건드리지 않고 그대로
+    // 시작점으로 clone한다 — 이 함수가 새로 추가하는 것은 오직 신규 override뿐이다.
+    var workingForcedOverrides = (input.forcedOverrides || []).map(function (o) { return Object.assign({}, o); });
+    var existingKeySet = {};
+    workingForcedOverrides.forEach(function (o) { existingKeySet[o.uid + "|" + o.day] = true; });
+
+    var workingDraft = generateDraft(Object.assign({}, input, { forcedOverrides: workingForcedOverrides }));
+    var beforeSummary = {
+        shortageSeats: _totalShortageSeats(workingDraft),
+        workShortfallCount: workingDraft.conflicts.filter(function (c) { return c.kind === "work_shortfall"; }).length,
+        monthlyOffShortfallCount: _monthlyOffShortfallCount(workingDraft),
+        totalConflicts: workingDraft.conflicts.length,
+    };
+
+    var plan = [];
+    var bulkOverrideCountSoFar = {}; // uid -> 이번 bulk 실행에서 조정된 횟수(공정성 tie-break용)
+    var stoppedReason = null;
+
+    while (true) {
+        // ⚠️ 종료 사유 우선순위: "성공(더 이상 work_shortfall 없음)"이 확정되면 그
+        // 어떤 limit(시간/반복/개수)보다 항상 우선한다. 즉 fresh conflicts를 먼저
+        // 확인해 이미 성공 상태인지부터 판정하고, 그 다음에만 limit을 검사한다 —
+        // "마지막 허용 override가 마지막 shortage까지 정확히 해결"한 경우에도
+        // max_overrides로 잘못 보고되던 결함(Codex Gate 21 #1)의 근본 수정.
+        var shortfalls = workingDraft.conflicts.filter(function (c) { return c.kind === "work_shortfall"; });
+        if (!shortfalls.length) { stoppedReason = "no_shortfall"; break; }
+
+        if (Date.now() - startTime > timeBudgetMs) { stoppedReason = "time_limit"; truncated = true; break; }
+        if (iterations > maxIterations) { stoppedReason = "iteration_limit"; truncated = true; break; }
+        if (plan.length >= maxBulkOverrides) { stoppedReason = "max_overrides"; truncated = true; break; }
+
+        // deterministic: 날짜 오름차순 → 조 → 근무코드명. "매번 fresh conflicts"를
+        // 기준으로 매 반복마다 새로 정렬한다(stale 순서 재사용 금지).
+        shortfalls = shortfalls.slice().sort(function (a, b) {
+            if (a.day !== b.day) return a.day - b.day;
+            if (a.group !== b.group) return String(a.group).localeCompare(String(b.group));
+            return String(a.scheduleCode).localeCompare(String(b.scheduleCode));
+        });
+
+        var picked = null;
+        var exhausted = false;
+        for (var si = 0; si < shortfalls.length && !picked; si++) {
+            var conflict = shortfalls[si];
+            var candidates = findOverrideCandidates(
+                workingDraft, conflict, input.employees, input.groups, input.autoConfig,
+                input.previousMonthWorkTail, input.previousMonthLastScheduleCode,
+                (input.config || {}).scheduleCodes
+            ).filter(function (c) { return !existingKeySet[c.uid + "|" + conflict.day]; }); // 중복 방지(이미 계획/기존 override된 셀 제외)
+
+            var best = null;
+            var exhaustReason = null; // ⚠️ time/iteration 초과를 구분해서 기억한다 —
+            // 이전에는 둘 다 truncated=true 하나로만 남기고 바깥에서 무조건
+            // "iteration_limit"으로 오해석해(Codex Gate 21 #2) 실제로는 시간
+            // 초과인데도 iteration_limit로 잘못 보고되는 결함이 있었다.
+            for (var ci = 0; ci < candidates.length; ci++) {
+                iterations++;
+                if (Date.now() - startTime > timeBudgetMs) { exhausted = true; exhaustReason = "time_limit"; truncated = true; break; }
+                if (iterations > maxIterations) { exhausted = true; exhaustReason = "iteration_limit"; truncated = true; break; }
+
+                var cand = candidates[ci];
+                var tempForced = workingForcedOverrides.concat([{
+                    uid: cand.uid, day: conflict.day, scheduleCode: conflict.scheduleCode,
+                    originalRequest: { type: "normal" },
+                    override: { changedBy: null, changedAt: 0, reason: "auto_schedule_conflict" }, // 실제 적용 시 UI가 authoritative 값으로 재작성
+                }]);
+                var tempDraft = generateDraft(Object.assign({}, input, { forcedOverrides: tempForced }));
+                var score = _scoreBulkCandidate(tempDraft, cand.uid, monthlyOffTarget, bulkOverrideCountSoFar);
+
+                if (!best || _compareBulkScores(score, best.score) < 0) {
+                    best = { cand: cand, tempDraft: tempDraft, tempForced: tempForced, score: score };
+                }
+            }
+            if (exhausted) { stoppedReason = exhaustReason; break; }
+            if (!best) continue; // 이 conflict엔 유효 후보가 없음 — 다음 conflict 시도
+
+            // "개선 없는 후보 적용 금지": 부족 좌석이 줄지 않고 전체 상태도 나아지지
+            // 않으면 이 conflict는 이번 라운드에서 건너뛰고 다음 conflict를 시도한다.
+            var beforeSeats = _totalShortageSeats(workingDraft);
+            var afterSeats = _totalShortageSeats(best.tempDraft);
+            var improved = afterSeats < beforeSeats || (afterSeats === beforeSeats && best.tempDraft.conflicts.length < workingDraft.conflicts.length);
+            if (!improved) continue;
+
+            picked = { conflict: conflict, cand: best.cand, tempDraft: best.tempDraft, tempForced: best.tempForced };
+        }
+
+        if (exhausted && !picked) break; // 반복/시간 상한 도달 — 지금까지의 plan으로 종료
+        if (!picked) { stoppedReason = "no_improving_candidate"; break; }
+
+        workingForcedOverrides = picked.tempForced;
+        existingKeySet[picked.cand.uid + "|" + picked.conflict.day] = true;
+        workingDraft = picked.tempDraft;
+        bulkOverrideCountSoFar[picked.cand.uid] = (bulkOverrideCountSoFar[picked.cand.uid] || 0) + 1;
+        plan.push({
+            uid: picked.cand.uid,
+            name: picked.cand.name || picked.cand.uid,
+            day: picked.conflict.day,
+            group: picked.conflict.group,
+            scheduleCode: picked.conflict.scheduleCode,
+            originalType: "normal",
+        });
+    }
+
+    var afterSummary = {
+        shortageSeats: _totalShortageSeats(workingDraft),
+        workShortfallCount: workingDraft.conflicts.filter(function (c) { return c.kind === "work_shortfall"; }).length,
+        monthlyOffShortfallCount: _monthlyOffShortfallCount(workingDraft),
+        totalConflicts: workingDraft.conflicts.length,
+    };
+
+    return {
+        plan: plan,
+        previewDraft: workingDraft,
+        beforeSummary: beforeSummary,
+        afterSummary: afterSummary,
+        unresolvedConflicts: workingDraft.conflicts,
+        stoppedReason: stoppedReason || "no_shortfall",
+        iterations: iterations,
+        truncated: truncated,
+    };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -982,6 +1305,23 @@ function revalidateDraft(draft, input) {
     // 14) 월 총 휴무 초과/미달 없음 (5번과 동일 기준 재확인 — 실패 목록만 별도 표기)
     push("월 총 휴무 초과/미달 없음", offMismatch.length === 0, offMismatch.join(", "));
 
+    // 15) 직원별 월 근무코드 제한 준수 — requested/auto/override 합산 최종 배정 기준.
+    var codeLimitViolations = [];
+    employees.forEach(function (emp) {
+        var counts = {};
+        for (var d5 = 1; d5 <= totalDays; d5++) {
+            var e5 = (grid[emp.uid] || {})[String(d5)];
+            if (e5 && e5.type === "schedule" && e5.scheduleCode) counts[e5.scheduleCode] = (counts[e5.scheduleCode] || 0) + 1;
+        }
+        Object.keys(counts).forEach(function (codeName) {
+            var limit = _scheduleCodeMonthlyLimit(scheduleCodes, codeName);
+            if (limit != null && counts[codeName] > limit) {
+                codeLimitViolations.push(emp.name + " " + codeName + " " + counts[codeName] + "/" + limit);
+            }
+        });
+    });
+    push("직원별 월 근무코드 제한 준수", codeLimitViolations.length === 0, codeLimitViolations.join(", "));
+
     var allPassed = checks.every(function (c) { return c.ok; });
     return { passed: allPassed, checks: checks };
 }
@@ -993,15 +1333,20 @@ return {
     isCodeLinkForbidden: isCodeLinkForbidden,
     _prevCodeAt: _prevCodeAt,
     _groupCodeQuota: _groupCodeQuota,
+    _scheduleCodeMonthlyLimit: _scheduleCodeMonthlyLimit,
+    _employeeScheduleCodeCount: _employeeScheduleCodeCount,
     _aggregateConflicts: _aggregateConflicts,
     generateDraft: generateDraft,
     findOverrideCandidates: findOverrideCandidates,
     applyOverride: applyOverride,
     revalidateDraft: revalidateDraft,
+    planBulkOverrides: planBulkOverrides,
     _autoSortEmployees: _autoSortEmployees,
     _fallbackBacktrack: _fallbackBacktrack,
     AUTO_SCHEDULE_FALLBACK_WINDOW: AUTO_SCHEDULE_FALLBACK_WINDOW,
     AUTO_SCHEDULE_FALLBACK_MAX_ITERATIONS: AUTO_SCHEDULE_FALLBACK_MAX_ITERATIONS,
+    AUTO_SCHEDULE_BULK_MAX_ITERATIONS: AUTO_SCHEDULE_BULK_MAX_ITERATIONS,
+    AUTO_SCHEDULE_BULK_TIME_BUDGET_MS: AUTO_SCHEDULE_BULK_TIME_BUDGET_MS,
 };
 
 })();

@@ -142,6 +142,15 @@ function isCodeLinkForbidden(codeLinkRestrictions, prevCode, todayCode) {
     if (!prevCode || !Array.isArray(codeLinkRestrictions)) return false;
     return codeLinkRestrictions.some(function (r) { return r && r.from === prevCode && r.to === todayCode; });
 }
+/** 근무코드의 "직원 1명당 월간 최대 배정 횟수" 상한 — js/auto-schedule-engine.js
+ *  _scheduleCodeMonthlyLimit과 정확히 동일한 semantics(미설정/코드 없음은 null=
+ *  상한 없음, 명시적 0은 0으로 그대로 반환 — 0을 unset으로 임의 취급하지 않는다). */
+function scheduleCodeMonthlyLimit(scheduleCodesAuth, codeName) {
+    const item = (scheduleCodesAuth || []).filter(function (c) { return c && c.name === codeName; })[0];
+    if (!item || !Object.prototype.hasOwnProperty.call(item, "limit") || item.limit == null) return null;
+    const n = Number(item.limit);
+    return Number.isFinite(n) ? n : null;
+}
 
 exports.confirmAutoSchedule = functions
     .runWith({ enforceAppCheck: false })
@@ -499,6 +508,30 @@ exports.confirmAutoSchedule = functions
             });
         });
     }
+
+    // 5-9) 직원별 월간 근무코드 상한(schedule code limit) — client가 보낸 값은
+    // 전혀 신뢰하지 않고, cfgSnap에서 방금 읽은 authoritative scheduleCodesAuth의
+    // limit과 sanitizedGrid(서버가 재구성한 최종 배정)만으로 재계산한다. client가
+    // payload/설정을 조작해도(예: 존재하지 않는 큰 limit 값을 끼워 넣는 시도) 여기서는
+    // scheduleCodesAuth만 사용하므로 우회 불가능하다.
+    validUids.forEach(function (uid) {
+        const days = sanitizedGrid[uid] || {};
+        const counts = {};
+        dayKeysExpected.forEach(function (dayStr) {
+            const e = days[dayStr];
+            if (e && e.type === "schedule" && e.scheduleCode) counts[e.scheduleCode] = (counts[e.scheduleCode] || 0) + 1;
+        });
+        Object.keys(counts).forEach(function (codeName) {
+            const limit = scheduleCodeMonthlyLimit(scheduleCodesAuth, codeName);
+            if (limit != null && counts[codeName] > limit) {
+                pushViolation({
+                    type: "SCHEDULE_CODE_MONTHLY_LIMIT_EXCEEDED", uid: uid, scheduleCode: codeName,
+                    expected: limit, actual: counts[codeName],
+                    message: "직원별 월간 근무코드 제한을 초과합니다.",
+                });
+            }
+        });
+    });
 
     if (violations.length > 0) {
         throw new functions.https.HttpsError(

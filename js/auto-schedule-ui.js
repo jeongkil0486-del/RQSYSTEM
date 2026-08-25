@@ -39,6 +39,9 @@ var _autoScheduleState = {
     confirmedJustNow: false,
     forcedOverrides: [],      // 관리자가 이미 [적용]한 신청휴무 조정 누적 목록 — 재편성 때마다 고정 제약으로 재주입
     selectedCandidate: null,  // 후보 이름을 클릭해 "선택만" 한 상태(아직 draft에 반영 안 됨) — {conflictIndex,uid,name,day,group,scheduleCode,originalType}
+    bulkCalculating: false,   // [신청휴무 일괄 자동조정] 계산 중(중복 클릭 방지 + "계산 중..." 표시)
+    bulkPlan: null,           // AutoScheduleEngine.planBulkOverrides() 결과 — [일괄 적용] 전까지는 live draft에 전혀 반영되지 않는 순수 미리보기
+    bulkPreviewActive: false, // true인 동안만 미리보기 패널을 표시
 };
 
 function _isAutoScheduleLocked() {
@@ -324,6 +327,9 @@ function openAutoScheduleModal() {
     _autoScheduleState.previousMonthTailLoaded = false;
     _autoScheduleState.forcedOverrides = [];
     _autoScheduleState.selectedCandidate = null;
+    _autoScheduleState.bulkCalculating = false;
+    _autoScheduleState.bulkPlan = null;
+    _autoScheduleState.bulkPreviewActive = false;
     var el = document.getElementById("autoScheduleModal");
     if (el) el.style.display = "flex";
     _renderAutoScheduleModal();
@@ -354,6 +360,9 @@ function generateAutoScheduleDraft() {
     _autoScheduleState.input = input;
     _autoScheduleState.forcedOverrides = []; // 새로 생성하면 이전 override 누적은 초기화
     _autoScheduleState.selectedCandidate = null;
+    _autoScheduleState.bulkCalculating = false;
+    _autoScheduleState.bulkPlan = null;
+    _autoScheduleState.bulkPreviewActive = false;
     _autoScheduleState.draft = AutoScheduleEngine.generateDraft(input);
     _autoScheduleState.revalidation = null;
     _renderAutoScheduleModal();
@@ -372,7 +381,8 @@ function _autoScheduleCandidatesFor(conflictIndex) {
     if (!conflict || conflict.kind !== "work_shortfall") return [];
     return AutoScheduleEngine.findOverrideCandidates(
         draft, conflict, input.employees, input.groups, input.autoConfig,
-        input.previousMonthWorkTail, input.previousMonthLastScheduleCode
+        input.previousMonthWorkTail, input.previousMonthLastScheduleCode,
+        (input.config || {}).scheduleCodes
     );
 }
 
@@ -454,6 +464,79 @@ function confirmApplyAutoScheduleCandidate() {
     _renderAutoScheduleModal();
 }
 
+/** [신청휴무 일괄 자동조정] — "1건 선택 → 가상 적용 → fresh generateDraft → fresh
+ *  conflicts → 다음 conflict 선택"을 반복하는 순수 계획(AutoScheduleEngine.planBulkOverrides)을
+ *  호출한다. 계산 결과는 bulkPlan에만 저장하고, [일괄 적용]을 누르기 전까지 live
+ *  draft/forcedOverrides/conflicts/revalidation은 절대 건드리지 않는다(side effect 0). */
+function startBulkAutoAdjustment() {
+    if (_isAutoScheduleLocked()) return;
+    if (_autoScheduleState.bulkCalculating) return; // 중복 클릭 방지
+    if (!_autoScheduleState.draft || !_autoScheduleState.input) return;
+
+    _autoScheduleState.bulkCalculating = true;
+    _autoScheduleState.bulkPlan = null;
+    _autoScheduleState.bulkPreviewActive = false;
+    _renderAutoScheduleModal();
+
+    // setTimeout으로 한 틱 양보해 "계산 중..." 표시가 실제로 먼저 그려지게 한다
+    // (계산 자체는 동기 함수라 양보 없이 바로 호출하면 화면이 멈춘 것처럼 보인다).
+    setTimeout(function () {
+        try {
+            var input = Object.assign({}, _autoScheduleState.input, { forcedOverrides: _autoScheduleState.forcedOverrides || [] });
+            var result = AutoScheduleEngine.planBulkOverrides(input);
+            _autoScheduleState.bulkPlan = result;
+            _autoScheduleState.bulkPreviewActive = true;
+        } catch (e) {
+            _autoScheduleState.bulkPlan = null;
+            _autoScheduleState.bulkPreviewActive = false;
+            alert("자동조정 계산 중 오류가 발생했습니다.");
+        } finally {
+            _autoScheduleState.bulkCalculating = false;
+            _renderAutoScheduleModal();
+        }
+    }, 10);
+}
+
+/** [취소] — 미리보기 상태만 지운다. draft/forcedOverrides/conflicts/revalidation은
+ *  전혀 변경되지 않는다(side effect 0). */
+function cancelBulkAutoAdjustment() {
+    _autoScheduleState.bulkPlan = null;
+    _autoScheduleState.bulkPreviewActive = false;
+    _renderAutoScheduleModal();
+}
+
+/** [일괄 적용] — 기존 forcedOverrides + 이번 계획의 override들을 합친 뒤, 그 최종
+ *  목록을 기준으로 fresh generateDraft를 다시 실행한다(미리보기 때 계산해둔
+ *  previewDraft 객체를 그대로 live draft로 복사하지 않는다 — 기존 manual 적용과
+ *  동일한 semantics를 보장하기 위함). */
+function confirmBulkAutoAdjustment() {
+    if (_isAutoScheduleLocked()) return;
+    var bulkPlan = _autoScheduleState.bulkPlan;
+    if (!bulkPlan || !bulkPlan.plan || !bulkPlan.plan.length) return;
+    if (!_autoScheduleState.input) return;
+
+    var newOverrides = bulkPlan.plan.map(function (item) {
+        return {
+            uid: item.uid,
+            day: item.day,
+            scheduleCode: item.scheduleCode,
+            originalRequest: { type: item.originalType },
+            override: { changedBy: currentUid, changedAt: Date.now(), reason: "auto_schedule_conflict" },
+        };
+    });
+
+    var forcedOverrides = (_autoScheduleState.forcedOverrides || []).concat(newOverrides);
+    var input = Object.assign({}, _autoScheduleState.input, { forcedOverrides: forcedOverrides });
+    _autoScheduleState.input = input;
+    _autoScheduleState.forcedOverrides = forcedOverrides;
+    _autoScheduleState.draft = AutoScheduleEngine.generateDraft(input); // 월 전체 재편성(re-solve)
+    _autoScheduleState.revalidation = null; // 이전 draft 기준 재검사 결과는 절대 재사용하지 않는다
+    _autoScheduleState.selectedCandidate = null;
+    _autoScheduleState.bulkPlan = null;
+    _autoScheduleState.bulkPreviewActive = false;
+    _renderAutoScheduleModal();
+}
+
 /** confirmAutoSchedule 콜러블에 보낼 employees 페이로드를 draft grid에서 조립한다.
  *  uid는 서버 검증/저장용 key로만 쓰이고, 화면(DOM)에는 displayName/group만 노출한다. */
 function _buildConfirmSchedulePayload() {
@@ -527,7 +610,61 @@ var AUTO_SCHEDULE_CONFLICT_LABEL = {
     group_off_cap: "조별 휴무 정원 초과",
     day_off_cap: "특정일 휴무 정원 초과",
     monthly_off_shortfall: "월 총 휴무일수 미달",
+    schedule_code_monthly_limit: "월 근무코드 제한 초과",
 };
+
+function _renderBulkAutoAdjustmentHtml(workShortfallCount) {
+    var html = "<div class='auto-schedule-bulk-trigger'>"
+        + "<span>근무 인원 부족이 " + workShortfallCount + "건 있습니다.</span>"
+        + " <button type='button' class='btn btn-primary-sm'" + (_autoScheduleState.bulkCalculating ? " disabled" : "") + " onclick='startBulkAutoAdjustment()'>"
+        + (_autoScheduleState.bulkCalculating ? "계산 중..." : "신청휴무 일괄 자동조정") + "</button>"
+        + "</div>";
+
+    if (_autoScheduleState.bulkCalculating) {
+        html += "<div class='auto-schedule-loading'>일괄 자동조정 계산 중...</div>";
+    }
+
+    if (_autoScheduleState.bulkPreviewActive && _autoScheduleState.bulkPlan) {
+        var bp = _autoScheduleState.bulkPlan;
+        html += "<div class='auto-schedule-bulk-preview'>";
+        html += "<div class='auto-schedule-bulk-preview-title'>신청휴무 일괄 자동조정 미리보기</div>";
+
+        if (bp.truncated) {
+            html += "<div class='auto-schedule-warning'>⚠ 자동조정 계산 한도에 도달했습니다. 지금까지 찾은 최선의 계획을 표시합니다.</div>";
+        }
+
+        if (!bp.plan.length) {
+            html += "<div class='auto-schedule-bulk-empty'>자동으로 조정 가능한 항목이 없습니다.</div>";
+        } else {
+            html += "<div class='auto-schedule-bulk-preview-list'>";
+            bp.plan.forEach(function (item) {
+                var origLabel = (typeof AUTO_SCHEDULE_CODE_LABEL !== "undefined" && AUTO_SCHEDULE_CODE_LABEL[item.originalType]) || item.originalType;
+                html += "<div class='auto-schedule-bulk-preview-item'>"
+                    + _escapeHtml(item.name) + " · " + _escapeHtml(item.group || "") + "조 · " + item.day + "일 · "
+                    + _escapeHtml(origLabel) + " → " + _escapeHtml(item.scheduleCode) + "근무"
+                    + "</div>";
+            });
+            html += "</div>";
+        }
+
+        html += "<div class='auto-schedule-bulk-summary-row'>조정 예정: " + bp.plan.length + "건</div>";
+        html += "<div class='auto-schedule-bulk-summary-row'>조정 전 근무 부족: " + bp.beforeSummary.shortageSeats + "자리 / 조정 후 예상: " + bp.afterSummary.shortageSeats + "자리</div>";
+        html += "<div class='auto-schedule-bulk-summary-row'>월 휴무 부족: " + bp.afterSummary.monthlyOffShortfallCount + "건</div>";
+        html += "<div class='auto-schedule-bulk-summary-row'>남은 전체 충돌: " + bp.afterSummary.totalConflicts + "건</div>";
+        if (bp.plan.length && bp.afterSummary.totalConflicts > 0) {
+            html += "<div class='auto-schedule-hint'>※ 자동으로 해결 가능한 항목까지만 조정했습니다. 나머지는 수동 조정이 필요합니다.</div>";
+        }
+
+        html += "<div class='feature-card-action' style='gap:8px;margin-top:8px;'>"
+            + "<button type='button' class='btn btn-secondary' onclick='cancelBulkAutoAdjustment()'>취소</button>"
+            + (bp.plan.length ? "<button type='button' class='btn btn-primary-sm' onclick='confirmBulkAutoAdjustment()'>일괄 적용</button>" : "")
+            + "</div>";
+
+        html += "</div>";
+    }
+
+    return html;
+}
 
 function _renderAutoScheduleModal() {
     var body = document.getElementById("autoScheduleModalBody");
@@ -567,6 +704,12 @@ function _renderAutoScheduleModal() {
         html += "<div class='auto-schedule-success-banner'>✅ 보호 모드(신청휴무 100% 유지)로 조건을 모두 만족하는 초안을 생성했습니다.</div>";
     } else {
         html += "<div class='auto-schedule-error-summary'>⚠ 신청휴무를 유지한 상태에서는 충족할 수 없는 조건이 " + draft.conflicts.length + "건 있습니다.</div>";
+
+        var workShortfallCount = draft.conflicts.filter(function (c) { return c.kind === "work_shortfall"; }).length;
+        if (workShortfallCount > 0 && !locked) {
+            html += _renderBulkAutoAdjustmentHtml(workShortfallCount);
+        }
+
         html += "<div class='auto-schedule-conflict-list'>";
         var sel = _autoScheduleState.selectedCandidate;
         draft.conflicts.forEach(function (c, idx) {

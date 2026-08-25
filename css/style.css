@@ -1986,6 +1986,54 @@ body {
   margin-right: 4px;
 }
 
+/* 신청휴무 일괄 자동조정 — 버튼/계산중 표시는 conflict 영역 상단에, 미리보기는
+   [일괄 적용]을 누르기 전까지 live draft에 어떤 영향도 주지 않는 순수 미리보기다. */
+.auto-schedule-bulk-trigger {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-main);
+  margin-bottom: 8px;
+}
+.auto-schedule-bulk-preview {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--text-main);
+}
+.auto-schedule-bulk-preview-title {
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+.auto-schedule-bulk-preview-list {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-card);
+  padding: 4px 8px;
+  margin-bottom: 8px;
+}
+.auto-schedule-bulk-preview-item {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+.auto-schedule-bulk-preview-item:last-child { border-bottom: none; }
+.auto-schedule-bulk-summary-row {
+  color: var(--text-sub);
+  padding: 1px 0;
+}
+.auto-schedule-bulk-empty {
+  color: var(--text-sub);
+  padding: 6px 0;
+}
+
 /* 비활성 버튼: 배경색이 그대로 남아 "누를 수 있는 버튼"처럼 보이지 않도록 명시적으로
    흐리게 처리 — 기존 .staff-filter-btn:disabled와 동일한 opacity 관례를 재사용. */
 .btn:disabled {
