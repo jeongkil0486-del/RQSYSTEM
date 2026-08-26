@@ -1258,6 +1258,125 @@ function _optimizeScheduleQuality(grid, employees, employeesByGroup, scheduleCod
     return { grid: grid, swapsApplied: swapsApplied, iterations: iterations, timedOut: timedOut, before: before, after: after, spreadByGroup: spreadByGroup };
 }
 
+var AUTO_SCHEDULE_AP_REBALANCE_MAX_ITERATIONS = 200000;
+var AUTO_SCHEDULE_AP_REBALANCE_MAX_PASSES = 6;
+
+/**
+ * A/P CODE-ONLY REBALANCE PASS — 실제 Production runtime JSON으로 확정된 root
+ * cause 수정: hard-invalid draft(group_off_cap/monthly_off_minimum_shortfall 등
+ * blocking conflict 존재)에서는 _optimizeScheduleQuality 전체가 아예 실행되지
+ * 않아(qualityEligible=false) A/P 편중을 교정할 기회 자체가 없었다. 이 pass는
+ * 그 gating과 **완전히 독립적으로** 항상 실행되며, 오직 "같은 날짜/같은 조에서
+ * 이미 auto로 배정된 A 근무자 ↔ P 근무자의 코드만 맞바꾸는" 것만 한다 —
+ * 휴무/근무 여부(work/non-work pattern) 자체는 절대 바꾸지 않으므로 구조적으로:
+ *   - 그날 A 근무 인원수 / P 근무 인원수 / 전체 근무 인원수 불변
+ *   - 직원별 근무일수/휴무일수 불변 → monthly off count 불변
+ *   - day/group off cap, monthly minimum, work_shortfall, isolated work 전부 불변
+ * 이라는 것이 swap 정의 자체에서 보장된다(재검증이 아니라 구조적 불변식). 따라서
+ * group_off_cap/monthly_off_minimum_shortfall 같은 "off/staffing" 위반이 이미
+ * 존재하는 draft에서 실행해도 그 위반을 절대 악화시키지 않는다 — 기존 전체
+ * quality pass의 blocking gating 정책은 그대로 두고(약화시키지 않음), 이 pass만
+ * 별도로 독립 허용한다.
+ */
+function _optimizeApCodeOnly(grid, employees, employeesByGroup, scheduleCodes, autoConfig, totalDays, prevTail, prevLastCode, balancedTargets) {
+    var codeLinkRestrictions = (autoConfig || {}).codeLinkRestrictions || [];
+    var maxConsecutiveWork = Number((autoConfig || {}).maxConsecutiveWork || 0);
+    var codes = AUTO_SCHEDULE_QUALITY_FAIRNESS_CODES; // ["A","P"]
+
+    var iterations = 0, swapsApplied = 0, timedOut = false;
+    var initialFairness = _computeGroupCodeFairness(grid, employeesByGroup, codes, balancedTargets);
+    var before = { fairness: initialFairness.totalPenalty, fairnessExcess: initialFairness.totalExcessPenalty };
+    var isolatedBefore = _countIsolatedWorkDays(grid, employees, totalDays, prevTail).total;
+
+    var groupNames = Object.keys(employeesByGroup).sort();
+
+    outer:
+    for (var pass = 0; pass < AUTO_SCHEDULE_AP_REBALANCE_MAX_PASSES; pass++) {
+        var changedThisPass = false;
+        for (var day = 1; day <= totalDays; day++) {
+            var dayStr = String(day);
+            for (var gi = 0; gi < groupNames.length; gi++) {
+                var group = groupNames[gi];
+                var members = employeesByGroup[group] || [];
+                for (var i = 0; i < members.length; i++) {
+                    for (var j = i + 1; j < members.length; j++) {
+                        iterations++;
+                        if (iterations > AUTO_SCHEDULE_AP_REBALANCE_MAX_ITERATIONS) { timedOut = true; break outer; }
+
+                        var empA = members[i], empB = members[j];
+                        var entryA = (grid[empA.uid] || {})[dayStr];
+                        var entryB = (grid[empB.uid] || {})[dayStr];
+                        if (!entryA || !entryB) continue;
+                        if (_repairIsFixedCell(entryA) || _repairIsFixedCell(entryB)) continue;
+                        // ⚠️ A↔P 코드만 교환 — 반드시 정확히 {A,P} 조합일 때만 후보로 삼는다
+                        // (다른 코드(L 등)나 normal/off는 이 pass의 대상이 아니다 — work/
+                        // non-work pattern을 절대 바꾸지 않는다는 구조적 불변식을 지키기
+                        // 위해 "둘 다 schedule 타입이고 정확히 A와 P"인 경우로 제한한다).
+                        var isApPair = entryA.type === "schedule" && entryB.type === "schedule" &&
+                            ((entryA.scheduleCode === "A" && entryB.scheduleCode === "P") ||
+                             (entryA.scheduleCode === "P" && entryB.scheduleCode === "A"));
+                        if (!isApPair) continue;
+
+                        var origA = entryA, origB = entryB;
+                        grid[empA.uid][dayStr] = origB;
+                        grid[empB.uid][dayStr] = origA;
+
+                        var hardOk = true;
+                        if (codeLinkRestrictions.length && !_fullMonthCodeLinkOk(grid, [empA, empB], totalDays, codeLinkRestrictions, prevLastCode)) hardOk = false;
+                        if (hardOk) {
+                            [empA, empB].some(function (emp) {
+                                return ["A", "P"].some(function (codeName) {
+                                    var limit = _scheduleCodeMonthlyLimit(scheduleCodes, codeName);
+                                    if (limit == null) return false;
+                                    if (_employeeScheduleCodeCount(grid, emp.uid, codeName) > limit) { hardOk = false; return true; }
+                                    return false;
+                                });
+                            });
+                        }
+                        // work→work 교환이므로 streak는 구조적으로 불변이지만, 기존 helper로
+                        // 한 번 더 재확인한다(스펙 명시 — invariant 재검증).
+                        if (hardOk && maxConsecutiveWork > 0 && !_fullMonthStreakOk(grid, [empA, empB], totalDays, prevTail, maxConsecutiveWork)) hardOk = false;
+
+                        if (!hardOk) {
+                            grid[empA.uid][dayStr] = origA;
+                            grid[empB.uid][dayStr] = origB;
+                            continue;
+                        }
+
+                        var groupAfter = _computeGroupCodeFairness(grid, employeesByGroup, codes, balancedTargets).byGroup[group];
+                        var excessAfter = groupAfter.groupExcessPenalty, rawAfter = groupAfter.groupPenalty;
+                        grid[empA.uid][dayStr] = origA; grid[empB.uid][dayStr] = origB;
+                        var groupBefore = _computeGroupCodeFairness(grid, employeesByGroup, codes, balancedTargets).byGroup[group];
+                        var excessBefore = groupBefore.groupExcessPenalty, rawBefore = groupBefore.groupPenalty;
+                        grid[empA.uid][dayStr] = origB; grid[empB.uid][dayStr] = origA;
+
+                        var accept = (excessAfter < excessBefore) || (excessAfter === excessBefore && rawAfter < rawBefore);
+
+                        if (accept) {
+                            swapsApplied++;
+                            changedThisPass = true;
+                        } else {
+                            grid[empA.uid][dayStr] = origA;
+                            grid[empB.uid][dayStr] = origB;
+                        }
+                    }
+                }
+            }
+        }
+        if (!changedThisPass) break;
+    }
+
+    var finalFairness = _computeGroupCodeFairness(grid, employeesByGroup, codes, balancedTargets);
+    var isolatedAfter = _countIsolatedWorkDays(grid, employees, totalDays, prevTail).total;
+    var after = { fairness: finalFairness.totalPenalty, fairnessExcess: finalFairness.totalExcessPenalty };
+
+    return {
+        grid: grid, swapsApplied: swapsApplied, iterations: iterations, timedOut: timedOut,
+        before: before, after: after,
+        isolatedBefore: isolatedBefore, isolatedAfter: isolatedAfter, // 반드시 동일해야 함(구조적 불변식)
+    };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // 4) 메인 생성 함수 (보호 모드 — 고정 신청 절대 변경 없음)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1752,7 +1871,35 @@ function generateDraft(input) {
         }
     }
 
-    return { ok: ok, totalDays: totalDays, grid: grid, conflicts: _aggregateConflicts(conflicts), warnings: warnings, monthlyOffCount: monthlyOffCount, greedyFailed: greedyFailed, fallback: fallback, repair: repair, quality: quality };
+    // ⚠️ A/P CODE-ONLY REBALANCE PASS — 기존 전체 quality gating(qualityEligible)과
+    // 완전히 독립적으로 항상 실행한다. group_off_cap/monthly_off_minimum_shortfall
+    // 같은 blocking hard conflict가 있어 위의 전체 quality pass가 통째로 skip된
+    // 경우에도, 이 pass만은 실행되어야 한다 — 오직 같은 날짜/조 안의 이미 auto로
+    // 배정된 A↔P 코드만 맞바꾸므로 off/근무 구조(work_shortfall, group_off_cap,
+    // monthly minimum 등 기존 hard conflict)를 절대 악화시키지 않는다는 것이
+    // swap 정의 자체에서 구조적으로 보장된다(주석 상단 _optimizeApCodeOnly 설명
+    // 참고). 기존 전체 quality의 blocking 정책 자체는 전혀 약화시키지 않는다.
+    var apRebalance = {
+        attempted: true, swapsApplied: 0, iterations: 0, timedOut: false,
+        fairnessExcessBefore: null, fairnessExcessAfter: null,
+        rawFairnessBefore: null, rawFairnessAfter: null,
+        isolatedBefore: null, isolatedAfter: null,
+    };
+    var apResult = _optimizeApCodeOnly(grid, employees, employeesByGroup, scheduleCodes, autoConfig, totalDays, prevTail, prevLastCode, balancedTargets);
+    grid = apResult.grid;
+    apRebalance.swapsApplied = apResult.swapsApplied;
+    apRebalance.iterations = apResult.iterations;
+    apRebalance.timedOut = apResult.timedOut;
+    apRebalance.fairnessExcessBefore = apResult.before.fairnessExcess;
+    apRebalance.fairnessExcessAfter = apResult.after.fairnessExcess;
+    apRebalance.rawFairnessBefore = apResult.before.fairness;
+    apRebalance.rawFairnessAfter = apResult.after.fairness;
+    apRebalance.isolatedBefore = apResult.isolatedBefore;
+    apRebalance.isolatedAfter = apResult.isolatedAfter;
+    // A↔P는 work→work 교환이므로 monthlyOffCount/warnings는 구조적으로 절대
+    // 바뀌지 않는다(재계산 불필요 — invariant).
+
+    return { ok: ok, totalDays: totalDays, grid: grid, conflicts: _aggregateConflicts(conflicts), warnings: warnings, monthlyOffCount: monthlyOffCount, greedyFailed: greedyFailed, fallback: fallback, repair: repair, quality: quality, apRebalance: apRebalance };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2470,6 +2617,9 @@ return {
     _computeGroupCodeFairness: _computeGroupCodeFairness,
     _computeBalancedCodeTargets: _computeBalancedCodeTargets,
     _optimizeScheduleQuality: _optimizeScheduleQuality,
+    _optimizeApCodeOnly: _optimizeApCodeOnly,
+    AUTO_SCHEDULE_AP_REBALANCE_MAX_ITERATIONS: AUTO_SCHEDULE_AP_REBALANCE_MAX_ITERATIONS,
+    AUTO_SCHEDULE_AP_REBALANCE_MAX_PASSES: AUTO_SCHEDULE_AP_REBALANCE_MAX_PASSES,
     AUTO_SCHEDULE_QUALITY_MAX_ITERATIONS: AUTO_SCHEDULE_QUALITY_MAX_ITERATIONS,
     AUTO_SCHEDULE_QUALITY_FAIRNESS_BAND: AUTO_SCHEDULE_QUALITY_FAIRNESS_BAND,
     _qualityTupleBetter: _qualityTupleBetter,
