@@ -911,6 +911,9 @@ function _aggregateConflicts(conflicts) {
 var AUTO_SCHEDULE_QUALITY_MAX_ITERATIONS = 400000;
 var AUTO_SCHEDULE_QUALITY_MAX_PASSES = 6;
 var AUTO_SCHEDULE_QUALITY_FAIRNESS_CODES = ["A", "P"];
+// target ±이 정도는 이미 "충분히 balanced"로 간주한다(Codex High #2) — 정확히
+// target과 일치해야만 excess=0인 것이 아니라, 이 허용폭 안의 편차는 전부 excess=0.
+var AUTO_SCHEDULE_QUALITY_FAIRNESS_BAND = 1;
 
 /** day가 유효 범위 밖이면 빈 배열. 그 외에는 [day-1(있으면), day, day+1(있으면)]. */
 function _isolatedWorkWindowDays(day, totalDays) {
@@ -977,15 +980,51 @@ function _collectWorkBlocks(grid, uid, totalDays) {
 }
 
 /**
- * 조별 A/P 편중도를 계산한다. "그룹 평균에서 얼마나 벗어났는지"를 코드별로
- * 합산하는 raw-count 편차 방식을 쓴다(스펙이 제시한 두 방식 중 이 구조에서 더
- * 안정적인 쪽 — swap 한 번이 그룹 전체 합계(GA/GP)를 바꾸지 않으므로 그룹
- * 평균이 고정된 채로 두 당사자만의 편차 변화만 비교하면 되어 계산이 가볍고
- * 결정론적이다). L은 수요가 적고 hard cap이 낮아 분모에 섞지 않는다(스펙 명시).
+ * 조별·코드별(A/P) "직원별 목표 개수"를 계산한다(water-filling / largest-remainder
+ * 방식). fixedCounts(신청/override로 이미 확정된 개수, immutable floor)를 각
+ * 직원의 시작 target으로 두고, 남은 필요량(requiredTotal - fixed 합)을 codeLimit
+ * 미만인 직원 중 "현재 target이 가장 낮은" 사람부터 1개씩 배분한다 — 동률이면
+ * 항상 동일한 순서(sortOrder→uid)로만 tie-break하므로 완전히 결정론적이다.
+ * 최종 target 합은 (배분 가능한 한) requiredTotal과 정확히 일치한다(전원 codeLimit
+ * 도달로 더 배분할 수 없으면 합이 모자랄 수 있음 — 이는 config 자체의 한계이지
+ * 이 함수의 결함이 아니다).
  */
-function _computeGroupCodeFairness(grid, employeesByGroup, codes) {
+function _computeBalancedCodeTargets(members, requiredTotal, fixedCounts, codeLimit) {
+    var targets = {};
+    (members || []).forEach(function (emp) { targets[emp.uid] = Number((fixedCounts || {})[emp.uid] || 0); });
+    var fixedSum = (members || []).reduce(function (s, emp) { return s + targets[emp.uid]; }, 0);
+    var remaining = Math.max(0, Number(requiredTotal || 0) - fixedSum);
+
+    var ordered = (members || []).slice().sort(function (a, b) {
+        var ao = a.sortOrder != null ? Number(a.sortOrder) : Infinity;
+        var bo = b.sortOrder != null ? Number(b.sortOrder) : Infinity;
+        if (ao !== bo) return ao - bo;
+        return String(a.uid).localeCompare(String(b.uid));
+    });
+
+    for (var i = 0; i < remaining; i++) {
+        var eligible = ordered.filter(function (emp) { return codeLimit == null || targets[emp.uid] < codeLimit; });
+        if (!eligible.length) break; // 전원 codeLimit 도달 — config 한계상 더 배분 불가
+        var best = eligible[0];
+        for (var k = 1; k < eligible.length; k++) {
+            if (targets[eligible[k].uid] < targets[best.uid]) best = eligible[k];
+        }
+        targets[best.uid]++;
+    }
+    return targets;
+}
+
+/**
+ * 조별 A/P 편중도를 계산한다. targets가 주어지면(권장 경로) 직원별 "목표 개수"
+ * 대비 편차 제곱(squared deviation)을 penalty로 쓴다 — 극단적 편중(A13처럼
+ * target에서 크게 벗어난 값)을 단순 절대편차보다 훨씬 강하게 억제한다(스펙
+ * 명시: A13 penalty=25 vs A9 penalty=1). targets가 없으면(하위호환 — 기존
+ * 호출부/테스트) 기존 "그룹 평균 대비 절대편차" 방식으로 fallback한다.
+ * L은 수요가 적고 hard cap이 낮아 분모에 섞지 않는다(스펙 명시).
+ */
+function _computeGroupCodeFairness(grid, employeesByGroup, codes, targets) {
     codes = codes || AUTO_SCHEDULE_QUALITY_FAIRNESS_CODES;
-    var result = { byGroup: {}, totalPenalty: 0 };
+    var result = { byGroup: {}, totalPenalty: 0, totalExcessPenalty: 0 };
     Object.keys(employeesByGroup).forEach(function (group) {
         var members = employeesByGroup[group] || [];
         var counts = {};
@@ -1008,36 +1047,92 @@ function _computeGroupCodeFairness(grid, employeesByGroup, codes) {
             var vals = members.map(function (emp) { return counts[emp.uid][code]; });
             minMax[code] = vals.length ? { min: Math.min.apply(null, vals), max: Math.max.apply(null, vals) } : { min: 0, max: 0 };
         });
+        var groupTargets = targets && targets[group];
         var penaltyByEmp = {};
+        var excessPenaltyByEmp = {};
         var groupPenalty = 0;
+        var groupExcessPenalty = 0;
+        var allowed = AUTO_SCHEDULE_QUALITY_FAIRNESS_BAND;
         members.forEach(function (emp) {
-            var p = 0;
-            codes.forEach(function (code) { p += Math.abs(counts[emp.uid][code] - avg[code]); });
+            var p = 0, pExcess = 0;
+            codes.forEach(function (code) {
+                if (groupTargets && groupTargets[code]) {
+                    var t = groupTargets[code][emp.uid];
+                    var dev = counts[emp.uid][code] - (t == null ? avg[code] : t);
+                    p += dev * dev;
+                    // ⚠️ Codex High #2 수정 — "target과 정확히 일치"가 아니라 "target
+                    // ±allowedDeviation 이내는 이미 충분히 balanced"로 본다. band를
+                    // 벗어난 부분만 강하게(제곱) penalty를 준다 — A13(target8, 편차5,
+                    // allowed1 → excess4 → penalty16)처럼 심한 편중만 강하게 억제하고,
+                    // ±1 이내(예: target8일 때 7/8/9)는 excess=0으로 취급해 quality
+                    // pass가 isolated-work 개선에 자유롭게 쓸 수 있는 여유를 남긴다.
+                    var absDev = Math.abs(dev);
+                    var excess = Math.max(0, absDev - allowed);
+                    pExcess += excess * excess;
+                } else {
+                    p += Math.abs(counts[emp.uid][code] - avg[code]);
+                }
+            });
             penaltyByEmp[emp.uid] = p;
+            excessPenaltyByEmp[emp.uid] = pExcess;
             groupPenalty += p;
+            groupExcessPenalty += pExcess;
         });
-        result.byGroup[group] = { demand: groupTotals, avg: avg, counts: counts, penaltyByEmp: penaltyByEmp, groupPenalty: groupPenalty, minMax: minMax };
+        result.byGroup[group] = {
+            demand: groupTotals, avg: avg, counts: counts, targets: groupTargets || null,
+            penaltyByEmp: penaltyByEmp, groupPenalty: groupPenalty,
+            excessPenaltyByEmp: excessPenaltyByEmp, groupExcessPenalty: groupExcessPenalty,
+            minMax: minMax,
+        };
         result.totalPenalty += groupPenalty;
+        result.totalExcessPenalty += groupExcessPenalty;
     });
     return result;
 }
 
 /**
  * hard-valid draft 위에서 same-day identity swap을 반복 적용해 1일 고립근무와
- * A/P 편중을 줄인다(우선순위: 고립근무 감소 > A/P fairness 개선 — 스펙 명시).
- * 매 swap 후보마다 두 당사자의 hard constraint를 재확인하고, 위반이 있으면
- * 즉시 원복한다. exact staffing/그룹·날짜 정원은 same-day swap 구조상 항상
- * 그대로 유지되므로 별도 재검증이 필요 없다(주석 상단 설명 참고).
+ * A/P 편중을 줄인다.
+ *
+ * ⚠️ Codex High #2 수정 — 이전의 strict PARETO("raw fairness가 조금도 악화되면
+ * 무조건 거부")는 fairness가 이미 0(완벽)인 상태에서 고립근무 개선에 필요한
+ * 대부분의 swap을 막아버렸다(Production 대비 isolated 84→5였던 것이 95→72로
+ * 대폭 악화). 실제 요구는 "A/P를 정확히 target에 고정"이 아니라 "target
+ * ±AUTO_SCHEDULE_QUALITY_FAIRNESS_BAND 정도의 합리적 균형을 유지하면서 고립근무도
+ * 최소화"이므로, fairness를 두 단계로 나눈다:
+ *   1) excess penalty  — target 허용폭을 벗어난 정도만 제곱으로 강하게 벌점
+ *      (A13/P4 같은 심한 편중을 막는 진짜 gate)
+ *   2) raw penalty     — 기존 제곱편차(허용폭 안에서도 미세하게 더 균등하게)
+ * 채택 기준은 (excessPenalty, isolatedWorkCount, rawPenalty) 3중 lexicographic
+ * minimize다 — excess가 이미 0(모두 band 안)이면 그 상태를 유지하는 한(excess
+ * 재악화 없음) isolated 개선을 자유롭게 채택할 수 있고, excess가 실제로 줄어드는
+ * 후보는 isolated가 그대로여도 최우선 채택된다. excess가 늘어나는 후보는 isolated가
+ * 아무리 좋아져도 무조건 거부한다(TEST G: A13/P4류 재발 방지). 매 swap 후보마다
+ * 두 당사자의 hard constraint를 재확인하고, 위반이 있으면 즉시 원복한다. exact
+ * staffing/그룹·날짜 정원은 same-day swap 구조상 항상 그대로 유지되므로 별도
+ * 재검증이 필요 없다(주석 상단 설명 참고).
+ *
+ * balancedTargets(선택): { [group]: { [code]: { [uid]: target } } } —
+ * _computeBalancedCodeTargets로 미리 계산한 조/코드별 직원 목표.
  */
-function _optimizeScheduleQuality(grid, employees, employeesByGroup, scheduleCodes, autoConfig, totalDays, prevTail, prevLastCode, monthlyOffMinimum) {
+/** tuple([excess, isolated, raw])이 lexicographically 더 작으면(=더 좋으면) true. */
+function _qualityTupleBetter(newT, oldT) {
+    if (newT[0] !== oldT[0]) return newT[0] < oldT[0];
+    if (newT[1] !== oldT[1]) return newT[1] < oldT[1];
+    return newT[2] < oldT[2];
+}
+
+function _optimizeScheduleQuality(grid, employees, employeesByGroup, scheduleCodes, autoConfig, totalDays, prevTail, prevLastCode, monthlyOffMinimum, balancedTargets) {
     var maxConsecutiveWork = Number((autoConfig || {}).maxConsecutiveWork || 0);
     var codeLinkRestrictions = (autoConfig || {}).codeLinkRestrictions || [];
     var codes = AUTO_SCHEDULE_QUALITY_FAIRNESS_CODES;
 
     var iterations = 0, swapsApplied = 0, timedOut = false;
+    var initialFairness = _computeGroupCodeFairness(grid, employeesByGroup, codes, balancedTargets);
     var before = {
         isolated: _countIsolatedWorkDays(grid, employees, totalDays, prevTail).total,
-        fairness: _computeGroupCodeFairness(grid, employeesByGroup, codes).totalPenalty,
+        fairness: initialFairness.totalPenalty,
+        fairnessExcess: initialFairness.totalExcessPenalty,
     };
 
     var groupNames = Object.keys(employeesByGroup).sort();
@@ -1107,22 +1202,27 @@ function _optimizeScheduleQuality(grid, employees, employeesByGroup, scheduleCod
                             if (_isIsolatedWorkDay(grid, empB.uid, d, totalDays, prevTail)) isoAfter++;
                         });
 
+                        // ⚠️ Codex High #2 수정 — excess/raw fairness를 모두 계산해서
+                        // (excessPenalty, isolatedWorkCount, rawPenalty) 3중 lexicographic
+                        // tuple로 채택 여부를 판정한다(주석 상단 설명 참고).
+                        var groupPenaltyKey = groupNames[gi];
+                        grid[empA.uid][dayStr] = origA; grid[empB.uid][dayStr] = origB;
+                        var groupBefore = _computeGroupCodeFairness(grid, employeesByGroup, codes, balancedTargets).byGroup[groupPenaltyKey];
+                        var excessBefore = groupBefore.groupExcessPenalty, rawBefore = groupBefore.groupPenalty;
+                        grid[empA.uid][dayStr] = origB; grid[empB.uid][dayStr] = origA;
+                        var groupAfter = _computeGroupCodeFairness(grid, employeesByGroup, codes, balancedTargets).byGroup[groupPenaltyKey];
+                        var excessAfter = groupAfter.groupExcessPenalty, rawAfter = groupAfter.groupPenalty;
+
                         var accept;
-                        if (isoAfter < isoBefore) {
-                            accept = true; // 고립근무 실제 감소 — normal<->schedule 비용을 지불할 가치가 있음
-                        } else if (isoAfter > isoBefore) {
-                            accept = false;
-                        } else if (crossType) {
-                            // 고립근무 변화 없음(동률) + 교차 타입 swap → 휴무 사용량만 흔들고
-                            // 얻는 게 없으므로 거부(권장휴무 target 균형 보호, TEST 4/7 회귀 방지).
-                            accept = false;
+                        if (crossType) {
+                            // normal<->schedule 교차 swap은 두 당사자의 월 휴무 사용량을 서로
+                            // 반대 방향으로 바꾼다(권장휴무 target 균형을 흔들 수 있음) — 고립근무가
+                            // "실제로" 줄어들 때만 이 비용을 지불한다(기존 정책 유지). excess가
+                            // 악화되지 않을 때만 허용한다(band 밖으로 밀어내는 교차 swap 방지).
+                            accept = (isoAfter < isoBefore) && (excessAfter <= excessBefore);
                         } else {
-                            var groupPenaltyKey = groupNames[gi];
-                            grid[empA.uid][dayStr] = origA; grid[empB.uid][dayStr] = origB;
-                            var fBefore = _computeGroupCodeFairness(grid, employeesByGroup, codes).byGroup[groupPenaltyKey].groupPenalty;
-                            grid[empA.uid][dayStr] = origB; grid[empB.uid][dayStr] = origA;
-                            var fAfter = _computeGroupCodeFairness(grid, employeesByGroup, codes).byGroup[groupPenaltyKey].groupPenalty;
-                            accept = fAfter < fBefore;
+                            // same-type(코드만 교체) — 휴무 사용량은 절대 바뀌지 않는다.
+                            accept = _qualityTupleBetter([excessAfter, isoAfter, rawAfter], [excessBefore, isoBefore, rawBefore]);
                         }
 
                         if (accept) {
@@ -1139,11 +1239,23 @@ function _optimizeScheduleQuality(grid, employees, employeesByGroup, scheduleCod
         if (!changedThisPass) break;
     }
 
+    var finalFairness = _computeGroupCodeFairness(grid, employeesByGroup, codes, balancedTargets);
     var after = {
         isolated: _countIsolatedWorkDays(grid, employees, totalDays, prevTail).total,
-        fairness: _computeGroupCodeFairness(grid, employeesByGroup, codes).totalPenalty,
+        fairness: finalFairness.totalPenalty,
+        fairnessExcess: finalFairness.totalExcessPenalty,
     };
-    return { grid: grid, swapsApplied: swapsApplied, iterations: iterations, timedOut: timedOut, before: before, after: after };
+    // spread(그룹별 A/P max-min) — hard gate는 아니지만 진단/acceptance 보고용으로
+    // 노출한다(스펙 명시: "가능하면 spread<=2, 불가피하면 최소 가능한 spread").
+    var spreadByGroup = {};
+    Object.keys(finalFairness.byGroup).forEach(function (group) {
+        spreadByGroup[group] = {};
+        codes.forEach(function (code) {
+            var mm = finalFairness.byGroup[group].minMax[code];
+            spreadByGroup[group][code] = mm.max - mm.min;
+        });
+    });
+    return { grid: grid, swapsApplied: swapsApplied, iterations: iterations, timedOut: timedOut, before: before, after: after, spreadByGroup: spreadByGroup };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1228,6 +1340,37 @@ function generateDraft(input) {
         });
     });
 
+    // ⚠️ A/P balanced target — 조/코드(A,P)별 "직원별 목표 개수"를 greedy 시작 전에
+    // 미리 계산한다. 신청/override로 이미 확정된 개수(위 monthlyCodeCount, 이 시점엔
+    // 고정 배정만 반영된 상태)를 immutable floor로 삼고, 남은 월간 필요량(quota
+    // 합계 - fixed 합)을 codeLimit 이내에서 가장 목표가 낮은 직원부터 water-filling으로
+    // 배분한다 — "그룹 평균에서 얼마나 벗어났는가"가 아니라 "이 직원이 원래 몇 개를
+    // 받아야 하는가"를 먼저 정해두고 greedy가 그 목표를 향해 배정하게 만든다(후처리
+    // swap만으로는 A13/P4 같은 극단적 양극화를 충분히 풀지 못하는 문제의 근본 수정).
+    var balancedTargets = {}; // { [group]: { [code]: { [uid]: target } } }
+    Object.keys(employeesByGroup).forEach(function (group) {
+        var members = employeesByGroup[group];
+        balancedTargets[group] = {};
+        AUTO_SCHEDULE_QUALITY_FAIRNESS_CODES.forEach(function (code) {
+            var requiredTotal = 0;
+            for (var d = 1; d <= totalDays; d++) {
+                var q = _groupCodeQuota(config, d, group, code);
+                if (q != null) requiredTotal += q;
+            }
+            var fixedCounts = {};
+            members.forEach(function (emp) { fixedCounts[emp.uid] = monthlyCodeCount[emp.uid][code] || 0; });
+            var codeLimit = _scheduleCodeMonthlyLimit(scheduleCodes, code);
+            balancedTargets[group][code] = _computeBalancedCodeTargets(members, requiredTotal, fixedCounts, codeLimit);
+        });
+    });
+    function codeTargetDeficit(empKey, group, codeName) {
+        var groupTargets = balancedTargets[group] && balancedTargets[group][codeName];
+        if (!groupTargets) return 0; // A/P가 아닌 코드는 target 개념 없음(기존 offDeficit만 사용)
+        var target = groupTargets[empKey];
+        if (target == null) return 0;
+        return target - (monthlyCodeCount[empKey][codeName] || 0);
+    }
+
     // ⚠️ 균형 배치용 — "월 휴무 목표까지 남은 여유(deficit)가 적은 사람"부터 우선
     // 근무를 배정한다. 단순 누적 근무일수 기준으로는, 이미 고정 신청(연차/청원/휴무)이
     // 있어 근무 경쟁에 늦게 합류하는 직원이 계속 "근무일수가 적다"고 오판되어 남은
@@ -1286,11 +1429,21 @@ function generateDraft(input) {
                 var needed = quota - already;
                 if (needed <= 0) return;
 
-                // 근무 배정 우선순위: 휴무 목표까지 남은 deficit이 적은 사람 우선(이미
-                // 휴무를 상대적으로 많이 채운 사람이 근무를 맡는다), 동률이면 sortOrder.
+                // ⚠️ Codex High #1 회귀 수정 — codeTargetDeficit을 PRIMARY로 쓰면
+                // A/P 균형을 맞추는 것이 기존 월 휴무 배분(offDeficit)보다 항상
+                // 우선되어, 월 중간에 휴무 배분이 비정상적으로 굳어 월말에 근무도
+                // 휴무도 배정 불가한 직원이 생기는 constructive infeasibility를
+                // 유발했다(Production에서는 완성되던 스케줄이 incomplete로 회귀).
+                // "스케줄을 끝까지 완성시키는 안정성"이 항상 A/P 균형보다 우선해야
+                // 하므로, Production 원본 그대로 offDeficit을 PRIMARY로 복원하고
+                // codeTargetDeficit은 offDeficit이 동률인 후보 사이의 SECONDARY
+                // tie-break로만 사용한다(A/P balanced target 기능 자체는 유지 —
+                // TEST C: offDeficit 동률일 때 target deficit 큰 직원이 우선됨).
                 var candidates = members.slice().sort(function (a, b) {
                     var d = offDeficit(a.uid) - offDeficit(b.uid);
                     if (d !== 0) return d;
+                    var dCode = codeTargetDeficit(b.uid, group, codeName) - codeTargetDeficit(a.uid, group, codeName);
+                    if (dCode !== 0) return dCode;
                     return (a.sortOrder || 0) - (b.sortOrder || 0);
                 });
 
@@ -1552,10 +1705,15 @@ function generateDraft(input) {
     var hasBlockingHardConflict = conflicts.some(function (c) { return !SHORTAGE_LIKE_CONFLICT_KINDS[c.kind]; });
     var qualityEligible = !hasBlockingHardConflict;
 
-    var quality = { attempted: false, swapsApplied: 0, iterations: 0, timedOut: false, isolatedBefore: null, isolatedAfter: null, fairnessBefore: null, fairnessAfter: null };
+    var quality = {
+        attempted: false, swapsApplied: 0, iterations: 0, timedOut: false,
+        isolatedBefore: null, isolatedAfter: null, fairnessBefore: null, fairnessAfter: null,
+        fairnessExcessBefore: null, fairnessExcessAfter: null,
+        balancedTargets: balancedTargets, spreadByGroup: null,
+    };
     if (qualityEligible) {
         quality.attempted = true;
-        var qResult = _optimizeScheduleQuality(grid, employees, employeesByGroup, scheduleCodes, autoConfig, totalDays, prevTail, prevLastCode, monthlyOffMinimum);
+        var qResult = _optimizeScheduleQuality(grid, employees, employeesByGroup, scheduleCodes, autoConfig, totalDays, prevTail, prevLastCode, monthlyOffMinimum, balancedTargets);
         grid = qResult.grid;
         quality.swapsApplied = qResult.swapsApplied;
         quality.iterations = qResult.iterations;
@@ -1564,6 +1722,9 @@ function generateDraft(input) {
         quality.isolatedAfter = qResult.after.isolated;
         quality.fairnessBefore = qResult.before.fairness;
         quality.fairnessAfter = qResult.after.fairness;
+        quality.fairnessExcessBefore = qResult.before.fairnessExcess;
+        quality.fairnessExcessAfter = qResult.after.fairnessExcess;
+        quality.spreadByGroup = qResult.spreadByGroup;
 
         if (qResult.swapsApplied > 0) {
             // quality swap이 normal<->schedule 전환을 포함할 수 있으므로 monthlyOffCount를
@@ -2307,8 +2468,11 @@ return {
     _countIsolatedWorkDays: _countIsolatedWorkDays,
     _collectWorkBlocks: _collectWorkBlocks,
     _computeGroupCodeFairness: _computeGroupCodeFairness,
+    _computeBalancedCodeTargets: _computeBalancedCodeTargets,
     _optimizeScheduleQuality: _optimizeScheduleQuality,
     AUTO_SCHEDULE_QUALITY_MAX_ITERATIONS: AUTO_SCHEDULE_QUALITY_MAX_ITERATIONS,
+    AUTO_SCHEDULE_QUALITY_FAIRNESS_BAND: AUTO_SCHEDULE_QUALITY_FAIRNESS_BAND,
+    _qualityTupleBetter: _qualityTupleBetter,
     AUTO_SCHEDULE_QUALITY_MAX_PASSES: AUTO_SCHEDULE_QUALITY_MAX_PASSES,
     AUTO_SCHEDULE_FALLBACK_WINDOW: AUTO_SCHEDULE_FALLBACK_WINDOW,
     AUTO_SCHEDULE_FALLBACK_MAX_ITERATIONS: AUTO_SCHEDULE_FALLBACK_MAX_ITERATIONS,
