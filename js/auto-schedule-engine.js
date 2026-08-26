@@ -897,6 +897,256 @@ function _aggregateConflicts(conflicts) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 3c) 편성 품질 최적화(soft quality) — 1일 고립근무 최소화 + A/P 편중 완화
+// ═══════════════════════════════════════════════════════════════════════════
+// ⚠️ hard-valid draft가 이미 만들어진 뒤에만 실행하는 "추가" 개선 pass다. 기존
+// greedy/fallback/repair 구조를 대체하지 않고, source가 "auto"/"auto_off"인 두
+// 칸(같은 날짜, 같은 조)의 배정을 서로 맞바꾸는 "same-day identity swap"만
+// 수행한다 — 이 방식은 그 날짜/조의 코드별·휴무 정원(exact staffing)을 수학적으로
+// 항상 그대로 유지하므로(합계가 아니라 "누가 그 자리를 갖는지"만 바뀜) 별도로
+// 재검증할 필요가 없고, 오직 두 당사자의 개인별 hard constraint(연속근무/코드
+// 연결제한/월간 코드 상한/월 최소휴무)만 swap 전후로 재확인하면 충분하다.
+// requested/annual/petition/override 등 고정 셀은 절대 대상에 포함하지 않는다.
+
+var AUTO_SCHEDULE_QUALITY_MAX_ITERATIONS = 400000;
+var AUTO_SCHEDULE_QUALITY_MAX_PASSES = 6;
+var AUTO_SCHEDULE_QUALITY_FAIRNESS_CODES = ["A", "P"];
+
+/** day가 유효 범위 밖이면 빈 배열. 그 외에는 [day-1(있으면), day, day+1(있으면)]. */
+function _isolatedWorkWindowDays(day, totalDays) {
+    var days = [];
+    if (day - 1 >= 1) days.push(day - 1);
+    days.push(day);
+    if (day + 1 <= totalDays) days.push(day + 1);
+    return days;
+}
+
+/**
+ * uid의 day가 "1일짜리 고립 근무"인지 판정한다. 근무(type==="schedule")이고
+ * 앞뒤가 모두 비근무(휴무/연차/청원 등 type!=="schedule")면 고립.
+ *
+ * 월 경계: day=1의 "전날"은 이번 달 grid에 없으므로 previousMonthWorkTail(전월
+ * 말일부터 이어지는 연속근무일수)로 판단한다 — 0보다 크면 전월에서 이어지는
+ * 근무이므로 day1은 고립이 아니다. day=totalDays(월 마지막 날)의 "다음날"은
+ * 다음 달 정보가 없어 알 수 없으므로, 다음 달을 임의로 추측하지 않되 "새로운
+ * 1일 근무 섬을 만들지 않는" 쪽으로 보수적으로 처리한다 — 다음날을 비근무로
+ * 간주해(즉 marginal하게 고립으로 셀 수 있는 방향으로) quality pass가 월말에
+ * 새 1일 근무를 만드는 선택을 하지 않도록 유도한다.
+ */
+function _isIsolatedWorkDay(grid, uid, day, totalDays, prevTail) {
+    if (day < 1 || day > totalDays) return false;
+    var entry = (grid[uid] || {})[String(day)];
+    if (!_isWorkEntry(entry)) return false;
+    var prevNonWork = day === 1
+        ? !(Number((prevTail || {})[uid] || 0) > 0)
+        : !_isWorkEntry((grid[uid] || {})[String(day - 1)]);
+    var nextNonWork = day === totalDays
+        ? true
+        : !_isWorkEntry((grid[uid] || {})[String(day + 1)]);
+    return prevNonWork && nextNonWork;
+}
+
+/** employees 전체의 고립 근무일 총합/직원별 집계. */
+function _countIsolatedWorkDays(grid, employees, totalDays, prevTail) {
+    var byEmp = {}, total = 0;
+    employees.forEach(function (emp) {
+        var c = 0;
+        for (var d = 1; d <= totalDays; d++) {
+            if (_isIsolatedWorkDay(grid, emp.uid, d, totalDays, prevTail)) c++;
+        }
+        byEmp[emp.uid] = c;
+        total += c;
+    });
+    return { total: total, byEmp: byEmp };
+}
+
+/** uid의 이번 달 근무 블록 길이 배열(예: [3,2,1,4]). 진단/Excel 참고용 pure helper. */
+function _collectWorkBlocks(grid, uid, totalDays) {
+    var blocks = [];
+    var cur = 0;
+    for (var d = 1; d <= totalDays; d++) {
+        if (_isWorkEntry((grid[uid] || {})[String(d)])) {
+            cur++;
+        } else {
+            if (cur > 0) blocks.push(cur);
+            cur = 0;
+        }
+    }
+    if (cur > 0) blocks.push(cur);
+    return blocks;
+}
+
+/**
+ * 조별 A/P 편중도를 계산한다. "그룹 평균에서 얼마나 벗어났는지"를 코드별로
+ * 합산하는 raw-count 편차 방식을 쓴다(스펙이 제시한 두 방식 중 이 구조에서 더
+ * 안정적인 쪽 — swap 한 번이 그룹 전체 합계(GA/GP)를 바꾸지 않으므로 그룹
+ * 평균이 고정된 채로 두 당사자만의 편차 변화만 비교하면 되어 계산이 가볍고
+ * 결정론적이다). L은 수요가 적고 hard cap이 낮아 분모에 섞지 않는다(스펙 명시).
+ */
+function _computeGroupCodeFairness(grid, employeesByGroup, codes) {
+    codes = codes || AUTO_SCHEDULE_QUALITY_FAIRNESS_CODES;
+    var result = { byGroup: {}, totalPenalty: 0 };
+    Object.keys(employeesByGroup).forEach(function (group) {
+        var members = employeesByGroup[group] || [];
+        var counts = {};
+        var groupTotals = {};
+        codes.forEach(function (c) { groupTotals[c] = 0; });
+        members.forEach(function (emp) {
+            var c = {};
+            codes.forEach(function (code) {
+                var n = _employeeScheduleCodeCount(grid, emp.uid, code);
+                c[code] = n;
+                groupTotals[code] += n;
+            });
+            counts[emp.uid] = c;
+        });
+        var n = members.length || 1;
+        var avg = {};
+        codes.forEach(function (code) { avg[code] = groupTotals[code] / n; });
+        var minMax = {};
+        codes.forEach(function (code) {
+            var vals = members.map(function (emp) { return counts[emp.uid][code]; });
+            minMax[code] = vals.length ? { min: Math.min.apply(null, vals), max: Math.max.apply(null, vals) } : { min: 0, max: 0 };
+        });
+        var penaltyByEmp = {};
+        var groupPenalty = 0;
+        members.forEach(function (emp) {
+            var p = 0;
+            codes.forEach(function (code) { p += Math.abs(counts[emp.uid][code] - avg[code]); });
+            penaltyByEmp[emp.uid] = p;
+            groupPenalty += p;
+        });
+        result.byGroup[group] = { demand: groupTotals, avg: avg, counts: counts, penaltyByEmp: penaltyByEmp, groupPenalty: groupPenalty, minMax: minMax };
+        result.totalPenalty += groupPenalty;
+    });
+    return result;
+}
+
+/**
+ * hard-valid draft 위에서 same-day identity swap을 반복 적용해 1일 고립근무와
+ * A/P 편중을 줄인다(우선순위: 고립근무 감소 > A/P fairness 개선 — 스펙 명시).
+ * 매 swap 후보마다 두 당사자의 hard constraint를 재확인하고, 위반이 있으면
+ * 즉시 원복한다. exact staffing/그룹·날짜 정원은 same-day swap 구조상 항상
+ * 그대로 유지되므로 별도 재검증이 필요 없다(주석 상단 설명 참고).
+ */
+function _optimizeScheduleQuality(grid, employees, employeesByGroup, scheduleCodes, autoConfig, totalDays, prevTail, prevLastCode, monthlyOffMinimum) {
+    var maxConsecutiveWork = Number((autoConfig || {}).maxConsecutiveWork || 0);
+    var codeLinkRestrictions = (autoConfig || {}).codeLinkRestrictions || [];
+    var codes = AUTO_SCHEDULE_QUALITY_FAIRNESS_CODES;
+
+    var iterations = 0, swapsApplied = 0, timedOut = false;
+    var before = {
+        isolated: _countIsolatedWorkDays(grid, employees, totalDays, prevTail).total,
+        fairness: _computeGroupCodeFairness(grid, employeesByGroup, codes).totalPenalty,
+    };
+
+    var groupNames = Object.keys(employeesByGroup).sort();
+
+    outer:
+    for (var pass = 0; pass < AUTO_SCHEDULE_QUALITY_MAX_PASSES; pass++) {
+        var changedThisPass = false;
+        for (var day = 1; day <= totalDays; day++) {
+            var dayStr = String(day);
+            for (var gi = 0; gi < groupNames.length; gi++) {
+                var members = employeesByGroup[groupNames[gi]] || [];
+                for (var i = 0; i < members.length; i++) {
+                    for (var j = i + 1; j < members.length; j++) {
+                        iterations++;
+                        if (iterations > AUTO_SCHEDULE_QUALITY_MAX_ITERATIONS) { timedOut = true; break outer; }
+
+                        var empA = members[i], empB = members[j];
+                        var entryA = (grid[empA.uid] || {})[dayStr];
+                        var entryB = (grid[empB.uid] || {})[dayStr];
+                        if (!entryA || !entryB) continue;
+                        if (_repairIsFixedCell(entryA) || _repairIsFixedCell(entryB)) continue;
+                        if (entryA.type === entryB.type && entryA.scheduleCode === entryB.scheduleCode) continue;
+                        // normal<->schedule 교차 swap은 두 당사자의 월 휴무 사용량을 서로 반대
+                        // 방향으로 바꾼다(권장 target 균형을 흔들 수 있음) — 스펙 우선순위상
+                        // 13(권장휴무)은 11(고립근무)/12(fairness)보다 낮으므로, 고립근무를
+                        // "실제로 줄이는" 경우에만 이 비용을 지불한다. 순수 fairness 동률
+                        // 개선을 위해 target 균형을 흔드는 것은 허용하지 않는다(같은 type끼리의
+                        // schedule<->schedule 코드 교체는 휴무 사용량을 전혀 바꾸지 않으므로
+                        // fairness 목적에는 그 경로만 쓴다).
+                        var crossType = entryA.type !== entryB.type;
+
+                        var window = _isolatedWorkWindowDays(day, totalDays);
+                        var isoBefore = 0;
+                        window.forEach(function (d) {
+                            if (_isIsolatedWorkDay(grid, empA.uid, d, totalDays, prevTail)) isoBefore++;
+                            if (_isIsolatedWorkDay(grid, empB.uid, d, totalDays, prevTail)) isoBefore++;
+                        });
+
+                        var origA = entryA, origB = entryB;
+                        grid[empA.uid][dayStr] = origB;
+                        grid[empB.uid][dayStr] = origA;
+
+                        var hardOk = true;
+                        if (maxConsecutiveWork > 0 && !_fullMonthStreakOk(grid, [empA, empB], totalDays, prevTail, maxConsecutiveWork)) hardOk = false;
+                        if (hardOk && codeLinkRestrictions.length && !_fullMonthCodeLinkOk(grid, [empA, empB], totalDays, codeLinkRestrictions, prevLastCode)) hardOk = false;
+                        if (hardOk) {
+                            [empA, empB].some(function (emp) {
+                                return scheduleCodes.some(function (codeItem) {
+                                    var limit = _scheduleCodeMonthlyLimit(scheduleCodes, codeItem.name);
+                                    if (limit == null) return false;
+                                    if (_employeeScheduleCodeCount(grid, emp.uid, codeItem.name) > limit) { hardOk = false; return true; }
+                                    return false;
+                                });
+                            });
+                        }
+                        if (hardOk && (_repairEmployeeOffCount(grid, empA.uid) < monthlyOffMinimum || _repairEmployeeOffCount(grid, empB.uid) < monthlyOffMinimum)) hardOk = false;
+
+                        if (!hardOk) {
+                            grid[empA.uid][dayStr] = origA;
+                            grid[empB.uid][dayStr] = origB;
+                            continue;
+                        }
+
+                        var isoAfter = 0;
+                        window.forEach(function (d) {
+                            if (_isIsolatedWorkDay(grid, empA.uid, d, totalDays, prevTail)) isoAfter++;
+                            if (_isIsolatedWorkDay(grid, empB.uid, d, totalDays, prevTail)) isoAfter++;
+                        });
+
+                        var accept;
+                        if (isoAfter < isoBefore) {
+                            accept = true; // 고립근무 실제 감소 — normal<->schedule 비용을 지불할 가치가 있음
+                        } else if (isoAfter > isoBefore) {
+                            accept = false;
+                        } else if (crossType) {
+                            // 고립근무 변화 없음(동률) + 교차 타입 swap → 휴무 사용량만 흔들고
+                            // 얻는 게 없으므로 거부(권장휴무 target 균형 보호, TEST 4/7 회귀 방지).
+                            accept = false;
+                        } else {
+                            var groupPenaltyKey = groupNames[gi];
+                            grid[empA.uid][dayStr] = origA; grid[empB.uid][dayStr] = origB;
+                            var fBefore = _computeGroupCodeFairness(grid, employeesByGroup, codes).byGroup[groupPenaltyKey].groupPenalty;
+                            grid[empA.uid][dayStr] = origB; grid[empB.uid][dayStr] = origA;
+                            var fAfter = _computeGroupCodeFairness(grid, employeesByGroup, codes).byGroup[groupPenaltyKey].groupPenalty;
+                            accept = fAfter < fBefore;
+                        }
+
+                        if (accept) {
+                            swapsApplied++;
+                            changedThisPass = true;
+                        } else {
+                            grid[empA.uid][dayStr] = origA;
+                            grid[empB.uid][dayStr] = origB;
+                        }
+                    }
+                }
+            }
+        }
+        if (!changedThisPass) break;
+    }
+
+    var after = {
+        isolated: _countIsolatedWorkDays(grid, employees, totalDays, prevTail).total,
+        fairness: _computeGroupCodeFairness(grid, employeesByGroup, codes).totalPenalty,
+    };
+    return { grid: grid, swapsApplied: swapsApplied, iterations: iterations, timedOut: timedOut, before: before, after: after };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 4) 메인 생성 함수 (보호 모드 — 고정 신청 절대 변경 없음)
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1263,7 +1513,85 @@ function generateDraft(input) {
     // 집계 전 값으로 명시적으로 판정한다). warnings는 절대 ok/conflicts에 영향을
     // 주지 않는다 — soft target 미달만으로는 확정을 막지 않는다.
     var ok = conflicts.length === 0;
-    return { ok: ok, totalDays: totalDays, grid: grid, conflicts: _aggregateConflicts(conflicts), warnings: warnings, monthlyOffCount: monthlyOffCount, greedyFailed: greedyFailed, fallback: fallback, repair: repair };
+
+    // ⚠️ 편성 품질 최적화(soft) — 실제 대구 QA에서는 bulk 조정 후에도
+    // work_shortfall이 다수(약 22~25건) 남아 ok===true가 되는 경우가 드물다.
+    // "완벽한 draft에서만 품질개선"으로 제한하면 실사용 환경에서 이 기능이
+    // 사실상 전혀 실행되지 않으므로, "미충족 근무석/탐색 한계"류(=배정을 아직
+    // 완료하지 못했을 뿐 이미 배정된 값을 위반한 게 아닌 conflict)만 남았다면
+    // quality pass를 허용한다. 반대로 이미 확정된 셀이 실제로 hard invariant를
+    // 위반한 상태(월 최소휴무 미달/코드 월 상한 초과 등)라면 quality가 그
+    // 위반을 가리거나 더 악화시킬 위험이 있으므로 절대 실행하지 않는다.
+    //
+    // same-day identity swap은 그 날짜/조/코드의 슬롯 수를 그대로 유지하고,
+    // 둘 다 이미 배정된(entry가 존재하는) auto/auto_off 셀끼리만 교환하므로
+    // work_shortfall/no_valid_assignment/search_limit_exceeded처럼 "그 자리가
+    // 아예 비어있는" shortage 위치는 swap 대상 자체가 될 수 없다(entryA/entryB
+    // undefined면 스킵) — 따라서 이 gating만 바꿔도 shortage를 다른 위치로
+    // 옮기거나 총량을 악화시킬 수 없다(구조적으로 안전).
+    //
+    // ⚠️ day_off_cap/group_off_cap은 shortage-like에서 제외한다 — 기존 시스템
+    // semantics상 "특정일 전체 휴무 제한"/"조별 휴무 제한"은 관리자가 명시적으로
+    // 설정한 HARD constraint이며(단순 배정 실패가 아니라 설정된 상한 자체를
+    // 못 지킨 상태), quality pass가 이런 상태를 shortage-only로 오분류해 실행되면
+    // 안 된다.
+    //
+    // ⚠️ iteration_limit도 제외한다 — 코드 확인 결과 이 kind는 greedy 메인 루프
+    // 중간(반복 한도 초과)에 발생하는 완전히 별도의 early-return 경로에서만
+    // push되며, 그 즉시 fallback/repair/최종검증을 전혀 거치지 않은 채 최소
+    // 형태({ok,totalDays,grid,conflicts,monthlyOffCount})로 함수 자체가 끝나
+    // 버린다(quality 게이팅 코드에 도달하기 전에 이미 return됨) — search가
+    // 끝까지 진행된 뒤 "이 부분만 못 채웠다"는 의미인 search_limit_exceeded와
+    // 달리, 입력 규모/무한루프 안전장치로 인한 "생성 자체가 중단된" 상태이므로
+    // 이름만 보고 동일 취급하면 안 된다(실질적으로도 이 경로에서는 quality
+    // 코드에 도달조차 하지 않아 현재는 항상 무해하지만, 향후 코드가 바뀌어도
+    // 안전하도록 명시적으로 차단 목록에 둔다).
+    var SHORTAGE_LIKE_CONFLICT_KINDS = {
+        work_shortfall: 1, no_valid_assignment: 1, search_limit_exceeded: 1,
+    };
+    var hasBlockingHardConflict = conflicts.some(function (c) { return !SHORTAGE_LIKE_CONFLICT_KINDS[c.kind]; });
+    var qualityEligible = !hasBlockingHardConflict;
+
+    var quality = { attempted: false, swapsApplied: 0, iterations: 0, timedOut: false, isolatedBefore: null, isolatedAfter: null, fairnessBefore: null, fairnessAfter: null };
+    if (qualityEligible) {
+        quality.attempted = true;
+        var qResult = _optimizeScheduleQuality(grid, employees, employeesByGroup, scheduleCodes, autoConfig, totalDays, prevTail, prevLastCode, monthlyOffMinimum);
+        grid = qResult.grid;
+        quality.swapsApplied = qResult.swapsApplied;
+        quality.iterations = qResult.iterations;
+        quality.timedOut = qResult.timedOut;
+        quality.isolatedBefore = qResult.before.isolated;
+        quality.isolatedAfter = qResult.after.isolated;
+        quality.fairnessBefore = qResult.before.fairness;
+        quality.fairnessAfter = qResult.after.fairness;
+
+        if (qResult.swapsApplied > 0) {
+            // quality swap이 normal<->schedule 전환을 포함할 수 있으므로 monthlyOffCount를
+            // grid 기준으로 다시 집계한다(minimum은 swap 시점에 이미 개별 보장됨 — target
+            // 권장 미달 warning만 최신 상태로 다시 계산).
+            monthlyOffCount = {};
+            employees.forEach(function (emp) { monthlyOffCount[emp.uid] = 0; });
+            employees.forEach(function (emp) {
+                Object.keys(grid[emp.uid] || {}).forEach(function (d) {
+                    if (grid[emp.uid][d].type === "normal") monthlyOffCount[emp.uid]++;
+                });
+            });
+            warnings = [];
+            employees.forEach(function (emp) {
+                var count = monthlyOffCount[emp.uid];
+                if (count >= monthlyOffMinimum && count < monthlyOffTarget) {
+                    warnings.push({
+                        kind: "monthly_off_target_shortfall",
+                        empKey: emp.uid, empName: emp.name,
+                        needed: monthlyOffTarget, actual: count,
+                        message: (emp.name || emp.uid) + " 월 권장 일반휴무(" + monthlyOffTarget + ")에 " + (monthlyOffTarget - count) + "일 미달(최소 기준은 충족).",
+                    });
+                }
+            });
+        }
+    }
+
+    return { ok: ok, totalDays: totalDays, grid: grid, conflicts: _aggregateConflicts(conflicts), warnings: warnings, monthlyOffCount: monthlyOffCount, greedyFailed: greedyFailed, fallback: fallback, repair: repair, quality: quality };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1460,6 +1788,7 @@ function planBulkOverrides(input, options) {
     var maxBulkOverrides = opts.maxBulkOverrides || Math.min(AUTO_SCHEDULE_BULK_MAX_OVERRIDES_DEFAULT, requestedNormalCount);
 
     var monthlyOffTarget = Number((input.autoConfig || {}).monthlyOffTarget || 0);
+    var monthlyOffMinimum = _monthlyOffMinimum(input.autoConfig);
     var startTime = Date.now();
     var iterations = 0;
     var truncated = false;
@@ -1530,6 +1859,25 @@ function planBulkOverrides(input, options) {
                     override: { changedBy: null, changedAt: 0, reason: "auto_schedule_conflict" }, // 실제 적용 시 UI가 authoritative 값으로 재작성
                 }]);
                 var tempDraft = generateDraft(Object.assign({}, input, { forcedOverrides: tempForced }));
+
+                // ⚠️ Production 실회귀 수정(대구 QA "김영훈 9→8") — work_shortfall이
+                // 줄어든다는 이유만으로 minimum hard floor를 새로 깨거나 악화시키는
+                // 후보를 채택하면 안 된다. workingDraft(이번 step 직전, 매 반복마다
+                // fresh)와 비교해 "이번 step 때문에" 어떤 직원이든 minimum 미만으로
+                // 새로 떨어지거나 더 나빠지면 그 후보 자체를 점수 계산 전에 제외한다
+                // — 그래야 최선 후보 하나만 보고 포기하지 않고 다음으로 좋은(그러나
+                // minimum은 지키는) 후보로 자연스럽게 넘어간다. 이 bulk 실행 시작
+                // 전부터 이미 존재하던(bulk와 무관한) minimum 위반은 grandfather
+                // 처리(그대로 둠) — work_shortfall 잔여분과 마찬가지로 이 함수가
+                // 새로 만들지만 않으면 된다. monthlyOffCount는 generateDraft가
+                // 매번 grid에서 새로 집계하는 fresh 값이라 stale cache 위험이 없다.
+                var violatesMinimum = (input.employees || []).some(function (emp) {
+                    var beforeCount = (workingDraft.monthlyOffCount && workingDraft.monthlyOffCount[emp.uid]) || 0;
+                    var afterCount = (tempDraft.monthlyOffCount && tempDraft.monthlyOffCount[emp.uid]) || 0;
+                    return afterCount < monthlyOffMinimum && afterCount < beforeCount;
+                });
+                if (violatesMinimum) continue;
+
                 var score = _scoreBulkCandidate(tempDraft, cand.uid, monthlyOffTarget, bulkOverrideCountSoFar);
 
                 if (!best || _compareBulkScores(score, best.score) < 0) {
@@ -1955,6 +2303,13 @@ return {
     _fallbackBacktrack: _fallbackBacktrack,
     _repairWorkShortfalls: _repairWorkShortfalls,
     _computeCodeGaps: _computeCodeGaps,
+    _isIsolatedWorkDay: _isIsolatedWorkDay,
+    _countIsolatedWorkDays: _countIsolatedWorkDays,
+    _collectWorkBlocks: _collectWorkBlocks,
+    _computeGroupCodeFairness: _computeGroupCodeFairness,
+    _optimizeScheduleQuality: _optimizeScheduleQuality,
+    AUTO_SCHEDULE_QUALITY_MAX_ITERATIONS: AUTO_SCHEDULE_QUALITY_MAX_ITERATIONS,
+    AUTO_SCHEDULE_QUALITY_MAX_PASSES: AUTO_SCHEDULE_QUALITY_MAX_PASSES,
     AUTO_SCHEDULE_FALLBACK_WINDOW: AUTO_SCHEDULE_FALLBACK_WINDOW,
     AUTO_SCHEDULE_FALLBACK_MAX_ITERATIONS: AUTO_SCHEDULE_FALLBACK_MAX_ITERATIONS,
     AUTO_SCHEDULE_BULK_MAX_ITERATIONS: AUTO_SCHEDULE_BULK_MAX_ITERATIONS,

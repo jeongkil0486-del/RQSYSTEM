@@ -15,7 +15,7 @@ function _autoScheduleCellLabel(entry) {
 }
 
 /**
- * exportAutoScheduleToExcel(draft, employees, groupByEmp, revalidation, filenamePrefix, meta)
+ * exportAutoScheduleToExcel(draft, employees, groupByEmp, revalidation, filenamePrefix, meta, previousMonthWorkTail)
  * draft: auto-schedule-engine.generateDraft()의 결과 (grid/totalDays)
  * employees: [{uid, empNo, name, group?, sortOrder}]
  * groupByEmp: { [uid]: "A" } — 표시용 조 라벨(입력에 없으면 employee.group 사용)
@@ -23,16 +23,25 @@ function _autoScheduleCellLabel(entry) {
  * meta(선택): { confirmedAt, confirmedBy, yyyymm, previousMonthWarning } — 확정본이면
  *             월간스케줄 시트 상단에 확정일시/확정자/대상월을 추가로 표시한다(기존
  *             컬럼 구조는 그대로 유지 — 헤더 행 "위에" 정보 행만 덧붙인다).
+ * previousMonthWorkTail(선택): { [uid]: number } — 편성 품질(1일 고립근무) 계산 시
+ *             day1의 "전날" 판정에 사용(엔진의 isolated work 정의와 동일 semantics).
+ *             없으면 0(전월 정보 없음)으로 취급.
  */
-function exportAutoScheduleToExcel(draft, employees, groupByEmp, revalidation, filenamePrefix, meta) {
+function exportAutoScheduleToExcel(draft, employees, groupByEmp, revalidation, filenamePrefix, meta, previousMonthWorkTail) {
     var totalDays = draft.totalDays;
     var grid = draft.grid;
     groupByEmp = groupByEmp || {};
+    previousMonthWorkTail = previousMonthWorkTail || {};
+    // 편성 품질 진단(A/P/L 횟수, 1일 고립근무수)은 UI/revalidate와 동일한 엔진
+    // helper(AutoScheduleEngine._isIsolatedWorkDay)를 그대로 재사용한다 — Excel이
+    // 별도 판정 기준을 만들면 카운트가 어긋날 수 있으므로(과거 legacy-type
+    // undercount 조사에서 확인한 "predicate 불일치" 문제를 반복하지 않기 위함).
+    var Engine = (typeof AutoScheduleEngine !== "undefined") ? AutoScheduleEngine : null;
 
     // ── Sheet 1: 월간스케줄 ──────────────────────────────────────────────────
     var header1 = ["이름", "조"];
     for (var d = 1; d <= totalDays; d++) header1.push(String(d));
-    header1.push("휴무수", "연차", "청원");
+    header1.push("휴무수", "연차", "청원", "A횟수", "P횟수", "L횟수", "1일근무수");
 
     var rows1 = [];
     if (meta && (meta.confirmedAt || meta.confirmedBy || meta.yyyymm)) {
@@ -44,7 +53,7 @@ function exportAutoScheduleToExcel(draft, employees, groupByEmp, revalidation, f
     rows1.push(header1);
     employees.forEach(function (emp) {
         var row = [emp.name || emp.empNo || emp.uid, groupByEmp[emp.uid] || emp.group || ""];
-        var offCount = 0, annualCount = 0, petitionCount = 0;
+        var offCount = 0, annualCount = 0, petitionCount = 0, aCount = 0, pCount = 0, lCount = 0, isolatedCount = 0;
         for (var day = 1; day <= totalDays; day++) {
             var entry = (grid[emp.uid] || {})[String(day)];
             row.push(_autoScheduleCellLabel(entry));
@@ -52,16 +61,22 @@ function exportAutoScheduleToExcel(draft, employees, groupByEmp, revalidation, f
                 if (entry.type === "normal") offCount++;
                 else if (entry.type === "annual") annualCount++;
                 else if (entry.type === "petition") petitionCount++;
+                else if (entry.type === "schedule") {
+                    if (entry.scheduleCode === "A") aCount++;
+                    else if (entry.scheduleCode === "P") pCount++;
+                    else if (entry.scheduleCode === "L") lCount++;
+                }
             }
+            if (Engine && Engine._isIsolatedWorkDay(grid, emp.uid, day, totalDays, previousMonthWorkTail)) isolatedCount++;
         }
-        row.push(offCount, annualCount, petitionCount);
+        row.push(offCount, annualCount, petitionCount, aCount, pCount, lCount, isolatedCount);
         rows1.push(row);
     });
 
     var ws1 = XLSX.utils.aoa_to_sheet(rows1);
     ws1["!cols"] = [{ wch: 12 }, { wch: 6 }]
         .concat(Array(totalDays).fill({ wch: 5 }))
-        .concat([{ wch: 8 }, { wch: 6 }, { wch: 6 }]);
+        .concat([{ wch: 8 }, { wch: 6 }, { wch: 6 }, { wch: 7 }, { wch: 7 }, { wch: 7 }, { wch: 9 }]);
 
     // ── Sheet 2: 조정내역 ────────────────────────────────────────────────────
     var rows2 = [["이름", "조", "날짜", "원 신청", "최종 배정", "조정 사유"]];

@@ -629,7 +629,8 @@ function downloadAutoScheduleExcel() {
         meta.confirmedAt = existing.meta.confirmedAt;
         meta.confirmedBy = existing.meta.confirmedBy;
     }
-    exportAutoScheduleToExcel(_autoScheduleState.draft, _autoScheduleState.input.employees, groupByEmp, revalidation, "자동스케줄_" + tm.fullStr, meta);
+    var previousMonthWorkTail = _autoScheduleState.input.previousMonthWorkTail || {};
+    exportAutoScheduleToExcel(_autoScheduleState.draft, _autoScheduleState.input.employees, groupByEmp, revalidation, "자동스케줄_" + tm.fullStr, meta, previousMonthWorkTail);
 }
 
 // ── 렌더링 ────────────────────────────────────────────────────────────────────
