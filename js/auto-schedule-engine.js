@@ -540,6 +540,308 @@ function _fallbackBacktrack(input, greedyDraft) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 3d) work_shortfall repair pass — greedy(±3일 국소 fallback으로도) 못 찾는,
+//     수학적으로는 가능한 케이스를 위한 bounded 2차 탐색.
+//
+// ⚠️ 기존 fallback(_fallbackBacktrack)의 근본적 한계: 탐색 범위가 conflict
+// 발생일 ±AUTO_SCHEDULE_FALLBACK_WINDOW(3)일로 좁혀져 있어 (a) "같은 날 안에서
+// 코드를 서로 바꾸면 풀리는" 케이스는 우연히 window 안에 걸려야만 풀리고,
+// (b) "월간 코드 상한 때문에 막힌 직원의 기존 배정을 다른 날짜/다른 직원에게
+// 넘기면 풀리는" 케이스는 애초에 window 개념 자체가 안 맞아 절대 못 찾는다.
+// 이 repair pass는 그 두 가지 구체적 케이스만 targeted로 추가 탐색한다 —
+// 범용 solver가 아니라, "확실히 존재가 증명되는 augmenting chain"만 찾는다.
+//
+// 이동 가능한 셀: source가 "auto" 또는 "auto_off"인 셀만(fallback과 동일 원칙).
+// requested/annual/petition/override는 이 함수가 존재를 확인하는 용도로만
+// 읽고, 절대 쓰지 않는다.
+// ═══════════════════════════════════════════════════════════════════════════
+var AUTO_SCHEDULE_REPAIR_MAX_ITERATIONS = 4000; // 순수 "성공적으로 적용한 repair + 포기한 gap" 총 횟수 상한
+var AUTO_SCHEDULE_REPAIR_TIME_BUDGET_MS = 3000;
+
+/** 현재 grid 기준, 모든 (day, group, code) exact quota의 실제 부족분을 스캔한다
+ *  — generateDraft의 greedy day-loop가 만드는 work_shortfall과 정확히 동일한
+ *  {kind, day, group, scheduleCode, needed, available, message} shape로 반환한다. */
+function _computeCodeGaps(grid, employeesByGroup, config, scheduleCodes, totalDays) {
+    var gaps = [];
+    var groupNames = Object.keys(employeesByGroup).sort();
+    for (var day = 1; day <= totalDays; day++) {
+        var dayStr = String(day);
+        for (var gi = 0; gi < groupNames.length; gi++) {
+            var group = groupNames[gi];
+            var members = employeesByGroup[group] || [];
+            for (var ci = 0; ci < scheduleCodes.length; ci++) {
+                var codeName = scheduleCodes[ci].name;
+                var quota = _groupCodeQuota(config, day, group, codeName);
+                if (quota == null) continue;
+                var available = 0;
+                for (var mi = 0; mi < members.length; mi++) {
+                    var e = (grid[members[mi].uid] || {})[dayStr];
+                    if (e && e.type === "schedule" && e.scheduleCode === codeName) available++;
+                }
+                if (available < quota) {
+                    gaps.push({
+                        kind: "work_shortfall", day: day, group: group, scheduleCode: codeName,
+                        needed: quota, available: available,
+                        message: day + "일 " + group + "조 " + codeName + "근무 " + quota + "명 필요, 배정 가능 " + available + "명.",
+                    });
+                }
+            }
+        }
+    }
+    return gaps;
+}
+
+function _totalGapSeats(gaps) {
+    var total = 0;
+    for (var i = 0; i < gaps.length; i++) total += Math.max(0, gaps[i].needed - gaps[i].available);
+    return total;
+}
+
+/** 특정 (uid, day, code) 배정이 (월간 코드 상한 / 연속근무 / 코드 연결 제한)을
+ *  위반하지 않는지 확인한다. grid는 "이 배정을 시도하기 직전" 상태여야 한다
+ *  (즉 uid의 day 셀은 이미 비워져 있어야 code count가 정확히 계산됨).
+ *
+ *  ⚠️ Codex High #1 수정: maxConsecutiveWork 검사를 "선택일 이전 streak만"
+ *  보는 방식에서 findOverrideCandidates가 이미 쓰고 있는 것과 정확히 동일한
+ *  _fullMonthStreakOk(전체 달 재검증, day를 포함해 그 이후 날짜까지 자연히
+ *  커버됨 — "past+selected+future"를 별도로 조합할 필요 없이, 전체 달의 매
+ *  날짜에서 streak를 다시 재는 것 자체가 forward-inclusive 검증이다)로
+ *  교체한다. 새로운 streak 계산을 만들지 않고 기존 helper를 그대로 재사용 —
+ *  전월 tail(prevTail)도 이 helper가 이미 포함해서 계산한다. */
+function _repairCanAssignCode(grid, uid, day, code, config, scheduleCodes, autoConfig, prevTail, prevLastCode, totalDays) {
+    var codeLimit = _scheduleCodeMonthlyLimit(scheduleCodes, code);
+    if (codeLimit != null && _employeeScheduleCodeCount(grid, uid, code) >= codeLimit) return false;
+
+    var maxConsecutiveWork = Number((autoConfig || {}).maxConsecutiveWork || 0);
+    if (maxConsecutiveWork > 0) {
+        var trialGrid = Object.assign({}, grid);
+        trialGrid[uid] = Object.assign({}, grid[uid]);
+        trialGrid[uid][String(day)] = { type: "schedule", scheduleCode: code, source: "auto" };
+        if (!_fullMonthStreakOk(trialGrid, [{ uid: uid }], totalDays, prevTail, maxConsecutiveWork)) return false;
+    }
+
+    var codeLinkRestrictions = (autoConfig || {}).codeLinkRestrictions || [];
+    var prevCode = _prevCodeAt(grid, uid, day, prevLastCode);
+    if (isCodeLinkForbidden(codeLinkRestrictions, prevCode, code)) return false;
+    var nextEntry = (grid[uid] || {})[String(day + 1)];
+    if (nextEntry && nextEntry.type === "schedule" && isCodeLinkForbidden(codeLinkRestrictions, code, nextEntry.scheduleCode)) return false;
+    return true;
+}
+
+function _repairEmployeeOffCount(grid, uid) {
+    var count = 0;
+    var days = grid[uid] || {};
+    Object.keys(days).forEach(function (d) { if (days[d].type === "normal") count++; });
+    return count;
+}
+
+/** requested/annual/petition/override 등 절대 손대면 안 되는 고정 셀인지 여부.
+ *  undefined(미배정)는 이동 가능(=repair가 직접 채울 수 있는) 대상으로 취급한다. */
+function _repairIsFixedCell(entry) {
+    return !!entry && entry.source !== "auto" && entry.source !== "auto_off";
+}
+
+function _cloneGridDeep(grid) {
+    var out = {};
+    Object.keys(grid).forEach(function (uid) { out[uid] = Object.assign({}, grid[uid]); });
+    return out;
+}
+
+/**
+ * target(day, group, code) 부족분 1석을 해소할 수 있는 augmenting chain을
+ * deterministic하게 탐색한다. 찾으면 { grid: 새 grid(clone) }, 못 찾으면 null.
+ *
+ * Strategy A(같은 날 체인, 최대 2-step):
+ *   후보 E가 그날 이미 다른 auto 코드(A)로 일하고 있다면, E를 target code로
+ *   옮기고 그 빈자리(day, A)를 그날 auto_off인 다른 직원 F로 메운다. E가 그날
+ *   auto_off/미배정이면 1-step으로 끝난다.
+ *
+ * Strategy B(월간 코드 relocation): target code의 월간 상한에 막힌 후보 X에
+ *   대해, X가 이미 다른 날짜(day2)에 auto 소스로 그 코드를 갖고 있다면, day2의
+ *   그 자리를 같은 조의 다른 직원 Y(그날 auto_off)에게 넘기고 X를 이 날(day)
+ *   그 코드로 옮긴다 — X의 월간 총 코드 개수는 변하지 않는다(day2에서 1 감소,
+ *   day에서 1 증가).
+ */
+function _repairFindChainFor(grid, target, employeesByGroup, groupByEmp, config, scheduleCodes, autoConfig, prevTail, prevLastCode, totalDays, monthlyOffMinimum, deadline) {
+    var day = target.day, group = target.group, code = target.scheduleCode;
+    var dayStr = String(day);
+    var members = (employeesByGroup[group] || []).slice().sort(function (a, b) { return (a.sortOrder || 0) - (b.sortOrder || 0); });
+
+    // ── Strategy A: 같은 날 1-step / 2-step 체인 ──────────────────────────────
+    for (var ei = 0; ei < members.length; ei++) {
+        if (Date.now() > deadline) return null;
+        var E = members[ei];
+        var entryE = (grid[E.uid] || {})[dayStr];
+        if (entryE && entryE.type === "schedule" && entryE.scheduleCode === code) continue; // 이미 이 코드로 근무 중
+        if (_repairIsFixedCell(entryE)) continue; // 신청/연차/청원/override는 절대 이동 금지
+
+        if (!entryE || entryE.type === "normal") {
+            // E는 그날 미배정이거나(unset) auto_off — 1-step으로 target code 배정 시도.
+            if (entryE && entryE.source !== "auto_off") continue; // 이 분기는 unset 또는 auto_off만(다른 정상값은 위에서 이미 걸러짐)
+            if (entryE) {
+                var offAfter = _repairEmployeeOffCount(grid, E.uid) - 1;
+                if (offAfter < monthlyOffMinimum) continue; // 최소 휴무 hard floor 위반 방지
+            }
+            var tempGrid1 = _cloneGridDeep(grid);
+            if (!tempGrid1[E.uid]) tempGrid1[E.uid] = {};
+            delete tempGrid1[E.uid][dayStr];
+            if (!_repairCanAssignCode(tempGrid1, E.uid, day, code, config, scheduleCodes, autoConfig, prevTail, prevLastCode, totalDays)) continue;
+            tempGrid1[E.uid][dayStr] = { type: "schedule", scheduleCode: code, source: "auto" };
+            return { grid: tempGrid1 };
+        }
+
+        // entryE.type === "schedule" — E는 그날 다른 auto 코드(A)로 근무 중.
+        var codeA = entryE.scheduleCode;
+        var tempGridE = _cloneGridDeep(grid);
+        if (!tempGridE[E.uid]) tempGridE[E.uid] = {};
+        delete tempGridE[E.uid][dayStr];
+        if (!_repairCanAssignCode(tempGridE, E.uid, day, code, config, scheduleCodes, autoConfig, prevTail, prevLastCode, totalDays)) continue;
+
+        // E를 옮기면 (day, group, codeA)에 새 구멍이 생긴다 — 같은 날 auto_off인
+        // 다른 직원 F로 그 구멍을 메울 수 있는지 확인.
+        for (var fi = 0; fi < members.length; fi++) {
+            if (Date.now() > deadline) return null;
+            var F = members[fi];
+            if (F.uid === E.uid) continue;
+            var entryF = (grid[F.uid] || {})[dayStr];
+            if (!entryF || entryF.type !== "normal" || entryF.source !== "auto_off") continue;
+            var offAfterF = _repairEmployeeOffCount(grid, F.uid) - 1;
+            if (offAfterF < monthlyOffMinimum) continue;
+
+            var tempGrid2 = _cloneGridDeep(tempGridE);
+            if (!tempGrid2[F.uid]) tempGrid2[F.uid] = {};
+            delete tempGrid2[F.uid][dayStr];
+            if (!_repairCanAssignCode(tempGrid2, F.uid, day, codeA, config, scheduleCodes, autoConfig, prevTail, prevLastCode, totalDays)) continue;
+
+            tempGrid2[E.uid][dayStr] = { type: "schedule", scheduleCode: code, source: "auto" };
+            tempGrid2[F.uid][dayStr] = { type: "schedule", scheduleCode: codeA, source: "auto" };
+            return { grid: tempGrid2 };
+        }
+    }
+
+    // ── Strategy B: 월간 코드 relocation(월 상한에 막힌 경우 전용) ──────────────
+    var codeLimit = _scheduleCodeMonthlyLimit(scheduleCodes, code);
+    if (codeLimit == null) return null; // 상한이 없으면 Strategy A가 이미 커버했을 것 — relocation 불필요
+    for (var xi = 0; xi < members.length; xi++) {
+        if (Date.now() > deadline) return null;
+        var X = members[xi];
+        var entryX = (grid[X.uid] || {})[dayStr];
+        if (entryX && entryX.type === "schedule" && entryX.scheduleCode === code) continue;
+        if (_repairIsFixedCell(entryX)) continue;
+        if (entryX && entryX.type === "schedule") continue; // 다른 코드로 이미 근무 중이면 Strategy A 영역(여기선 skip)
+        if (entryX && entryX.source !== "auto_off") continue;
+        if (_employeeScheduleCodeCount(grid, X.uid, code) < codeLimit) continue; // 상한에 막힌 게 아니면 Strategy A가 이미 처리했을 것
+
+        for (var d2 = 1; d2 <= totalDays; d2++) {
+            if (d2 === day) continue;
+            if (Date.now() > deadline) return null;
+            var d2Str = String(d2);
+            var entryX2 = (grid[X.uid] || {})[d2Str];
+            if (!entryX2 || entryX2.type !== "schedule" || entryX2.scheduleCode !== code || entryX2.source !== "auto") continue;
+
+            var groupX = groupByEmp[X.uid];
+            var members2 = (employeesByGroup[groupX] || []).slice().sort(function (a, b) { return (a.sortOrder || 0) - (b.sortOrder || 0); });
+            for (var yi = 0; yi < members2.length; yi++) {
+                var Y = members2[yi];
+                if (Y.uid === X.uid) continue;
+                var entryY = (grid[Y.uid] || {})[d2Str];
+                if (!entryY || entryY.type !== "normal" || entryY.source !== "auto_off") continue;
+                if (_employeeScheduleCodeCount(grid, Y.uid, code) >= codeLimit) continue;
+                var offAfterY = _repairEmployeeOffCount(grid, Y.uid) - 1;
+                if (offAfterY < monthlyOffMinimum) continue;
+
+                // X: d2의 code 자리를 비우고(→auto_off), day에 code로 배정.
+                // Y: d2의 auto_off 자리를 code로 대신 채운다.
+                var relocGrid = _cloneGridDeep(grid);
+                if (!relocGrid[X.uid]) relocGrid[X.uid] = {};
+                if (!relocGrid[Y.uid]) relocGrid[Y.uid] = {};
+                delete relocGrid[X.uid][d2Str];
+                delete relocGrid[X.uid][dayStr];
+                delete relocGrid[Y.uid][d2Str];
+
+                if (!_repairCanAssignCode(relocGrid, Y.uid, d2, code, config, scheduleCodes, autoConfig, prevTail, prevLastCode, totalDays)) continue;
+                relocGrid[Y.uid][d2Str] = { type: "schedule", scheduleCode: code, source: "auto" };
+
+                if (!_repairCanAssignCode(relocGrid, X.uid, day, code, config, scheduleCodes, autoConfig, prevTail, prevLastCode, totalDays)) continue;
+                relocGrid[X.uid][dayStr] = { type: "schedule", scheduleCode: code, source: "auto" };
+                relocGrid[X.uid][d2Str] = { type: "normal", source: "auto_off" };
+
+                return { grid: relocGrid };
+            }
+        }
+    }
+
+    return null;
+}
+
+/**
+ * generateDraft의 fallback 이후, 남은 work_shortfall을 대상으로 bounded
+ * augmenting-chain 탐색을 반복한다. 매 성공 적용마다 전체 부족석 총량이
+ * 실제로 감소했는지("net improvement") 재확인한 뒤에만 채택한다 — 단순히
+ * 부족을 다른 자리로 옮기기만 하는 변경(27→27)은 채택하지 않는다.
+ * 반환: { grid, appliedCount, iterations, timedOut }.
+ */
+function _repairWorkShortfalls(grid, employees, employeesByGroup, groupByEmp, config, scheduleCodes, autoConfig, totalDays, prevTail, prevLastCode, monthlyOffMinimum) {
+    var startTime = Date.now();
+    var deadline = startTime + AUTO_SCHEDULE_REPAIR_TIME_BUDGET_MS;
+    var workingGrid = grid;
+    var iterations = 0;
+    var appliedCount = 0;
+    var timedOut = false;
+    var givenUp = {}; // "day|group|code" -> true(이번 grid 상태에서는 더 시도하지 않음)
+
+    while (true) {
+        if (Date.now() > deadline) { timedOut = true; break; }
+        if (iterations > AUTO_SCHEDULE_REPAIR_MAX_ITERATIONS) { timedOut = true; break; }
+
+        var gaps = _computeCodeGaps(workingGrid, employeesByGroup, config, scheduleCodes, totalDays);
+        if (!gaps.length) break; // 전부 해소됨
+
+        var beforeSeats = _totalGapSeats(gaps);
+        var target = null;
+        for (var i = 0; i < gaps.length; i++) {
+            var key = gaps[i].day + "|" + gaps[i].group + "|" + gaps[i].scheduleCode;
+            if (!givenUp[key]) { target = gaps[i]; break; }
+        }
+        if (!target) break; // 남은 모든 gap이 이미 "포기" 처리됨
+
+        iterations++;
+        var key2 = target.day + "|" + target.group + "|" + target.scheduleCode;
+        var found = _repairFindChainFor(
+            workingGrid, target, employeesByGroup, groupByEmp, config, scheduleCodes, autoConfig,
+            prevTail, prevLastCode, totalDays, monthlyOffMinimum, deadline
+        );
+
+        if (!found) { givenUp[key2] = true; continue; }
+
+        // ⚠️ commit-level 최종 안전장치(이중 방어, Codex High #1 수정의 일부) —
+        // candidate-level guard(_repairCanAssignCode)를 이미 통과했더라도, chain
+        // 전체를 실제로 채택하기 직전에 전체 달 기준으로 다시 한번 hard constraint
+        // 전부를 재검증한다. revalidateDraft/leafOk가 최종 grid에 대해 쓰는 것과
+        // 정확히 동일한 helper들을 재사용 — 새 검증 로직을 만들지 않는다.
+        var maxConsecutiveWork = Number((autoConfig || {}).maxConsecutiveWork || 0);
+        var codeLinkRestrictions = (autoConfig || {}).codeLinkRestrictions || [];
+        var safe = _fullMonthStreakOk(found.grid, employees, totalDays, prevTail, maxConsecutiveWork)
+            && _fullMonthCodeLinkOk(found.grid, employees, totalDays, codeLinkRestrictions, prevLastCode)
+            && _fullMonthCodeLimitOk(found.grid, employees, scheduleCodes)
+            && _fullMonthOffMinimumOk(found.grid, employees, totalDays, monthlyOffMinimum);
+        if (!safe) { givenUp[key2] = true; continue; }
+
+        var afterGaps = _computeCodeGaps(found.grid, employeesByGroup, config, scheduleCodes, totalDays);
+        var afterSeats = _totalGapSeats(afterGaps);
+        if (afterSeats < beforeSeats) {
+            workingGrid = found.grid;
+            appliedCount++;
+            givenUp = {}; // grid가 바뀌었으니 이전에 포기했던 gap도 다시 시도할 가치가 있다
+        } else {
+            givenUp[key2] = true; // 순개선이 없으면(단순 이동) 채택하지 않는다
+        }
+    }
+
+    return { grid: workingGrid, appliedCount: appliedCount, iterations: iterations, timedOut: timedOut };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 3c) conflict 표시용 집계 (reporting 전용 — 스케줄 계산/제약조건 semantics는
 //     전혀 건드리지 않는다. 이미 확정된 grid와 이미 확정된 conflicts 목록을
 //     "관리자가 읽기 좋은 형태로 묶어서 다시 표현"만 한다.)
@@ -863,6 +1165,51 @@ function generateDraft(input) {
         }
     }
 
+    // ⚠️ work_shortfall repair pass — 기존 fallback(±3일 국소 window)이 놓치는,
+    // "같은 날 코드 재배치" 또는 "월간 코드 relocation"으로 수학적으로 풀 수
+    // 있는 남은 work_shortfall만 targeted로 추가 탐색한다(3d 섹션 참고). 반드시
+    // "실제로 남은 work_shortfall이 있을 때만" 실행하고, 매 적용 전후로 전체
+    // 부족석 총량이 실제 감소했는지 재확인한 뒤에만 채택한다(단순 이동 27→27은
+    // 채택 안 함). requested/annual/petition/override는 절대 건드리지 않는다.
+    var repair = { attempted: false, appliedCount: 0, iterations: 0, timedOut: false };
+    var remainingShortfallsBeforeRepair = conflicts.filter(function (c) { return c.kind === "work_shortfall"; });
+    if (remainingShortfallsBeforeRepair.length > 0) {
+        repair.attempted = true;
+        var repairResult = _repairWorkShortfalls(
+            grid, employees, employeesByGroup, groupByEmp, config, scheduleCodes, autoConfig,
+            totalDays, prevTail, prevLastCode, monthlyOffMinimum
+        );
+        repair.appliedCount = repairResult.appliedCount;
+        repair.iterations = repairResult.iterations;
+        repair.timedOut = repairResult.timedOut;
+        if (repairResult.appliedCount > 0) {
+            grid = repairResult.grid;
+            // work_shortfall/no_valid_assignment는 grid 기준으로 완전히 다시 스캔한다
+            // (repair가 두 종류 모두에 영향을 줄 수 있음 — 예: unset 셀을 직접 채우는
+            // 경우도 있고, auto_off를 근무로 옮겨 no_valid_assignment 대상 자체가
+            // 사라지는 경우도 있다). day_off_cap/group_off_cap은 repair가 휴무
+            // 사용량을 늘리는 방향으로는 절대 움직이지 않으므로(auto_off→근무 전환만
+            // 있고 근무→auto_off 전환은 없음) 재검증 없이 그대로 두어도 안전하다.
+            conflicts = conflicts.filter(function (c) { return c.kind !== "work_shortfall" && c.kind !== "no_valid_assignment"; });
+            conflicts = conflicts.concat(_computeCodeGaps(grid, employeesByGroup, config, scheduleCodes, totalDays));
+            Object.keys(employeesByGroup).forEach(function (group) {
+                (employeesByGroup[group] || []).forEach(function (m) {
+                    for (var d = 1; d <= totalDays; d++) {
+                        var e = (grid[m.uid] || {})[String(d)];
+                        if (!e) conflicts.push({ kind: "no_valid_assignment", day: d, group: group, empKey: m.uid, empName: m.name, target: monthlyOffTarget, message: d + "일 " + group + "조 " + (m.name || m.uid) + " — 배정 없음." });
+                    }
+                });
+            });
+            monthlyOffCount = {};
+            employees.forEach(function (emp) { monthlyOffCount[emp.uid] = 0; });
+            employees.forEach(function (emp) {
+                Object.keys(grid[emp.uid] || {}).forEach(function (d) {
+                    if (grid[emp.uid][d].type === "normal") monthlyOffCount[emp.uid]++;
+                });
+            });
+        }
+    }
+
     // ⚠️ 직원별 월간 근무코드 상한 초과 검사 — greedy/fallback 모두 배정 시점에
     // 이미 상한을 넘지 않도록 후보에서 제외하지만(위 monthlyCodeCount 가드),
     // "신청(requested)/override만으로 이미 상한을 초과한" 경우는 auto-fill로
@@ -916,7 +1263,7 @@ function generateDraft(input) {
     // 집계 전 값으로 명시적으로 판정한다). warnings는 절대 ok/conflicts에 영향을
     // 주지 않는다 — soft target 미달만으로는 확정을 막지 않는다.
     var ok = conflicts.length === 0;
-    return { ok: ok, totalDays: totalDays, grid: grid, conflicts: _aggregateConflicts(conflicts), warnings: warnings, monthlyOffCount: monthlyOffCount, greedyFailed: greedyFailed, fallback: fallback };
+    return { ok: ok, totalDays: totalDays, grid: grid, conflicts: _aggregateConflicts(conflicts), warnings: warnings, monthlyOffCount: monthlyOffCount, greedyFailed: greedyFailed, fallback: fallback, repair: repair };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1239,6 +1586,174 @@ function planBulkOverrides(input, options) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 5c) 수학적 사전 feasibility 진단 — DB 쓰기 없는 순수 계산. work_shortfall을
+//     "solver가 못 찾음"과 "설정상 애초에 불가능"으로 구분하기 위한 것이며,
+//     generateDraft의 실제 배정 로직에는 전혀 관여하지 않는다(진단 전용).
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * draft.conflicts 중 kind==="work_shortfall"인 항목마다 진단 reason을 붙여
+ * 반환한다: { day, group, scheduleCode, needed, available, reason, detail }.
+ *
+ * reason 값:
+ *   TOTAL_MONTH_CAPACITY  — 월 전체 근무 필요총량이 전 직원 월간 최대 근무
+ *                           가능량(휴무 minimum + 연차/청원 제외)을 초과.
+ *   GROUP_MONTH_CAPACITY  — 해당 조의 월 근무 필요총량이 그 조가 공급 가능한
+ *                           최대치를 초과.
+ *   CODE_MONTH_CAPACITY   — 해당 조/코드의 월 필요총량이 그 코드의 월간 상한
+ *                           (직원별 limit 합산, 이미 고정된 사용량 차감)을 초과.
+ *   DAY_HARD_ABSENCE      — 해당 날짜/조에서 연차/청원으로 인한 hard 결원 때문에
+ *                           그날 필요 근무 인원 자체를 채울 사람이 부족.
+ *   SEARCH_LIMIT          — 위 총량 검사로는 불가능이 증명되지 않음(수학적
+ *                           기본조건은 충족) — 즉 현재 탐색(fallback+repair)이
+ *                           못 찾았을 뿐일 가능성. "설정상 불가능"이라고 단정하지
+ *                           않는다.
+ *
+ * ⚠️ TOTAL/GROUP/CODE 총량 검사는 필요조건(총량이 부족하면 100% 불가능)이지
+ * 충분조건은 아니다 — 총량이 맞아도 날짜별/코드별 조합(bipartite matching)이
+ * 안 맞으면 실제로는 안 풀릴 수 있다. 그런 "총량은 맞는데 조합이 안 맞는" 경우는
+ * 이 진단이 증명할 수 없으므로 SEARCH_LIMIT으로 정직하게 분류한다("탐색기가
+ * 못 찾음"만으로 절대 "설정상 불가능"이라고 단정하지 않는다는 원칙과 동일).
+ */
+function analyzeScheduleFeasibility(input, draft) {
+    var year = input.year, month = input.month;
+    var totalDays = _asDaysInMonth(year, month);
+    var employees = _autoSortEmployees(input.employees || []);
+    var groups = input.groups || {};
+    var config = input.config || {};
+    var autoConfig = input.autoConfig || {};
+    var monthlyOffMinimum = _monthlyOffMinimum(autoConfig);
+    var scheduleCodes = Array.isArray(config.scheduleCodes) ? config.scheduleCodes : [];
+    var existingRequests = input.existingRequests || {};
+
+    var groupByEmp = {};
+    Object.keys(groups).forEach(function (g) { (groups[g] || []).forEach(function (uid) { groupByEmp[uid] = g; }); });
+    employees.forEach(function (emp) { if (!groupByEmp[emp.uid] && emp.group) groupByEmp[emp.uid] = emp.group; });
+    var employeesByGroup = {};
+    employees.forEach(function (emp) {
+        var g = groupByEmp[emp.uid];
+        if (!g) return;
+        (employeesByGroup[g] = employeesByGroup[g] || []).push(emp);
+    });
+
+    // 직원별 hard 고정 부재(연차+청원) 일수 — requested 데이터에서 직접 집계
+    // (draft.grid가 아니라 원 신청 기준 — annual/petition은 절대 변경되지 않으므로 동일하다).
+    function hardAbsenceCount(uid) {
+        var days = existingRequests[uid] || {};
+        var n = 0;
+        Object.keys(days).forEach(function (d) {
+            var t = days[d] && days[d].type;
+            if (t === "annual" || t === "petition") n++;
+        });
+        return n;
+    }
+    // 직원별 월 최대 근무 가능일수 = 총일수 - 최소휴무 - 연차/청원(hard 결원, 중복없이 차감)
+    function employeeMaxWork(uid) {
+        return Math.max(0, totalDays - monthlyOffMinimum - hardAbsenceCount(uid));
+    }
+    // 직원별 특정 코드의 월간 총 용량 = limit(원본, 0포함) 그대로.
+    //
+    // ⚠️ Codex High #2 수정: required(=codeRequiredByGroup, 아래에서 _groupCodeQuota
+    // 총합으로 계산 — day/group/code당 "필요한 총 슬롯 수"이며 requested/override/auto
+    // 등 실제로 누가 채우는지와 무관한, 이미 그 자체로 "전체 수요" 총량이다)와
+    // capacity를 반드시 같은 기준(전체 vs 전체)으로 비교해야 한다. 이전 버전은
+    // required는 전체 수요인데 capacity에서는 requested/override로 이미 고정된
+    // 사용량을 또 빼서(remaining capacity) "전체 수요 vs 잔여 공급"을 비교하는
+    // 이중 차감 버그가 있었다(예: limit3, requested L 1건, required L 3이면
+    // capacity=3-1=2로 계산돼 3>2로 오탐— 실제로는 day1 requested L +
+    // day2/day3 auto L 2건 = 정확히 3/3으로 완전히 feasible한데도 PROVEN
+    // infeasible로 잘못 분류됐다). "전체 수요 vs 전체 capacity"(limit 총합,
+    // Option A) 방식으로 통일해 이 이중계산을 제거한다 — requested/override로
+    // 이미 채워진 슬롯은 required 쪽에 이미 포함돼 있으므로 capacity에서
+    // 별도로 다시 빼면 안 된다. auto(재배치 가능)는 애초에 capacity 계산에
+    // 전혀 관여하지 않는다(이 함수는 grid를 읽지 않고 limit만 본다).
+    function employeeCodeCapacity(uid, codeName) {
+        var limit = _scheduleCodeMonthlyLimit(scheduleCodes, codeName);
+        return limit == null ? Infinity : limit;
+    }
+
+    var totalMaxWork = 0;
+    employees.forEach(function (emp) { totalMaxWork += employeeMaxWork(emp.uid); });
+
+    var totalRequiredWork = 0;
+    var groupRequiredWork = {}, groupMaxWork = {};
+    var codeRequiredByGroup = {}, codeCapacityByGroup = {};
+    Object.keys(employeesByGroup).forEach(function (group) {
+        groupRequiredWork[group] = 0;
+        groupMaxWork[group] = (employeesByGroup[group] || []).reduce(function (acc, e) { return acc + employeeMaxWork(e.uid); }, 0);
+        codeRequiredByGroup[group] = {};
+        codeCapacityByGroup[group] = {};
+        scheduleCodes.forEach(function (c) {
+            codeCapacityByGroup[group][c.name] = (employeesByGroup[group] || []).reduce(function (acc, e) { return acc + employeeCodeCapacity(e.uid, c.name); }, 0);
+            codeRequiredByGroup[group][c.name] = 0;
+        });
+    });
+
+    var dayGroupRequired = {}; // "day|group" -> total required work that day
+    var dayGroupHardAvailable = {}; // "day|group" -> hard-available headcount that day
+
+    for (var day = 1; day <= totalDays; day++) {
+        Object.keys(employeesByGroup).forEach(function (group) {
+            var members = employeesByGroup[group] || [];
+            var dayReq = 0;
+            scheduleCodes.forEach(function (c) {
+                var quota = _groupCodeQuota(config, day, group, c.name);
+                if (quota == null) return;
+                totalRequiredWork += quota;
+                groupRequiredWork[group] += quota;
+                codeRequiredByGroup[group][c.name] += quota;
+                dayReq += quota;
+            });
+            dayGroupRequired[day + "|" + group] = dayReq;
+
+            var hardAbsentToday = members.reduce(function (acc, e) {
+                var entry = (existingRequests[e.uid] || {})[String(day)];
+                var t = entry && entry.type;
+                return acc + ((t === "annual" || t === "petition") ? 1 : 0);
+            }, 0);
+            dayGroupHardAvailable[day + "|" + group] = members.length - hardAbsentToday;
+        });
+    }
+
+    var results = [];
+    (draft.conflicts || []).forEach(function (c) {
+        if (c.kind !== "work_shortfall" || c.day == null) return;
+        var reason = "SEARCH_LIMIT";
+        var detail = "총량 검사상 수학적 기본조건은 충족합니다 — 현재 탐색이 대체 배정을 찾지 못했을 뿐일 수 있습니다.";
+
+        if (totalRequiredWork > totalMaxWork) {
+            reason = "TOTAL_MONTH_CAPACITY";
+            detail = "월 전체 필요근무(" + totalRequiredWork + ")가 전 직원 월간 최대 근무가능(" + totalMaxWork + ")을 초과합니다.";
+        } else if (groupRequiredWork[c.group] > groupMaxWork[c.group]) {
+            reason = "GROUP_MONTH_CAPACITY";
+            detail = c.group + "조 월 필요근무(" + groupRequiredWork[c.group] + ")가 " + c.group + "조 월 최대 근무가능(" + groupMaxWork[c.group] + ")을 초과합니다.";
+        } else if (codeRequiredByGroup[c.group] && codeRequiredByGroup[c.group][c.scheduleCode] > codeCapacityByGroup[c.group][c.scheduleCode]) {
+            reason = "CODE_MONTH_CAPACITY";
+            detail = c.group + "조 " + c.scheduleCode + "코드 월 필요총량(" + codeRequiredByGroup[c.group][c.scheduleCode] + ")이 월간 상한 기준 공급 가능량(" + codeCapacityByGroup[c.group][c.scheduleCode] + ")을 초과합니다.";
+        } else {
+            var dgKey = c.day + "|" + c.group;
+            if (dayGroupRequired[dgKey] > dayGroupHardAvailable[dgKey]) {
+                reason = "DAY_HARD_ABSENCE";
+                detail = c.day + "일 " + c.group + "조 필요근무(" + dayGroupRequired[dgKey] + ")가 연차/청원 제외 가용 인원(" + dayGroupHardAvailable[dgKey] + ")을 초과합니다.";
+            }
+        }
+
+        results.push({
+            day: c.day, group: c.group, scheduleCode: c.scheduleCode,
+            needed: c.needed, available: c.available,
+            reason: reason, detail: detail,
+        });
+    });
+
+    return {
+        totalRequiredWork: totalRequiredWork, totalMaxWork: totalMaxWork,
+        groupRequiredWork: groupRequiredWork, groupMaxWork: groupMaxWork,
+        codeRequiredByGroup: codeRequiredByGroup, codeCapacityByGroup: codeCapacityByGroup,
+        diagnostics: results,
+    };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // 6) 조건 재검사 (사용자 spec의 14개 항목)
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1435,12 +1950,17 @@ return {
     applyOverride: applyOverride,
     revalidateDraft: revalidateDraft,
     planBulkOverrides: planBulkOverrides,
+    analyzeScheduleFeasibility: analyzeScheduleFeasibility,
     _autoSortEmployees: _autoSortEmployees,
     _fallbackBacktrack: _fallbackBacktrack,
+    _repairWorkShortfalls: _repairWorkShortfalls,
+    _computeCodeGaps: _computeCodeGaps,
     AUTO_SCHEDULE_FALLBACK_WINDOW: AUTO_SCHEDULE_FALLBACK_WINDOW,
     AUTO_SCHEDULE_FALLBACK_MAX_ITERATIONS: AUTO_SCHEDULE_FALLBACK_MAX_ITERATIONS,
     AUTO_SCHEDULE_BULK_MAX_ITERATIONS: AUTO_SCHEDULE_BULK_MAX_ITERATIONS,
     AUTO_SCHEDULE_BULK_TIME_BUDGET_MS: AUTO_SCHEDULE_BULK_TIME_BUDGET_MS,
+    AUTO_SCHEDULE_REPAIR_MAX_ITERATIONS: AUTO_SCHEDULE_REPAIR_MAX_ITERATIONS,
+    AUTO_SCHEDULE_REPAIR_TIME_BUDGET_MS: AUTO_SCHEDULE_REPAIR_TIME_BUDGET_MS,
 };
 
 })();
