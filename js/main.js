@@ -170,7 +170,17 @@ function resetUiToLoggedOut() {
   document.documentElement.classList.remove("rq-has-session");
   resetSessionState();
   modal.style.display = "none";
-  document.getElementById("loginArea").style.display = "block";
+  // #loginArea(.login-page)는 CSS(.login-page { display:flex; ... })가
+  // flex 레이아웃(좌하단 정렬)을 전제로 한다. 이 함수(resetUiToLoggedOut)만
+  // "block"으로 되돌리고 있었는데, index.html에 있는 런타임 패치
+  // (loginArea.style.display를 가로채 block→flex로 바꿔주는 defineProperty)가
+  // 세션 복원 후 무효화된 세션으로 재확인되는 경로(예: sessionStorage에
+  // 캐시된 세션이 있었지만 Auth 재검증 결과 로그아웃 처리되는 새로고침/재연결
+  // 시나리오)에서 실제로 값을 가로채지 못해 style 속성이 그대로 "block"으로
+  // 남는 것을 로컬 재현으로 확인했다. 같은 파일의 다른 loginArea 토글(120,
+  // 314, 322번 줄)과 동일하게 "flex"로 직접 맞춰 패치에 의존하지 않고 항상
+  // 올바른 레이아웃이 표시되도록 수정.
+  document.getElementById("loginArea").style.display = "flex";
   document.getElementById("username").value  = "";
   document.getElementById("password").value  = "";
 
