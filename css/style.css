@@ -2089,6 +2089,228 @@ body {
   padding: 6px 0;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   자동스케줄 "결과" 팝업 정보구조 개편 — 요약 → 조 → 날짜 → 원인 → 직원
+   순서로 단계적으로 펼쳐 보이는 전용 네임스페이스(auto-schedule-result-*).
+   기존 .card/.row/.table/.warning 같은 전역 selector는 건드리지 않고,
+   색상/여백/폰트 크기는 위쪽 자동스케줄 모달 스타일의 변수(--text-main 등)를
+   그대로 재사용한다(새 디자인 시스템을 만들지 않는다).
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Hero 요약 카드(STEP2) — 팝업 최상단에 항상 1개만 ── */
+.auto-schedule-result-hero {
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.auto-schedule-result-hero.is-fail { border-color: #fecaca; background: #fef2f2; }
+.auto-schedule-result-hero.is-ok { border-color: #a7f3d0; background: #ecfdf5; }
+.auto-schedule-result-hero-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-sub);
+  text-transform: uppercase;
+  letter-spacing: .3px;
+  margin-bottom: 6px;
+}
+.auto-schedule-result-hero-headline {
+  font-size: 15px;
+  font-weight: 700;
+}
+.auto-schedule-result-hero-headline.is-fail { color: #991b1b; }
+.auto-schedule-result-hero-headline.is-ok { color: #065f46; }
+.auto-schedule-result-hero-sub {
+  font-size: 13px;
+  color: var(--text-main);
+  margin-top: 4px;
+}
+.auto-schedule-result-hero-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.auto-schedule-result-hero-group-chip {
+  font-size: 12px;
+  font-weight: 600;
+  color: #991b1b;
+  background: #fff;
+  border: 1px solid #fecaca;
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+.auto-schedule-result-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  gap: 8px;
+}
+/* STEP2 — 문구 복원("신청휴무 일괄 자동조정"/"자동 스케줄 다시 생성")으로 버튼
+   라벨이 길어져 좁은 화면에서 겹칠 수 있어, 이 네임스페이스 안에서만 세로 스택을
+   허용한다(전역 .btn/.feature-card-action 등은 건드리지 않음). */
+@media (max-width: 480px) {
+  .auto-schedule-result-hero-actions .btn { flex: 1 1 100%; }
+}
+
+/* ── 공용: 섹션 제목 / 접기·펼치기 토글 버튼 / 실패 행 ── */
+.auto-schedule-result-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 10px 0 6px;
+}
+.auto-schedule-result-mini-toggle {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.auto-schedule-result-mini-toggle:hover { text-decoration: underline; }
+.auto-schedule-check-fail-row {
+  color: #991b1b;
+  font-size: 12px;
+  padding: 3px 0;
+}
+.auto-schedule-result-pass-summary {
+  color: #065f46;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 0;
+}
+
+/* ── STEP7: 조별 accordion ── */
+.auto-schedule-result-section {
+  margin-top: 8px;
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+}
+.auto-schedule-result-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.auto-schedule-result-group-row {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg-card);
+}
+.auto-schedule-result-group-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-main);
+  text-align: left;
+}
+.auto-schedule-result-group-toggle:hover { background: var(--bg); }
+.auto-schedule-result-caret { color: var(--text-light); }
+
+/* ── STEP8: 조를 펼치면 나오는 날짜별 표(좁은 화면은 카드형으로 전환) ── */
+.auto-schedule-result-date-head,
+.auto-schedule-result-date-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.4fr 1fr;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.auto-schedule-result-date-head {
+  color: var(--text-sub);
+  font-size: 11px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.auto-schedule-result-date-row {
+  width: 100%;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+  color: var(--text-main);
+  text-align: left;
+}
+.auto-schedule-result-date-row:hover { background: var(--bg); }
+.auto-schedule-result-date-gap { color: var(--danger); font-weight: 700; }
+.auto-schedule-result-date-detail {
+  background: var(--bg);
+  border-top: 1px dashed var(--border);
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--text-main);
+}
+.auto-schedule-result-date-detail-head {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+/* ── STEP9: 원인 상세 — 필요/현재/부족/직접후보 key-value 행 ── */
+.auto-schedule-result-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 1px 0;
+  max-width: 260px;
+}
+.auto-schedule-result-kv span:first-child { color: var(--text-sub); }
+.auto-schedule-result-blocker-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-sub);
+  margin-top: 6px;
+}
+.auto-schedule-result-blocker-list {
+  list-style: disc;
+  padding-left: 18px;
+  margin: 2px 0;
+}
+
+/* ── STEP11: 월간 Capacity 별도 accordion(날짜별 shortage와 섞지 않음) ── */
+.auto-schedule-result-capacity {
+  margin-top: 10px;
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+}
+.auto-schedule-result-capacity-toggle {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-main);
+  padding: 4px 0;
+}
+
+/* ── STEP16: Responsive — 모바일에서 날짜 표를 라벨 붙은 카드형으로 전환 ── */
+@media (max-width: 480px) {
+  .auto-schedule-result-date-head { display: none; }
+  .auto-schedule-result-date-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .auto-schedule-result-date-cell { display: flex; justify-content: space-between; }
+  .auto-schedule-result-date-cell::before {
+    content: attr(data-label);
+    color: var(--text-sub);
+    font-weight: 400;
+  }
+  .auto-schedule-result-kv { max-width: none; }
+}
+
 /* 비활성 버튼: 배경색이 그대로 남아 "누를 수 있는 버튼"처럼 보이지 않도록 명시적으로
    흐리게 처리 — 기존 .staff-filter-btn:disabled와 동일한 opacity 관례를 재사용. */
 .btn:disabled {

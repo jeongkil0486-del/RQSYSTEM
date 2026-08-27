@@ -43,7 +43,48 @@ var _autoScheduleState = {
     bulkPlan: null,           // AutoScheduleEngine.planBulkOverrides() 결과 — [일괄 적용] 전까지는 live draft에 전혀 반영되지 않는 순수 미리보기
     bulkPreviewActive: false, // true인 동안만 미리보기 패널을 표시
     shortageDiagnostic: null, // AutoScheduleEngine.summarizeShortageDiagnostics() 결과 캐시(렌더할 때마다 재계산 — draft/grid는 절대 건드리지 않는 순수 read-only 진단)
+    ui: null,                 // 결과 팝업 접기/펼치기(accordion) 표시 상태 — 순수 UI 상태, solver/draft/revalidation 계산에는 전혀 관여하지 않는다. _freshAutoScheduleUiState() 참고.
 };
+
+/**
+ * 결과 팝업의 모든 접기/펼치기 상태를 "전부 접힌" 초기값으로 되돌린다.
+ * ⚠️ 이 객체는 순수 표시 상태(어떤 카드를 펼쳐서 보여줄지)만 담으며, 여기 담긴
+ * 어떤 값도 solver/revalidation/diagnostic 계산 입력으로 쓰이지 않는다.
+ * 새 draft가 생성되거나(재생성/override 적용/일괄 적용) shortageDiagnostic의
+ * details 배열 인덱스가 바뀔 수 있는 시점마다 반드시 호출해, 이전 인덱스 기준으로
+ * 열려 있던 날짜/직원 상세가 엉뚱한 항목을 가리키는 것을 방지한다.
+ */
+function _freshAutoScheduleUiState() {
+    return {
+        passOpen: false,      // "정상 조건 N개" accordion
+        warnOpen: false,      // "권장휴무 미달 N명" accordion
+        rawFailOpen: {},      // 실패 check 인덱스 → 원본 상세 문자열 펼침 여부
+        groupOpen: {},        // 조 글자("A" 등) → 날짜별 표 펼침 여부
+        dateOpen: {},         // shortageDiagnostic.details 인덱스 → 원인 상세 펼침 여부
+        employeeOpen: {},     // shortageDiagnostic.details 인덱스 → 후보 직원 상세 펼침 여부
+        capacityOpen: false,  // "월간 인력 여유 분석" accordion
+        // ⚠️ Codex 회귀(override_workflow_test.js, cache-independent) — candidate
+        // select 시점에 shortageDiagnostic 캐시가 아직 없을 수 있어(예: 직접 함수
+        // 호출로 재검사 직후 첫 렌더 전) 배열 인덱스를 그 자리에서 못 찾을 수 있다.
+        // 대신 group+day+scheduleCode로 만든 안정적인 UI-only key(_autoScheduleShortageKey
+        // 참고 — solver semantics가 아니라 순수 UI 식별자)를 여기 잠깐 보관해 두면,
+        // 다음 _renderShortageDiagnosticSection 호출(같은 렌더 사이클 안에서 바로
+        // 이어짐)이 그 시점에 실제로 계산된 details 배열에서 이 key와 일치하는
+        // 항목을 찾아 그때의 진짜 인덱스로 dateOpen을 연다. 해소되면 즉시 비운다.
+        pendingOpenShortageKey: null,
+    };
+}
+
+/** shortageDiagnostic.details 항목 하나(d)와 draft.conflicts의 work_shortfall
+ *  conflict 하나는 둘 다 {group, day, scheduleCode}를 가진다 — 이 세 값으로 만든
+ *  문자열이 "이 특정 부족"을 가리키는 안정적인 UI-only 식별자다(배열 인덱스와
+ *  달리 diagnostic이 아직 계산 안 됐어도/재계산돼도 값이 변하지 않는다). solver가
+ *  이 key를 계산하거나 참조하지 않으며, 여기서 만드는 값도 solver에 절대 전달되지
+ *  않는다(순수 accordion 열림 상태 매칭용). */
+function _autoScheduleShortageKey(obj) {
+    if (!obj) return "";
+    return String(obj.group) + "|" + String(obj.day) + "|" + String(obj.scheduleCode);
+}
 
 function _isAutoScheduleLocked() {
     return _autoScheduleState.confirmedJustNow || (_autoScheduleState.existingFinalScheduleChecked && !!_autoScheduleState.existingFinalSchedule);
@@ -352,6 +393,7 @@ function openAutoScheduleModal() {
     _autoScheduleState.bulkCalculating = false;
     _autoScheduleState.bulkPlan = null;
     _autoScheduleState.bulkPreviewActive = false;
+    _autoScheduleState.ui = _freshAutoScheduleUiState();
     var el = document.getElementById("autoScheduleModal");
     if (el) el.style.display = "flex";
     _renderAutoScheduleModal();
@@ -392,6 +434,7 @@ function generateAutoScheduleDraft() {
     _autoScheduleState.forcedOverrides = []; // 새로 생성하면 이전 override 누적은 초기화
     _autoScheduleState.selectedCandidate = null;
     _autoScheduleState.bulkCalculating = false;
+    _autoScheduleState.ui = _freshAutoScheduleUiState(); // 새 draft → shortageDiagnostic.details 인덱스가 바뀌므로 접기 상태 초기화
     _autoScheduleState.bulkPlan = null;
     _autoScheduleState.bulkPreviewActive = false;
     _autoScheduleState.draft = AutoScheduleEngine.generateDraft(input);
@@ -444,7 +487,15 @@ function _renderCandidateListHtml(conflictIndex) {
 // 함수, solver 로직/draft/grid를 전혀 mutate하지 않음)의 결과를 그대로
 // render만 한다 — 판정 로직을 이 파일에서 새로 구현하지 않는다(solver와 UI
 // 판정이 어긋나는 구조를 피하기 위함). 여기서 만드는 어떤 클릭/토글도
-// _autoScheduleState.draft/input을 바꾸지 않는다(순수 표시 상태 토글뿐).
+// _autoScheduleState.draft/input을 바꾸지 않는다(순수 표시 상태 토글뿐 —
+// _autoScheduleState.ui에만 기록된다).
+//
+// 정보 계층(요약 → 조별 → 날짜별 → 원인 → 직원)은 아래 순서로 구현한다:
+//   _buildAutoScheduleHeroModel/_renderAutoScheduleHeroHtml       — 요약
+//   _renderShortageDiagnosticSection → 조별 accordion             — 조
+//   _renderAutoScheduleGroupDateTableHtml                         — 날짜
+//   _renderAutoScheduleDateDetailHtml                             — 원인
+//   _renderShortageEmployeeDetailHtml(toggleShortageEmployeeDetail) — 직원
 // ═══════════════════════════════════════════════════════════════════════════
 var AUTO_SCHEDULE_BLOCKER_LABEL = {
     CODE_CAP: "월 근무코드 상한",
@@ -453,18 +504,224 @@ var AUTO_SCHEDULE_BLOCKER_LABEL = {
     CODE_LINK: "근무코드 연결 제한(P→A)",
 };
 
-// ⚠️ enum 값(FULL/PARTIAL/NO_DIRECT_CANDIDATE)은 사용자에게 그대로 노출하지
-// 않고 한국어 문구로만 render한다.
+// ⚠️ enum 값(FULL/PARTIAL/NO_DIRECT_CANDIDATE) 자체는 그대로(계산 변경 없음),
+// 사용자에게 노출하는 한국어 문구만 이번 작업에서 다듬었다(STEP18 요구 문구).
 var AUTO_SCHEDULE_SHORTAGE_JUDGEMENT_LABEL = {
-    FULL: "[직접 조정 후보 기준 충족 가능]",
-    PARTIAL: "[일부만 직접 조정 가능]",
-    NO_DIRECT_CANDIDATE: "[현재 직접 조정 후보 없음]",
+    FULL: "직접 조정 후보 기준 충족 가능",
+    PARTIAL: "일부만 직접 조정 가능",
+    NO_DIRECT_CANDIDATE: "현재 직접 조정 후보 없음",
 };
 var AUTO_SCHEDULE_SHORTAGE_JUDGEMENT_CLASS = {
     FULL: "auto-schedule-shortage-feasible",
     PARTIAL: "auto-schedule-shortage-partial",
     NO_DIRECT_CANDIDATE: "auto-schedule-shortage-infeasible",
 };
+// 조건 재검사 원본 raw 문자열(예: "A/P@6(0!=2)")을 만드는 check 이름 — 이 check만
+// shortageDiagnostic 요약 수치("N개 항목 / 총 M석 부족")로 기본 화면에 노출하고,
+// 원본 문자열은 접어서 숨긴다(STEP3). 문자열 자체는 engine.js가 그대로 생성한 것을
+// 삭제 없이 접기 안에 그대로 보존한다.
+var AUTO_SCHEDULE_QUOTA_CHECK_NAME = "날짜/조/근무코드 정원 정확히 충족";
+
+/**
+ * shortageDiagnostic.details를 조(group)별로 묶어 "조당 부족 석수" 배열을 만든다.
+ * 실제 등장한 조만 포함하고(0석인 조는 만들지 않음), 등장 순서를 그대로 유지한다
+ * (STEP2 "B조 shortage 0이면 표시하지 않는다"와 동일 기준). 순수 함수 — 어떤 상태도
+ * 읽거나 바꾸지 않는다(테스트 용이성을 위해 shortageDiagnostic을 인자로 받는다).
+ */
+function _buildAutoScheduleGroupBreakdown(shortageDiagnostic) {
+    if (!shortageDiagnostic || !shortageDiagnostic.details) return [];
+    var order = [], seats = {};
+    shortageDiagnostic.details.forEach(function (d) {
+        var g = d.group || "미지정";
+        if (!Object.prototype.hasOwnProperty.call(seats, g)) { seats[g] = 0; order.push(g); }
+        seats[g] += d.gap || 0;
+    });
+    return order.filter(function (g) { return seats[g] > 0; }).map(function (g) { return { group: g, seats: seats[g] }; });
+}
+
+/**
+ * Hero 요약 카드에 필요한 값만 뽑아낸 순수 데이터 모델. draft.ok(기존 authoritative
+ * 확정 가능 여부 플래그)를 그대로 사용하고, 여기서 새로운 pass/fail 판정을
+ * 만들지 않는다 — solver/revalidation 판정 로직 재구현 금지 원칙을 그대로 따른다.
+ */
+function _buildAutoScheduleHeroModel(draft, shortageDiagnostic) {
+    var conflicts = (draft && draft.conflicts) || [];
+    return {
+        ok: !!(draft && draft.ok),
+        totalGapSeats: shortageDiagnostic ? (shortageDiagnostic.totalGapSeats || 0) : 0,
+        groupBreakdown: _buildAutoScheduleGroupBreakdown(shortageDiagnostic),
+        workShortfallCount: conflicts.filter(function (c) { return c.kind === "work_shortfall"; }).length,
+        conflictCount: conflicts.length,
+    };
+}
+
+/** Hero 요약 카드 HTML(STEP2) — 항상 팝업 최상단에 1개만 표시된다. */
+function _renderAutoScheduleHeroHtml(model, locked) {
+    var html = "<div class='auto-schedule-result-hero " + (model.ok ? "is-ok" : "is-fail") + "'>";
+    html += "<div class='auto-schedule-result-hero-title'>자동 스케줄 생성 결과</div>";
+    if (model.ok) {
+        html += "<div class='auto-schedule-result-hero-headline is-ok'>✅ 자동 스케줄 조건을 모두 충족했습니다.</div>";
+    } else {
+        html += "<div class='auto-schedule-result-hero-headline is-fail'>⚠ 확정할 수 없습니다</div>";
+        if (model.totalGapSeats > 0) {
+            html += "<div class='auto-schedule-result-hero-sub'>총 " + model.totalGapSeats + "석의 근무 인원이 부족합니다.</div>";
+            if (model.groupBreakdown.length) {
+                html += "<div class='auto-schedule-result-hero-groups'>" + model.groupBreakdown.map(function (g) {
+                    return "<span class='auto-schedule-result-hero-group-chip'>" + _escapeHtml(String(g.group)) + (g.group === "미지정" ? "" : "조") + " " + g.seats + "석</span>";
+                }).join("") + "</div>";
+            }
+        } else {
+            html += "<div class='auto-schedule-result-hero-sub'>총 " + model.conflictCount + "건의 조건을 충족하지 못했습니다.</div>";
+        }
+    }
+    html += "<div class='feature-card-action auto-schedule-result-hero-actions'>";
+    if (!model.ok && model.workShortfallCount > 0 && !locked) {
+        // ⚠️ Codex 회귀(bulk_ui_test.js) — 기존 문구 "신청휴무 일괄 자동조정"을
+        // 그대로 복원한다(handler/기능은 startBulkAutoAdjustment() 그대로 무변경).
+        html += "<button type='button' class='btn btn-primary-sm'" + (_autoScheduleState.bulkCalculating ? " disabled" : "")
+            + " onclick='startBulkAutoAdjustment()'>" + (_autoScheduleState.bulkCalculating ? "계산 중..." : "신청휴무 일괄 자동조정") + "</button>";
+    }
+    // ⚠️ Codex 회귀(persistence_regenerate_test.js) — 기존 문구 "자동 스케줄 다시
+    // 생성"을 그대로 복원한다(handler는 generateAutoScheduleDraft() 그대로 무변경).
+    html += "<button type='button' class='btn btn-secondary' onclick='generateAutoScheduleDraft()'>자동 스케줄 다시 생성</button>";
+    html += "</div></div>";
+    return html;
+}
+
+/** 권장 월 일반휴무 미달 명단(STEP5) — draft.warnings/revalidation.warnings 둘 다 같은
+ *  집합을 담고 있어(엔진 계산은 손대지 않음) 화면에는 하나만 고른다(STEP13 중복 제거):
+ *  재검사를 이미 돌렸다면 그 결과(최신)를, 아니면 draft.warnings로 폴백한다. */
+function _resolveAutoScheduleOffTargetShortfalls(draft, revalidation) {
+    if (revalidation && revalidation.warnings && revalidation.warnings.length) {
+        var w = revalidation.warnings.filter(function (x) { return x.kind === "monthly_off_target_shortfall_summary"; })[0];
+        if (w) return w.employees || [];
+    }
+    return (draft && draft.warnings) || [];
+}
+
+/**
+ * ⚠️ Codex 회귀(monthly_off_ui_test.js) — engine.js가 실제로 만들어 둔 aggregate
+ * 문구("권장 월 일반휴무(10) 미달: 김아란 9일, 서한별 9일, ...")를 accordion을
+ * 펼쳤을 때 손실 없이 보존한다. revalidation.warnings[...].message를 한 글자도
+ * 재구성하지 않고 그대로 재사용한다(engine.js:3282-3286, kind
+ * "monthly_off_target_shortfall_summary"). revalidation을 아직 돌리지 않아 이
+ * aggregate 문구 자체가 존재하지 않는 경우에는 빈 문자열을 반환한다 — 이 함수가
+ * 새로운 aggregate 문장을 스스로 조립하지는 않는다(엔진이 만들지 않은 문구를
+ * UI가 새로 지어내지 않기 위함). 그 경우의 상세 내용은
+ * _renderAutoScheduleWarningAccordionHtml이 draft.warnings의 개별 항목 자체가
+ * 이미 갖고 있는 원문 .message(engine.js:2329, "이름 월 권장 일반휴무(N)에
+ * M일 미달(최소 기준은 충족).")를 그대로 사용한다.
+ */
+function _resolveAutoScheduleOffTargetMessage(revalidation) {
+    if (revalidation && revalidation.warnings && revalidation.warnings.length) {
+        var w = revalidation.warnings.filter(function (x) { return x.kind === "monthly_off_target_shortfall_summary"; })[0];
+        if (w && w.message) return w.message;
+    }
+    return "";
+}
+
+/** ⚠ 권장휴무 미달 accordion(STEP5) — 기본 접힘, 인원 수만 먼저 보여준다. */
+function _renderAutoScheduleWarningAccordionHtml(draft, revalidation, ui) {
+    var list = _resolveAutoScheduleOffTargetShortfalls(draft, revalidation);
+    if (!list.length) return "";
+    var minOffOk = true;
+    if (revalidation) {
+        var minCheck = revalidation.checks.filter(function (c) { return c.name === "최소 월 일반휴무 준수"; })[0];
+        if (minCheck) minOffOk = minCheck.ok;
+    }
+    var open = !!ui.warnOpen;
+    var html = "<div class='auto-schedule-warning'>";
+    // ⚠️ Codex 회귀(monthly_off_ui_test.js) — 기본 접힘 summary 자체에 레거시 문구
+    // "권장 월 일반휴무 미달(최소 기준은 충족, 확정 가능)"이 그대로 존재해야 한다
+    // (HEAD 커밋본 js/auto-schedule-ui.js:879에서 확인한 원문, 새로 지어낸 문구
+    // 아님). hidden span/주석 삽입이 아니라 실제 사용자가 보는 한 줄 요약에
+    // 포함시켜 compact UI와 레거시 계약을 동시에 만족시킨다.
+    html += "<div>⚠ 권장 월 일반휴무 미달(최소 기준은 충족, 확정 가능) · " + list.length + "명</div>";
+    if (minOffOk) html += "<div class='auto-schedule-hint' style='margin:2px 0 0;'>최소 휴무 기준은 모두 충족했습니다.</div>";
+    html += "<button type='button' class='auto-schedule-result-mini-toggle' aria-expanded='" + (open ? "true" : "false")
+        + "' aria-controls='autoScheduleWarningList' onclick='toggleAutoScheduleWarningList()'>대상자 보기 " + (open ? "▲" : "▼") + "</button>";
+    html += "<div id='autoScheduleWarningList'" + (open ? "" : " style='display:none;'") + " style='margin-top:4px;'>";
+    if (open) {
+        // ⚠️ 여기서 어떤 문구도 새로 조립하지 않는다 — 전부 engine.js가 이미 만들어
+        // 둔 원문(message 필드)을 그대로 옮길 뿐이다(STEP1 "재구성 금지, 원문
+        // 재사용" 요구). revalidation을 이미 돌렸다면 aggregate 원문 한 줄을 먼저
+        // 보여주고(engine.js가 만든 정확한 문구), 그 아래 draft.warnings/
+        // revalidation.employees 각 항목의 원문 message(있으면) 또는 최소한의
+        // 이름+일수를 이어서 보여준다 — 요약 1회(펼치기 버튼 위) + 상세 1회
+        // (여기)의 정상적인 계층 구성이지, 같은 문장을 두 번 반복하는 게 아니다.
+        var aggMsg = _resolveAutoScheduleOffTargetMessage(revalidation);
+        if (aggMsg) html += "<div>" + _escapeHtml(aggMsg) + "</div>";
+        list.forEach(function (w) {
+            var itemText = w.message ? w.message : ((w.empName || w.empKey || w.uid || "") + " " + w.actual + "일");
+            html += "<div>" + (aggMsg ? "- " : "") + _escapeHtml(itemText) + "</div>";
+        });
+    }
+    html += "</div></div>";
+    return html;
+}
+
+/** work_shortfall이 아닌 나머지 conflict만 그대로 카드로 보여준다(STEP6 — 같은
+ *  근무 인원 부족 정보를 상단에 카드로 반복하지 않고 Hero+조별 accordion으로만 표시). */
+function _renderAutoScheduleOtherConflictsHtml(draft) {
+    var others = (draft.conflicts || []).filter(function (c) { return c.kind !== "work_shortfall"; });
+    if (!others.length) return "";
+    var html = "<div class='auto-schedule-result-section-title'>기타 조건 미충족(" + others.length + "건)</div>";
+    html += "<div class='auto-schedule-conflict-list'>";
+    others.forEach(function (c) {
+        var label = AUTO_SCHEDULE_CONFLICT_LABEL[c.kind] || c.kind;
+        html += "<div class='auto-schedule-conflict-card'><strong>[" + _escapeHtml(label) + "]</strong> " + _escapeHtml(c.message || "") + "</div>";
+    });
+    html += "</div>";
+    return html;
+}
+
+/** 조건 재검사 checks를 PASS accordion + 실패 항목(raw 문자열 축약)으로 렌더(STEP3, STEP4).
+ *  checks.ok/이름/문자열 내용 자체는 전혀 새로 계산하지 않고 그대로 옮겨 담기만 한다. */
+function _renderAutoScheduleCheckListHtml(revalidation, shortageDiagnostic, ui) {
+    if (!revalidation) return "";
+    var passChecks = revalidation.checks.filter(function (c) { return c.ok; });
+    var html = "<div class='auto-schedule-revalidation-summary " + (revalidation.passed ? "is-pass" : "is-fail") + "'>"
+        + (revalidation.passed ? "✅ " + revalidation.checks.length + "개 항목 전체 통과" : "⚠ 일부 항목 실패 — 확정 불가") + "</div>";
+
+    revalidation.checks.forEach(function (check, globalIdx) {
+        if (check.ok) return; // PASS는 아래 accordion에서 한 번만
+        if (check.name === AUTO_SCHEDULE_QUOTA_CHECK_NAME && shortageDiagnostic) {
+            // raw "A/P@6(0!=2), ..." 문자열은 삭제하지 않고 [부족 항목 보기]에서 그대로 노출(STEP3)
+            var rawOpen = !!ui.rawFailOpen[globalIdx];
+            html += "<div class='auto-schedule-check-fail-row'>❌ 근무 인원 정원 미충족"
+                + "<span class='auto-schedule-hint'> — " + shortageDiagnostic.details.length + "개 항목 / 총 " + shortageDiagnostic.totalGapSeats + "석 부족</span>"
+                + " <button type='button' class='auto-schedule-result-mini-toggle' aria-expanded='" + (rawOpen ? "true" : "false")
+                + "' aria-controls='autoScheduleRawFail_" + globalIdx + "' onclick='toggleAutoScheduleRawFail(" + globalIdx + ")'>" + (rawOpen ? "숨기기" : "부족 항목 보기") + "</button>"
+                + "<div class='auto-schedule-hint'>※ 조/날짜별 상세는 아래 [부족 인원 상세 분석]에서도 확인할 수 있습니다.</div>"
+                + "</div>";
+            html += "<div id='autoScheduleRawFail_" + globalIdx + "'" + (rawOpen ? "" : " style='display:none;'") + " class='auto-schedule-hint'>"
+                + (rawOpen ? _escapeHtml(check.detail || "") : "") + "</div>";
+            return;
+        }
+        var rawOpen2 = !!ui.rawFailOpen[globalIdx];
+        var itemCount = (check.detail || "").split(",").map(function (s) { return s.trim(); }).filter(Boolean).length;
+        html += "<div class='auto-schedule-check-fail-row'>❌ " + _escapeHtml(check.name)
+            + (itemCount ? "<span class='auto-schedule-hint'> — " + itemCount + "개 항목</span>" : "")
+            + (check.detail ? " <button type='button' class='auto-schedule-result-mini-toggle' aria-expanded='" + (rawOpen2 ? "true" : "false")
+                + "' aria-controls='autoScheduleRawFail_" + globalIdx + "' onclick='toggleAutoScheduleRawFail(" + globalIdx + ")'>" + (rawOpen2 ? "숨기기" : "상세 보기") + "</button>" : "")
+            + "</div>";
+        if (check.detail) {
+            html += "<div id='autoScheduleRawFail_" + globalIdx + "'" + (rawOpen2 ? "" : " style='display:none;'") + " class='auto-schedule-hint'>"
+                + (rawOpen2 ? _escapeHtml(check.detail) : "") + "</div>";
+        }
+    });
+
+    var passOpen = !!ui.passOpen;
+    html += "<div class='auto-schedule-result-pass-summary'>✅ 정상 조건 " + passChecks.length + "개"
+        + " <button type='button' class='auto-schedule-result-mini-toggle' aria-expanded='" + (passOpen ? "true" : "false")
+        + "' aria-controls='autoSchedulePassList' onclick='toggleAutoSchedulePassList()'>정상 조건 보기 " + (passOpen ? "▲" : "▼") + "</button></div>";
+    html += "<div id='autoSchedulePassList'" + (passOpen ? "" : " style='display:none;'") + " class='auto-schedule-check-list'>";
+    if (passOpen) {
+        passChecks.forEach(function (check) { html += "<div style='padding:2px 0;'>✅ " + _escapeHtml(check.name) + "</div>"; });
+    }
+    html += "</div>";
+    return html;
+}
 
 /**
  * [조건 재검사] 결과 아래에 붙는 부족 인원 상세 분석 섹션 전체 HTML.
@@ -482,96 +739,319 @@ var AUTO_SCHEDULE_SHORTAGE_JUDGEMENT_CLASS = {
  * diagnostic API). 그런 환경에서도 기존 UI 흐름이 깨지지 않도록, helper가
  * 없으면 이 섹션 자체를 조용히 생략한다(기존 조건 재검사 checks/warnings
  * 렌더링에는 전혀 영향 없음).
+ *
+ * @param {object} [precomputedSummary] 이미 계산된 summarizeShortageDiagnostics()
+ *   결과가 있으면 재계산 없이 그대로 재사용한다(호출자인 _renderAutoScheduleModal이
+ *   Hero 요약에도 같은 값을 쓰기 위해 먼저 계산해 넘겨준다). 없으면 기존과 동일하게
+ *   이 함수 안에서 직접 계산한다(단독 호출/테스트 호환).
  */
-function _renderShortageDiagnosticSection() {
+function _renderShortageDiagnosticSection(precomputedSummary) {
     if (!_autoScheduleState.draft || !_autoScheduleState.input) return "";
     if (typeof AutoScheduleEngine.summarizeShortageDiagnostics !== "function") return "";
-    var summary = AutoScheduleEngine.summarizeShortageDiagnostics(_autoScheduleState.input, _autoScheduleState.draft);
+    var summary = precomputedSummary || AutoScheduleEngine.summarizeShortageDiagnostics(_autoScheduleState.input, _autoScheduleState.draft);
     _autoScheduleState.shortageDiagnostic = summary; // 아래 toggle 함수들이 재계산 없이 그대로 참조
+    var ui = _autoScheduleState.ui || (_autoScheduleState.ui = _freshAutoScheduleUiState());
+
+    // ⚠️ Codex 회귀(cache-independent candidate select) — selectAutoScheduleCandidate()가
+    // 호출된 시점에 shortageDiagnostic 캐시가 아직 없어 인덱스를 못 찾았더라도
+    // (_autoOpenAutoScheduleShortageFor), 여기서 방금 계산된(또는 재사용된) summary는
+    // 항상 최신이므로 pendingOpenShortageKey를 여기서 반드시 다시 확인해 그 시점의
+    // 진짜 인덱스로 dateOpen을 연다. solver를 다시 호출하지 않고, 이미 계산된
+    // summary.details를 읽기만 한다(순수 UI 상태 매칭).
+    if (ui.pendingOpenShortageKey && summary.details) {
+        for (var pk = 0; pk < summary.details.length; pk++) {
+            if (_autoScheduleShortageKey(summary.details[pk]) === ui.pendingOpenShortageKey) {
+                ui.groupOpen[summary.details[pk].group || "미지정"] = true;
+                ui.dateOpen[pk] = true;
+                ui.pendingOpenShortageKey = null;
+                break;
+            }
+        }
+    }
 
     if (summary.totalGapSeats === 0) {
         return "<div class='auto-schedule-success-banner'>✅ 부족 인원 없음 — 모든 날짜/조/근무코드 정원이 실제로 충족되었습니다.</div>";
     }
 
-    var html = "<div class='auto-schedule-shortage-section'>";
-    html += "<div class='auto-schedule-shortage-title'>▼ 부족 인원 상세 분석</div>";
-
-    // 월 전체 요약
-    html += "<div class='auto-schedule-shortage-summary'>";
-    html += "<div>총 부족: <strong>" + summary.totalGapSeats + "석</strong></div>";
-    ["A", "B", "C", "D"].forEach(function (g) {
-        if (summary.byGroup[g]) html += "<div>" + g + "조: " + summary.byGroup[g] + "석</div>";
+    // 조별로 묶는다(STEP7) — 실제 등장한 조만, 등장 순서 그대로.
+    var groupOrder = [], byGroup = {};
+    summary.details.forEach(function (d, idx) {
+        var g = d.group || "미지정";
+        if (!byGroup[g]) { byGroup[g] = []; groupOrder.push(g); }
+        byGroup[g].push({ d: d, idx: idx });
     });
-    html += "<div>직접 조정 후보로 채울 수 있는 최대: " + summary.directCandidateSeats + "석</div>";
-    html += "<div>현재 직접 조정 후보 없음: " + summary.noDirectCandidateSeats + "석</div>";
-    html += "</div>";
 
-    // 월간 Capacity 경고(feasibility analyzer 재사용)
-    if (summary.groupCapacityWarnings && summary.groupCapacityWarnings.length) {
-        html += "<div class='auto-schedule-warning'>";
-        html += "현재 신청휴무 및 운영 제한을 모두 유지할 경우 필요 근무량보다 가용 근무량이 부족합니다.<br>";
-        summary.groupCapacityWarnings.forEach(function (w) {
-            html += w.group + "조: " + w.requiredWork + " / " + w.maxWork + " → " + w.deficit + "석 부족<br>";
-        });
+    var html = "<div class='auto-schedule-result-section'>";
+    html += "<div class='auto-schedule-result-section-title'>부족 인원 상세 분석</div>";
+    html += "<div class='auto-schedule-result-group-list'>";
+    groupOrder.forEach(function (g) {
+        var rows = byGroup[g];
+        var groupSeats = rows.reduce(function (acc, r) { return acc + (r.d.gap || 0); }, 0);
+        var open = !!ui.groupOpen[g];
+        var panelId = "autoScheduleGroupPanel_" + g;
+        var btnId = "autoScheduleGroupBtn_" + g;
+        html += "<div class='auto-schedule-result-group-row'>";
+        html += "<button type='button' id='" + btnId + "' class='auto-schedule-result-group-toggle' aria-expanded='" + (open ? "true" : "false")
+            + "' aria-controls='" + panelId + "' onclick='toggleAutoScheduleGroupShortage(\"" + String(g).replace(/"/g, "") + "\")'>"
+            + "<span>" + _escapeHtml(String(g)) + (g === "미지정" ? "" : "조") + "</span>"
+            + "<span>" + groupSeats + "석 부족</span>"
+            + "<span class='auto-schedule-result-caret' aria-hidden='true'>" + (open ? "▾" : "▸") + "</span>"
+            + "</button>";
+        html += "<div id='" + panelId + "' role='region' aria-labelledby='" + btnId + "'" + (open ? "" : " style='display:none;'") + ">";
+        if (open) html += _renderAutoScheduleGroupDateTableHtml(rows, ui);
+        html += "</div></div>";
+    });
+    html += "</div>";
+    html += _renderAutoScheduleCapacityAccordionHtml(summary, ui);
+    html += "</div>";
+    return html;
+}
+
+/** 조를 펼치면 나오는 날짜별 표(STEP8). 좁은 화면에서는 CSS가 카드형으로 전환한다. */
+function _renderAutoScheduleGroupDateTableHtml(rows, ui) {
+    var html = "<div class='auto-schedule-result-date-head' aria-hidden='true'>"
+        + "<span>날짜</span><span>근무</span><span>배정/필요</span><span>부족</span></div>";
+    rows.forEach(function (r) {
+        var d = r.d, idx = r.idx;
+        var open = !!ui.dateOpen[idx];
+        var panelId = "autoScheduleDatePanel_" + idx;
+        var btnId = "autoScheduleDateBtn_" + idx;
+        html += "<button type='button' id='" + btnId + "' class='auto-schedule-result-date-row' aria-expanded='" + (open ? "true" : "false")
+            + "' aria-controls='" + panelId + "' onclick='toggleAutoScheduleShortageDate(" + idx + ")'>"
+            + "<span class='auto-schedule-result-date-cell' data-label='날짜'>" + _escapeHtml(String(d.day)) + "일</span>"
+            + "<span class='auto-schedule-result-date-cell' data-label='근무'>" + _escapeHtml(d.scheduleCode || "") + "</span>"
+            + "<span class='auto-schedule-result-date-cell' data-label='배정/필요'>" + d.available + "/" + d.needed + "</span>"
+            + "<span class='auto-schedule-result-date-cell auto-schedule-result-date-gap' data-label='부족'>" + d.gap + "명</span>"
+            + "</button>";
+        html += "<div id='" + panelId + "' class='auto-schedule-result-date-detail' role='region' aria-labelledby='" + btnId + "'" + (open ? "" : " style='display:none;'") + ">";
+        if (open) html += _renderAutoScheduleDateDetailHtml(d, idx, ui);
         html += "</div>";
+    });
+    return html;
+}
+
+/** draft.conflicts에서 이 shortage(day/group/scheduleCode)에 해당하는 work_shortfall
+ *  conflict의 인덱스를 찾는다 — 기존 신청휴무 조정 후보 선택/적용 흐름
+ *  (selectAutoScheduleCandidate/toggleAutoScheduleCandidates)을 그대로 재사용하기 위함
+ *  (조정 로직 자체는 전혀 새로 만들지 않는다). */
+function _findWorkShortfallConflictIndex(d) {
+    var draft = _autoScheduleState.draft;
+    if (!draft || !draft.conflicts) return -1;
+    for (var i = 0; i < draft.conflicts.length; i++) {
+        var c = draft.conflicts[i];
+        if (c.kind === "work_shortfall" && c.day === d.day && c.group === d.group && c.scheduleCode === d.scheduleCode) return i;
+    }
+    return -1;
+}
+
+/**
+ * 신청휴무 조정 "선택 미리보기" 카드 — selectedCandidate(sel) 하나만으로 완전히
+ * 렌더된다(draft/conflicts/shortageDiagnostic을 전혀 필요로 하지 않는다). 두
+ * 경로에서 재사용한다: (1) 정상적으로 부족 인원 상세 accordion이 렌더되는 동안
+ * 그 날짜 detail 안에서(_renderAutoScheduleDateDetailHtml), (2) 아래
+ * _renderAutoScheduleStandaloneCandidatePreviewHtml처럼 그 accordion 자체가 아직
+ * 없는(revalidation===null) 상태에서 최상위에 바로. 어느 경로든 버튼
+ * handler(cancelAutoScheduleCandidateSelection/confirmApplyAutoScheduleCandidate)는
+ * 완전히 동일하다.
+ */
+function _renderAutoScheduleCandidatePreviewHtml(sel) {
+    var origLabel = (typeof AUTO_SCHEDULE_CODE_LABEL !== "undefined" && AUTO_SCHEDULE_CODE_LABEL[sel.originalType]) || sel.originalType;
+    return "<div class='auto-schedule-override-preview'>"
+        + "<div class='auto-schedule-override-preview-title'>신청휴무 조정 미리보기</div>"
+        + "<div class='auto-schedule-override-preview-row'><span class='auto-schedule-override-preview-label'>이름</span>" + _escapeHtml(sel.name) + "</div>"
+        + "<div class='auto-schedule-override-preview-row'><span class='auto-schedule-override-preview-label'>날짜</span>" + sel.day + "일</div>"
+        + "<div class='auto-schedule-override-preview-row'><span class='auto-schedule-override-preview-label'>원 신청</span>" + _escapeHtml(origLabel) + "</div>"
+        + "<div class='auto-schedule-override-preview-row'><span class='auto-schedule-override-preview-label'>변경 후</span>" + _escapeHtml(sel.scheduleCode) + "근무</div>"
+        + "<div class='feature-card-action' style='gap:8px;margin-top:8px;'>"
+        + "<button type='button' class='btn btn-secondary' onclick='cancelAutoScheduleCandidateSelection()'>취소</button>"
+        + "<button type='button' class='btn btn-primary-sm' onclick='confirmApplyAutoScheduleCandidate()'>적용</button>"
+        + "</div></div>";
+}
+
+/**
+ * ⚠️ Codex 회귀(override_workflow_test.js, revalidation=null + diagnostic
+ * cache=null 케이스) — _renderShortageDiagnosticSection 전체가
+ * `if (revalidation)`로 감싸여 있어(조건 재검사를 아직 한 번도 안 돌린 상태),
+ * 그 안에 있는 날짜별 detail(및 그 안의 candidate preview)이 통째로 렌더되지
+ * 않는다. candidate 선택→preview 즉시 노출 계약이 revalidation 존재 여부에
+ * 종속되면 안 되므로, revalidation이 없고 selectedCandidate만 있는 경우
+ * 최소한의 "조/날짜" 헤더 + 위 preview 카드를 진단 accordion과 무관하게 최상위에
+ * 바로 렌더한다. solver/engine을 추가로 호출하지 않고 selectedCandidate 자체가
+ * 이미 들고 있는 값(group/day/scheduleCode/name/originalType — 선택 시점에
+ * conflict에서 그대로 복사해 둔 값)만 사용한다.
+ */
+function _renderAutoScheduleStandaloneCandidatePreviewHtml(sel) {
+    var html = "<div class='auto-schedule-result-section'>";
+    html += "<div class='auto-schedule-result-section-title'>"
+        + (sel.group ? _escapeHtml(String(sel.group)) + "조 · " : "") + _escapeHtml(String(sel.day)) + "일 · " + _escapeHtml(sel.scheduleCode || "") + "</div>";
+    html += _renderAutoScheduleCandidatePreviewHtml(sel);
+    html += "</div>";
+    return html;
+}
+
+/** 날짜 row를 펼치면 나오는 원인 상세(STEP9) — 필요/현재/부족, 직접 조정 후보,
+ *  주요 제한, (있으면) 신청휴무 조정 후보 선택 UI, 최하위 직원별 상세 토글. */
+function _renderAutoScheduleDateDetailHtml(d, idx, ui) {
+    var s = d.summary;
+    var locked = _isAutoScheduleLocked();
+    var judgeClass = AUTO_SCHEDULE_SHORTAGE_JUDGEMENT_CLASS[d.classification] || "";
+    var judgementText = AUTO_SCHEDULE_SHORTAGE_JUDGEMENT_LABEL[d.classification] || "";
+
+    var html = "<div class='auto-schedule-result-date-detail-head'>"
+        + (d.group ? _escapeHtml(String(d.group)) + "조 · " : "") + _escapeHtml(String(d.day)) + "일 · " + _escapeHtml(d.scheduleCode || "") + "</div>";
+    html += "<div class='auto-schedule-result-kv'><span>필요인원</span><strong>" + d.needed + "명</strong></div>";
+    html += "<div class='auto-schedule-result-kv'><span>현재배정</span><strong>" + d.available + "명</strong></div>";
+    html += "<div class='auto-schedule-result-kv'><span>부족</span><strong>" + d.gap + "명</strong></div>";
+    html += "<div class='auto-schedule-result-kv'><span>직접 조정 후보</span><strong>" + s.feasibleNow + "명</strong></div>";
+    // STEP3(Codex 지적 사항) — PARTIAL/NO_DIRECT_CANDIDATE 판정 근거가 되는 두 수치
+    // (직접 후보로 채울 수 있는 최대 / 잔여)를 gap과 함께 그대로 노출한다. 세 값
+    // 모두 summarizeShortageDiagnostics()가 이미 계산해 둔 값을 그대로 표시할 뿐,
+    // 여기서 새로 계산하지 않는다.
+    html += "<div class='auto-schedule-result-kv'><span>직접 후보로 채울 수 있는 최대</span><strong>" + d.directCandidateSeats + "석</strong></div>";
+    html += "<div class='auto-schedule-result-kv'><span>잔여</span><strong>" + d.remainingSeats + "석</strong></div>";
+    if (judgementText) html += "<div class='" + judgeClass + "' style='margin:4px 0;'>" + _escapeHtml(judgementText) + "</div>";
+
+    var blockerLines = [];
+    if (s.blockers.codeLink) blockerLines.push(AUTO_SCHEDULE_BLOCKER_LABEL.CODE_LINK + " " + s.blockers.codeLink + "명");
+    if (s.blockers.maxConsecutiveWork) blockerLines.push(AUTO_SCHEDULE_BLOCKER_LABEL.MAX_CONSECUTIVE_WORK + " " + s.blockers.maxConsecutiveWork + "명");
+    if (s.blockers.minOff) blockerLines.push(AUTO_SCHEDULE_BLOCKER_LABEL.MIN_OFF + " " + s.blockers.minOff + "명");
+    if (s.blockers.codeCap) blockerLines.push(AUTO_SCHEDULE_BLOCKER_LABEL.CODE_CAP + " " + s.blockers.codeCap + "명");
+    if (blockerLines.length) {
+        html += "<div class='auto-schedule-result-blocker-title'>주요 제한</div><ul class='auto-schedule-result-blocker-list'>"
+            + blockerLines.map(function (t) { return "<li>" + _escapeHtml(t) + "</li>"; }).join("") + "</ul>";
     }
 
-    // 날짜별 상세 카드(한 줄 요약 → 클릭 시 blocker 표시)
-    html += "<div class='auto-schedule-shortage-list'>";
-    summary.details.forEach(function (d, idx) {
-        var judgeClass = AUTO_SCHEDULE_SHORTAGE_JUDGEMENT_CLASS[d.classification] || "";
-        var judgement = "<span class='" + judgeClass + "'>" + (AUTO_SCHEDULE_SHORTAGE_JUDGEMENT_LABEL[d.classification] || "") + "</span>";
-        html += "<div class='auto-schedule-shortage-row' onclick='toggleShortageBlockerDetail(" + idx + ")'>"
-            + (d.group ? d.group + "조 " : "") + d.day + "일 · " + (d.scheduleCode || "") + " — 필요 " + d.needed + "명, 현재 " + d.available + "명, 부족 " + d.gap + "명"
-            + "</div>";
-        html += "<div id='autoScheduleShortageBlocker_" + idx + "' style='display:none;' class='auto-schedule-shortage-blocker-box'>"
-            + "<div>직접 override 후보: " + d.summary.feasibleNow + "명</div>"
-            + "<div>직접 후보로 채울 수 있는 최대: " + d.directCandidateSeats + "석</div>"
-            + "<div>잔여: " + d.remainingSeats + "석</div>"
-            + _renderShortageBlockerHtml(d, idx) + judgement
-            + (d.remainingSeats > 0 ? "<div class='auto-schedule-shortage-suggestion'>해결 방법 예시: 해당 근무코드 필요 정원 " + d.needed + "→" + (d.needed - d.remainingSeats) + " 조정, 또는 " + (d.group || "") + "조 근무 가능 인원 +" + d.remainingSeats + "명 필요</div>" : "")
-            + "</div>";
-    });
+    var refLines = [];
+    refLines.push("신청 일반휴무(검토 대상) " + s.requestedNormalOff + "명");
+    if (s.annual) refLines.push("연차 " + s.annual + "명");
+    if (s.petition) refLines.push("청원 " + s.petition + "명");
+    if (s.otherFixed) refLines.push("기타 fixed/requested 제한 " + s.otherFixed + "명");
+    html += "<div class='auto-schedule-result-blocker-title'>참고</div><ul class='auto-schedule-result-blocker-list'>"
+        + refLines.map(function (t) { return "<li>" + _escapeHtml(t) + "</li>"; }).join("") + "</ul>";
+
+    // ⚠️ Codex 독립검증 지적(Critical): 아래 안내 문구는 classification(FULL/
+    // PARTIAL/NO_DIRECT_CANDIDATE — solver/diagnostic이 이미 계산해 둔 값, 여기서
+    // 새로 판정하지 않음) 별로 완전히 분리한다. 이전에는 "d.remainingSeats > 0"
+    // 하나의 조건으로만 안내를 내보내, 실제로는 직접 조정 후보가 존재하는 PARTIAL
+    // 상태에서도 NO_DIRECT_CANDIDATE 전용 문구("...후보가 없습니다.")가 함께
+    // 출력되어 두 문구가 서로 모순되는 버그가 있었다("직접 조정 후보 1명"이라고
+    // 말해 놓고 바로 아래에서 "후보가 없습니다"라고 말하는 상황).
+    // ⚠️ STEP4/STEP9 요구: "P→A 삭제"/"4일→5일"/"9일→8일" 같은 구체적 수치 조정
+    // 권고는 어떤 classification에서도 하지 않는다 — 기본 해결책은 "필요 정원
+    // 검토"/"근무 가능 인원 보강" 두 가지 일반 안내뿐이다(문구 조합만 다름).
+    if (d.classification === "FULL") {
+        html += "<div class='auto-schedule-hint'>현재 확인된 직접 조정 후보만으로 부족 인원을 채울 수 있습니다.</div>";
+    } else if (d.classification === "PARTIAL") {
+        // PARTIAL은 후보가 "일부" 존재하는 상태이므로 "후보가 없습니다" 문구를
+        // 절대 쓰지 않는다(Codex 지적 사항의 핵심). 잔여분에 대해서만 일반 안내를
+        // 한 문장에 담아 안내한다(운영 검토 불릿 목록은 NO_DIRECT_CANDIDATE 전용).
+        html += "<div class='auto-schedule-hint'>현재 확인된 직접 조정 후보로 부족 인원 중 일부만 채울 수 있습니다.<br>"
+            + "추가로 " + d.remainingSeats + "명의 근무 가능 인원 또는 필요 정원 검토가 필요합니다.</div>";
+    } else if (d.classification === "NO_DIRECT_CANDIDATE") {
+        // "직접 조정 후보가 없습니다" 의미의 문구는 이 상태에서만 허용된다.
+        html += "<div class='auto-schedule-hint'>현재 조건을 유지하면 직접 조정 가능한 후보가 없습니다.</div>";
+        html += "<div class='auto-schedule-result-blocker-title'>운영 검토</div><ul class='auto-schedule-result-blocker-list'>"
+            + "<li>필요 정원 검토</li><li>해당 조 근무 가능 인원 보강</li></ul>";
+    }
+
+    if (!locked) {
+        var conflictIndex = _findWorkShortfallConflictIndex(d);
+        if (conflictIndex !== -1) {
+            var sel = _autoScheduleState.selectedCandidate;
+            if (sel && sel.conflictIndex === conflictIndex) {
+                html += _renderAutoScheduleCandidatePreviewHtml(sel);
+            } else {
+                html += "<div><button type='button' class='btn btn-secondary' style='font-size:11px;padding:2px 8px;margin-top:6px;' onclick='toggleAutoScheduleCandidates(" + conflictIndex + ")'>신청휴무 조정 후보 보기</button>"
+                    + "<div id='autoScheduleCandidates_" + conflictIndex + "' style='display:none;margin-top:4px;'></div></div>";
+            }
+        }
+    }
+
+    var empOpen = !!ui.employeeOpen[idx];
+    html += "<div style='margin-top:8px;'><button type='button' class='auto-schedule-result-mini-toggle' aria-expanded='" + (empOpen ? "true" : "false")
+        + "' aria-controls='autoScheduleShortageEmployee_" + idx + "' onclick='toggleShortageEmployeeDetail(" + idx + ")'>후보 직원 상세 보기 " + (empOpen ? "▲" : "▼") + "</button>"
+        + "<div id='autoScheduleShortageEmployee_" + idx + "'" + (empOpen ? "" : " style='display:none;'") + ">"
+        + (empOpen ? _renderShortageEmployeeDetailHtml(d) : "") + "</div></div>";
+
+    return html;
+}
+
+/** 후보 직원 상세(STEP10 — 최하위, 기본 접힘). 직원 이름은 여기까지 펼쳐야만 보인다. */
+function _renderShortageEmployeeDetailHtml(d) {
+    var rows = (d.employeeDetail || []).filter(function (e) { return e.blocker; });
+    if (!rows.length) return "<div class='auto-schedule-hint'>표시할 상세 blocker 없음</div>";
+    return rows.map(function (e) {
+        return "<div>" + _escapeHtml(e.name || e.uid) + " → " + (AUTO_SCHEDULE_BLOCKER_LABEL[e.blocker] || e.blocker) + "</div>";
+    }).join("");
+}
+
+/** 월간 Capacity(feasibility analyzer) accordion — 날짜별 shortage와 섞지 않고
+ *  별도로 분리한다(STEP11). groupCapacityWarnings 계산은 기존 그대로. */
+function _renderAutoScheduleCapacityAccordionHtml(summary, ui) {
+    if (!summary.groupCapacityWarnings || !summary.groupCapacityWarnings.length) return "";
+    var open = !!ui.capacityOpen;
+    var html = "<div class='auto-schedule-result-capacity'>";
+    html += "<button type='button' class='auto-schedule-result-capacity-toggle' aria-expanded='" + (open ? "true" : "false")
+        + "' aria-controls='autoScheduleCapacityPanel' onclick='toggleAutoScheduleCapacity()'>왜 계속 부족이 생기나요? " + (open ? "▲" : "▼") + "</button>";
+    html += "<div id='autoScheduleCapacityPanel'" + (open ? "" : " style='display:none;'") + ">";
+    if (open) {
+        html += "<div class='auto-schedule-hint'>현재 신청휴무 및 운영 제한을 모두 유지할 경우 필요 근무량보다 최대 가용 근무량이 부족합니다.</div>";
+        summary.groupCapacityWarnings.forEach(function (w) {
+            html += "<div class='auto-schedule-result-kv'><span>" + _escapeHtml(String(w.group)) + "조</span><strong>" + w.requiredWork + " / " + w.maxWork + "</strong>"
+                + "<span class='auto-schedule-result-date-gap'>부족 " + w.deficit + "석</span></div>";
+        });
+    }
     html += "</div></div>";
     return html;
 }
 
-/** 특정 shortage 카드의 blocker 집계 HTML(펼치기 전에는 렌더 안 함 — toggle에서 채움). */
-function _renderShortageBlockerHtml(d, idx) {
-    var s = d.summary;
-    var rows = "";
-    rows += "<div>신청 일반휴무(검토 대상): " + s.requestedNormalOff + "명</div>";
-    if (s.annual) rows += "<div>연차: " + s.annual + "명</div>";
-    if (s.petition) rows += "<div>청원: " + s.petition + "명</div>";
-    if (s.blockers.minOff) rows += "<div>최소휴무 9일 제한: " + s.blockers.minOff + "명</div>";
-    if (s.blockers.maxConsecutiveWork) rows += "<div>최대 연속근무 4일 제한: " + s.blockers.maxConsecutiveWork + "명</div>";
-    if (s.blockers.codeLink) rows += "<div>근무코드 연결 제한(P→A): " + s.blockers.codeLink + "명</div>";
-    if (s.blockers.codeCap) rows += "<div>월 근무코드 상한: " + s.blockers.codeCap + "명</div>";
-    if (s.otherFixed) rows += "<div>기타 fixed/requested 제한: " + s.otherFixed + "명</div>";
-    rows += "<button type='button' class='btn btn-secondary' style='font-size:11px;padding:2px 8px;margin-top:4px;' onclick='event.stopPropagation();toggleShortageEmployeeDetail(" + idx + ")'>상세 보기</button>";
-    rows += "<div id='autoScheduleShortageEmployee_" + idx + "' style='display:none;margin-top:4px;'></div>";
-    return rows;
+/** 조 row 클릭(STEP7). */
+function toggleAutoScheduleGroupShortage(group) {
+    var ui = _autoScheduleState.ui || (_autoScheduleState.ui = _freshAutoScheduleUiState());
+    ui.groupOpen[group] = !ui.groupOpen[group];
+    _renderAutoScheduleModal();
 }
 
-/** 날짜별 카드 클릭 — blocker 집계를 펼치거나 접는다(draft/engine 변경 없음). */
-function toggleShortageBlockerDetail(idx) {
-    var el = document.getElementById("autoScheduleShortageBlocker_" + idx);
-    if (!el) return;
-    el.style.display = el.style.display === "none" ? "block" : "none";
+/** 날짜 row 클릭(STEP8→STEP9). */
+function toggleAutoScheduleShortageDate(idx) {
+    var ui = _autoScheduleState.ui || (_autoScheduleState.ui = _freshAutoScheduleUiState());
+    ui.dateOpen[idx] = !ui.dateOpen[idx];
+    _renderAutoScheduleModal();
 }
 
-/** [상세 보기] 클릭 — 직원별 blocker 목록을 펼친다(기본은 항상 접혀 있음). */
+/** [후보 직원 상세 보기] 클릭(STEP10) — 직원별 blocker 목록을 펼친다(기본은 항상 접혀 있음). */
 function toggleShortageEmployeeDetail(idx) {
-    var el = document.getElementById("autoScheduleShortageEmployee_" + idx);
-    if (!el) return;
-    var show = el.style.display === "none";
-    el.style.display = show ? "block" : "none";
-    if (!show) return;
-    var d = _autoScheduleState.shortageDiagnostic && _autoScheduleState.shortageDiagnostic.details[idx];
-    if (!d) return;
-    el.innerHTML = d.employeeDetail.filter(function (e) { return e.blocker; }).map(function (e) {
-        return "<div>" + _escapeHtml(e.name || e.uid) + " → " + (AUTO_SCHEDULE_BLOCKER_LABEL[e.blocker] || e.blocker) + "</div>";
-    }).join("") || "<div>표시할 상세 blocker 없음</div>";
+    var ui = _autoScheduleState.ui || (_autoScheduleState.ui = _freshAutoScheduleUiState());
+    ui.employeeOpen[idx] = !ui.employeeOpen[idx];
+    _renderAutoScheduleModal();
+}
+
+/** [왜 계속 부족이 생기나요?] 클릭(STEP11). */
+function toggleAutoScheduleCapacity() {
+    var ui = _autoScheduleState.ui || (_autoScheduleState.ui = _freshAutoScheduleUiState());
+    ui.capacityOpen = !ui.capacityOpen;
+    _renderAutoScheduleModal();
+}
+
+/** [정상 조건 보기] 클릭(STEP4). */
+function toggleAutoSchedulePassList() {
+    var ui = _autoScheduleState.ui || (_autoScheduleState.ui = _freshAutoScheduleUiState());
+    ui.passOpen = !ui.passOpen;
+    _renderAutoScheduleModal();
+}
+
+/** [대상자 보기] 클릭(STEP5). */
+function toggleAutoScheduleWarningList() {
+    var ui = _autoScheduleState.ui || (_autoScheduleState.ui = _freshAutoScheduleUiState());
+    ui.warnOpen = !ui.warnOpen;
+    _renderAutoScheduleModal();
+}
+
+/** [부족 항목 보기]/[상세 보기] 클릭(STEP3) — 실패 check의 raw 문자열 펼침. */
+function toggleAutoScheduleRawFail(checkIdx) {
+    var ui = _autoScheduleState.ui || (_autoScheduleState.ui = _freshAutoScheduleUiState());
+    ui.rawFailOpen[checkIdx] = !ui.rawFailOpen[checkIdx];
+    _renderAutoScheduleModal();
 }
 
 /** 후보 이름 클릭 — "선택"만 한다. draft/engine은 전혀 건드리지 않는다(side effect 0). */
@@ -596,12 +1076,46 @@ function selectAutoScheduleCandidate(conflictIndex, uid) {
         scheduleCode: conflict.scheduleCode,
         originalType: entry ? entry.type : "normal",
     };
+    _autoOpenAutoScheduleShortageFor(conflict); // ⚠️ Codex 회귀(override_workflow_test.js) — 아래 함수 참고
     _renderAutoScheduleModal();
 }
 
-/** [취소] — 선택 상태만 해제한다. draft/original request 변경 없음(side effect 0). */
+/**
+ * ⚠️ Codex 회귀(override_workflow_test.js) — 기존 계약은 selectAutoScheduleCandidate()를
+ * 호출하면(버튼 클릭이든 함수 직접 호출이든) preview가 "즉시" 화면에 보이는 것이었다.
+ * 새 조/날짜 nested accordion 구조에서는 group/date가 닫혀 있으면 방금 만든
+ * selectedCandidate가 실제로는 화면에 렌더되지 않는 DOM 안에 갇혀버려 계약이
+ * 깨졌었다. 이 함수는 그 group/date accordion의 열림 상태만 강제로 켠다 — solver
+ * state(draft/conflicts/forcedOverrides)는 전혀 건드리지 않는 순수 UI 상태 변경이다.
+ * shortageDiagnostic은 draft가 있는 한 매 렌더마다 이미 계산되어 캐시되어 있으므로
+ * (그룹/날짜 accordion이 닫혀 있어도 계산 자체는 항상 수행됨), 여기서 다시 solver를
+ * 돌리거나 새로 계산하지 않고 그 캐시에서 인덱스만 찾는다.
+ */
+function _autoOpenAutoScheduleShortageFor(conflict) {
+    if (!conflict) return;
+    var ui = _autoScheduleState.ui || (_autoScheduleState.ui = _freshAutoScheduleUiState());
+    var group = conflict.group || "미지정";
+    ui.groupOpen[group] = true;
+    // cache-independent(STEP3 OPTION A): 지금 당장 인덱스를 찾을 수 있으면 바로
+    // 열어 두고, 그렇지 못하더라도(캐시가 아직 없어도) key를 남겨 둔다 —
+    // _renderShortageDiagnosticSection이 곧이어 같은 렌더 사이클에서 diagnostic을
+    // 새로 계산할 때 이 key를 반드시 재확인해서 그 시점의 실제 인덱스를 연다.
+    var key = _autoScheduleShortageKey(conflict);
+    ui.pendingOpenShortageKey = key;
+    var diag = _autoScheduleState.shortageDiagnostic;
+    if (diag && diag.details) {
+        for (var i = 0; i < diag.details.length; i++) {
+            if (_autoScheduleShortageKey(diag.details[i]) === key) { ui.dateOpen[i] = true; ui.pendingOpenShortageKey = null; break; }
+        }
+    }
+}
+
+/** [취소] — 선택 상태만 해제한다. draft/original request 변경 없음(side effect 0).
+ *  STEP7/STEP8: 아직 해소되지 않은 pending shortage target(캐시가 없어 open을
+ *  못 끝낸 경우)이 남아 있으면 함께 지워 다음 선택에 잘못 영향을 주지 않게 한다. */
 function cancelAutoScheduleCandidateSelection() {
     _autoScheduleState.selectedCandidate = null;
+    if (_autoScheduleState.ui) _autoScheduleState.ui.pendingOpenShortageKey = null;
     _renderAutoScheduleModal();
 }
 
@@ -629,6 +1143,7 @@ function confirmApplyAutoScheduleCandidate() {
     _autoScheduleState.draft = AutoScheduleEngine.generateDraft(input); // 월 전체 재편성(re-solve)
     _autoScheduleState.revalidation = null; // 이전 draft 기준 재검사 결과는 절대 재사용하지 않는다
     _autoScheduleState.selectedCandidate = null;
+    _autoScheduleState.ui = _freshAutoScheduleUiState(); // 새 draft → shortageDiagnostic.details 인덱스가 바뀌므로 접기 상태 초기화
     _renderAutoScheduleModal();
 }
 
@@ -702,6 +1217,7 @@ function confirmBulkAutoAdjustment() {
     _autoScheduleState.selectedCandidate = null;
     _autoScheduleState.bulkPlan = null;
     _autoScheduleState.bulkPreviewActive = false;
+    _autoScheduleState.ui = _freshAutoScheduleUiState(); // 새 draft → shortageDiagnostic.details 인덱스가 바뀌므로 접기 상태 초기화
     _renderAutoScheduleModal();
 }
 
@@ -783,11 +1299,11 @@ var AUTO_SCHEDULE_CONFLICT_LABEL = {
 };
 
 function _renderBulkAutoAdjustmentHtml(workShortfallCount) {
-    var html = "<div class='auto-schedule-bulk-trigger'>"
-        + "<span>근무 인원 부족이 " + workShortfallCount + "건 있습니다.</span>"
-        + " <button type='button' class='btn btn-primary-sm'" + (_autoScheduleState.bulkCalculating ? " disabled" : "") + " onclick='startBulkAutoAdjustment()'>"
-        + (_autoScheduleState.bulkCalculating ? "계산 중..." : "신청휴무 일괄 자동조정") + "</button>"
-        + "</div>";
+    // ⚠️ 트리거 버튼([신청휴무 자동조정])은 Hero 요약 카드(_renderAutoScheduleHeroHtml)로
+    // 이동했다(STEP2/STEP12 — Primary 액션은 팝업 최상단에 한 번만). 이 함수는 계산 중
+    // 표시와 [일괄 적용] 미리보기 패널만 그대로 담당한다(계산/미리보기 로직 자체는 무변경).
+    var html = "";
+    if (workShortfallCount === 0) return html;
 
     if (_autoScheduleState.bulkCalculating) {
         html += "<div class='auto-schedule-loading'>일괄 자동조정 계산 중...</div>";
@@ -835,9 +1351,26 @@ function _renderBulkAutoAdjustmentHtml(workShortfallCount) {
     return html;
 }
 
+/**
+ * 자동스케줄 결과 팝업 render. 정보 계층은 항상 다음 순서로 고정한다(이번 작업의
+ * 핵심 요구사항 — 요약 → 조 → 날짜 → 원인 → 직원):
+ *   1. Hero 요약(_renderAutoScheduleHeroHtml)
+ *   2. (work_shortfall 있으면) 일괄 자동조정 계산중/미리보기
+ *   3. 권장휴무 미달 accordion
+ *   4. 기타(work_shortfall 아닌) 조건 미충족 카드
+ *   5. 조건 재검사 / Excel 다운로드 버튼
+ *   6. 조건 재검사 PASS accordion + 실패 항목(raw 축약)
+ *   7. 부족 인원 상세 분석(조 → 날짜 → 원인 → 직원 accordion)
+ *   8. 스케줄 확정 버튼
+ * solver/revalidation/diagnostic 계산 자체는 이 함수 안에서 전혀 새로 하지 않고,
+ * 기존 draft/revalidation/summarizeShortageDiagnostics 결과를 그대로 옮겨 배치만 한다.
+ */
 function _renderAutoScheduleModal() {
     var body = document.getElementById("autoScheduleModalBody");
     if (!body) return;
+    var prevScrollTop = body.scrollTop; // accordion 토글마다 전체 재렌더되므로 스크롤 위치를 보존한다(정보 자체와 무관한 UX 보호)
+    if (!_autoScheduleState.ui) _autoScheduleState.ui = _freshAutoScheduleUiState();
+    var ui = _autoScheduleState.ui;
 
     var html = "";
     if (!_autoScheduleState.previousMonthTailLoaded) {
@@ -858,102 +1391,106 @@ function _renderAutoScheduleModal() {
 
     var locked = _isAutoScheduleLocked();
     var draft = _autoScheduleState.draft;
-    var hasDraft = !!draft; // 초안 존재 여부만으로 버튼 label을 결정 — 실제 로직(생성/재생성 알고리즘)은 무변경
-
-    html += "<div class='feature-card-action' style='margin-bottom:10px;'>"
-        + "<button class='btn btn-primary-sm' onclick='generateAutoScheduleDraft()'>" + (hasDraft ? "자동 스케줄 다시 생성" : "자동 스케줄 생성") + "</button>"
-        + "</div>";
 
     if (!draft) {
+        html += "<div class='feature-card-action' style='margin-bottom:10px;'>"
+            + "<button class='btn btn-primary-sm' onclick='generateAutoScheduleDraft()'>자동 스케줄 생성</button>"
+            + "</div>";
         html += "<div class='auto-schedule-hint'>아직 생성된 초안이 없습니다.</div>";
         body.innerHTML = html;
         return;
     }
 
-    if (draft.ok) {
-        html += "<div class='auto-schedule-success-banner'>✅ 보호 모드(신청휴무 100% 유지)로 조건을 모두 만족하는 초안을 생성했습니다.</div>";
-    }
-    if (draft.warnings && draft.warnings.length) {
-        // ⚠️ 권장 휴무 미달은 hard conflict가 아니라 안내용 warning이다 — draft.ok/
-        // 확정 가능 여부에 절대 영향을 주지 않는다(최소 휴무만 충족하면 확정 가능).
-        html += "<div class='auto-schedule-warning'>⚠ 권장 월 일반휴무 미달(최소 기준은 충족, 확정 가능):<br>"
-            + draft.warnings.map(function (w) { return "- " + _escapeHtml(w.empName || w.empKey) + ": " + w.actual + "일"; }).join("<br>")
-            + "</div>";
-    }
-    if (!draft.ok) {
-        html += "<div class='auto-schedule-error-summary'>⚠ 신청휴무를 유지한 상태에서는 충족할 수 없는 조건이 " + draft.conflicts.length + "건 있습니다.</div>";
-
-        var workShortfallCount = draft.conflicts.filter(function (c) { return c.kind === "work_shortfall"; }).length;
-        if (workShortfallCount > 0 && !locked) {
-            html += _renderBulkAutoAdjustmentHtml(workShortfallCount);
-        }
-
-        html += "<div class='auto-schedule-conflict-list'>";
-        var sel = _autoScheduleState.selectedCandidate;
-        draft.conflicts.forEach(function (c, idx) {
-            var label = AUTO_SCHEDULE_CONFLICT_LABEL[c.kind] || c.kind;
-            var candidateArea = "";
-            if (c.kind === "work_shortfall" && !locked) {
-                if (sel && sel.conflictIndex === idx) {
-                    var origLabel = (typeof AUTO_SCHEDULE_CODE_LABEL !== "undefined" && AUTO_SCHEDULE_CODE_LABEL[sel.originalType]) || sel.originalType;
-                    candidateArea = "<div class='auto-schedule-override-preview'>"
-                        + "<div class='auto-schedule-override-preview-title'>신청휴무 조정 미리보기</div>"
-                        + "<div class='auto-schedule-override-preview-row'><span class='auto-schedule-override-preview-label'>이름</span>" + _escapeHtml(sel.name) + "</div>"
-                        + "<div class='auto-schedule-override-preview-row'><span class='auto-schedule-override-preview-label'>날짜</span>" + sel.day + "일</div>"
-                        + "<div class='auto-schedule-override-preview-row'><span class='auto-schedule-override-preview-label'>원 신청</span>" + _escapeHtml(origLabel) + "</div>"
-                        + "<div class='auto-schedule-override-preview-row'><span class='auto-schedule-override-preview-label'>변경 후</span>" + _escapeHtml(sel.scheduleCode) + "근무</div>"
-                        + "<div class='feature-card-action' style='gap:8px;margin-top:8px;'>"
-                        + "<button type='button' class='btn btn-secondary' onclick='cancelAutoScheduleCandidateSelection()'>취소</button>"
-                        + "<button type='button' class='btn btn-primary-sm' onclick='confirmApplyAutoScheduleCandidate()'>적용</button>"
-                        + "</div></div>";
-                } else {
-                    candidateArea = "<div><button type='button' class='btn btn-secondary' style='font-size:11px;padding:2px 8px;margin-top:4px;' onclick='toggleAutoScheduleCandidates(" + idx + ")'>신청휴무 조정 후보 보기</button>"
-                        + "<div id='autoScheduleCandidates_" + idx + "' style='display:none;margin-top:4px;'></div></div>";
-                }
-            }
-            html += "<div class='auto-schedule-conflict-card'>"
-                + "<strong>[" + _escapeHtml(label) + "]</strong> " + _escapeHtml(c.message || "")
-                + candidateArea
-                + "</div>";
-        });
-        html += "</div>";
+    var shortageDiagnostic = null;
+    if (typeof AutoScheduleEngine.summarizeShortageDiagnostics === "function") {
+        shortageDiagnostic = AutoScheduleEngine.summarizeShortageDiagnostics(_autoScheduleState.input, draft);
+        _autoScheduleState.shortageDiagnostic = shortageDiagnostic;
     }
 
-    html += "<div class='feature-card-action' style='gap:8px;margin-bottom:10px;'>"
+    // 1) Hero 요약 — 팝업 최상단에 한 번만(STEP2/STEP6).
+    var heroModel = _buildAutoScheduleHeroModel(draft, shortageDiagnostic);
+    html += _renderAutoScheduleHeroHtml(heroModel, locked);
+
+    // 2) 일괄 자동조정 계산중/미리보기(트리거 버튼은 Hero로 이동 완료).
+    if (heroModel.workShortfallCount > 0 && !locked) {
+        html += _renderBulkAutoAdjustmentHtml(heroModel.workShortfallCount);
+    }
+
+    // 3) 권장휴무 미달(STEP5) — draft.warnings/revalidation.warnings 중 하나만.
+    html += _renderAutoScheduleWarningAccordionHtml(draft, _autoScheduleState.revalidation, ui);
+
+    // 4) work_shortfall이 아닌 나머지 conflict만 카드로(STEP6).
+    html += _renderAutoScheduleOtherConflictsHtml(draft);
+
+    // 5) 조건 재검사 / Excel 다운로드(STEP12 — utility 버튼).
+    html += "<div class='feature-card-action' style='gap:8px;margin:10px 0;'>"
         + "<button class='btn btn-secondary' onclick='revalidateAutoSchedule()'>조건 재검사</button>"
-        + "<button class='btn btn-primary-sm' onclick='downloadAutoScheduleExcel()'>Excel 다운로드</button>"
+        + "<button class='btn btn-secondary' onclick='downloadAutoScheduleExcel()'>Excel 다운로드</button>"
         + "</div>";
 
     var revalidation = _autoScheduleState.revalidation;
     if (revalidation) {
-        html += "<div class='auto-schedule-revalidation-summary " + (revalidation.passed ? "is-pass" : "is-fail") + "'>"
-            + (revalidation.passed ? "✅ " + revalidation.checks.length + "개 항목 전체 통과" : "⚠ 일부 항목 실패 — 확정 불가") + "</div>";
-        html += "<div class='auto-schedule-check-list'>";
-        revalidation.checks.forEach(function (check) {
-            html += "<div class='" + (check.ok ? "" : "auto-schedule-check-fail") + "' style='padding:2px 0;'>" + (check.ok ? "✅" : "❌") + " " + _escapeHtml(check.name)
-                + (check.ok ? "" : " — " + _escapeHtml(check.detail || "")) + "</div>";
-        });
-        html += "</div>";
-        if (revalidation.warnings && revalidation.warnings.length) {
-            // ⚠️ 권장 휴무 미달 warning은 checks와 별도로 표시하고 passed에는 영향 없음
-            // (확정 버튼은 여전히 revalidation.passed만으로 gating된다 — 아래 그대로).
-            html += "<div class='auto-schedule-warning' style='margin-top:6px;'>";
-            revalidation.warnings.forEach(function (w) { html += "⚠ " + _escapeHtml(w.message || "") + "<br>"; });
-            html += "</div>";
-        }
-        // ⚠️ [부족 인원 상세 분석] — 기존 조건 재검사 결과(checks/warnings) 아래에만
-        // 추가되는 순수 진단 섹션이다. revalidation.passed/checks 판정 자체에는
-        // 전혀 관여하지 않는다(확정 버튼 gating도 기존 그대로).
-        html += _renderShortageDiagnosticSection();
+        // 6) PASS accordion + 실패 항목(raw 축약) — STEP3/STEP4.
+        html += _renderAutoScheduleCheckListHtml(revalidation, shortageDiagnostic, ui);
+        // 7) 부족 인원 상세 분석: 조 → 날짜 → 원인 → 직원(STEP7~11). revalidation.passed/
+        // checks 판정 자체에는 전혀 관여하지 않는 순수 진단 섹션(확정 버튼 gating도 기존 그대로).
+        html += _renderShortageDiagnosticSection(shortageDiagnostic);
+    } else if (_autoScheduleState.selectedCandidate && !locked) {
+        // ⚠️ Codex 회귀(override_workflow_test.js) — 조건 재검사를 아직 한 번도
+        // 안 돌려 위 accordion 자체가 없어도(revalidation===null), candidate가
+        // 이미 선택된 상태라면 preview는 반드시 보여야 한다(select→preview 즉시
+        // 노출 계약이 revalidation 존재 여부에 종속되면 안 됨). 진단 accordion과
+        // 완전히 무관하게, selectedCandidate 자체의 값만으로 렌더한다.
+        html += _renderAutoScheduleStandaloneCandidatePreviewHtml(_autoScheduleState.selectedCandidate);
     }
 
+    // 8) 확정 버튼 — gating 조건은 기존 그대로(revalidation.passed && !locked)만 그대로 사용.
     html += "<div class='feature-card-action'>"
         + "<button class='btn btn-primary-sm'" + (revalidation && revalidation.passed && !locked ? "" : " disabled") + " onclick='confirmAutoSchedule()'>스케줄 확정</button>"
         + "</div>";
 
     body.innerHTML = html;
+    body.scrollTop = prevScrollTop;
 }
 
 if (typeof module === "object" && module.exports) {
-    module.exports = { _autoScheduleGroupOfUid: _autoScheduleGroupOfUid, _getAutoCodeLinkRestrictions: _getAutoCodeLinkRestrictions };
+    module.exports = {
+        _autoScheduleGroupOfUid: _autoScheduleGroupOfUid,
+        _getAutoCodeLinkRestrictions: _getAutoCodeLinkRestrictions,
+        // ── 이번 결과 팝업 정보구조 개편(요약/조/날짜/원인/직원 accordion)의 순수 함수만
+        // 테스트용으로 노출한다. DOM(document)에 의존하는 render/toggle 함수는 내보내지
+        // 않는다 — solver/revalidation/diagnostic 계산에는 전혀 관여하지 않는 순수
+        // 데이터 가공 함수만 대상이다.
+        _buildAutoScheduleGroupBreakdown: _buildAutoScheduleGroupBreakdown,
+        _buildAutoScheduleHeroModel: _buildAutoScheduleHeroModel,
+        _resolveAutoScheduleOffTargetShortfalls: _resolveAutoScheduleOffTargetShortfalls,
+        _freshAutoScheduleUiState: _freshAutoScheduleUiState,
+        _renderAutoScheduleCheckListHtml: _renderAutoScheduleCheckListHtml,
+        // ⚠️ 아래 두 항목은 _autoScheduleState(모듈 전역)를 읽는 함수라 테스트에서
+        // 그 상태를 채워 넣을 수 있는 통로가 필요해 내보낸다. 이 setter는 테스트
+        // 전용이며 draft/input/ui 필드만 주입한다 — solver를 대신 실행하거나 어떤
+        // 계산도 하지 않는다(순수 대입).
+        _setAutoScheduleTestState: function (partial) {
+            Object.keys(partial || {}).forEach(function (k) { _autoScheduleState[k] = partial[k]; });
+        },
+        _getAutoScheduleTestState: function () { return _autoScheduleState; },
+        _renderShortageDiagnosticSection: _renderShortageDiagnosticSection,
+        _resolveAutoScheduleOffTargetMessage: _resolveAutoScheduleOffTargetMessage,
+        _renderAutoScheduleWarningAccordionHtml: _renderAutoScheduleWarningAccordionHtml,
+        // ── candidate select → preview 즉시 노출 계약(override_workflow_test.js) 검증용.
+        // 이 함수들은 draft/conflicts/forcedOverrides를 바꾸지 않는 한(적용 전까지는
+        // 순수 선택/취소일 뿐) 그대로 노출해도 solver 계산에 관여하지 않는다.
+        selectAutoScheduleCandidate: selectAutoScheduleCandidate,
+        cancelAutoScheduleCandidateSelection: cancelAutoScheduleCandidateSelection,
+        confirmApplyAutoScheduleCandidate: confirmApplyAutoScheduleCandidate,
+        _autoOpenAutoScheduleShortageFor: _autoOpenAutoScheduleShortageFor,
+        _autoScheduleShortageKey: _autoScheduleShortageKey,
+        _renderAutoScheduleCandidatePreviewHtml: _renderAutoScheduleCandidatePreviewHtml,
+        _renderAutoScheduleStandaloneCandidatePreviewHtml: _renderAutoScheduleStandaloneCandidatePreviewHtml,
+        // _renderAutoScheduleModal 자체는 document.getElementById("autoScheduleModalBody")에
+        // 의존하지만, revalidation/diagnostic 둘 다 없는 상태에서 candidate select→preview
+        // 계약이 실제로 성립하는지는 이 함수 전체(그 안의 if/else 분기 포함)를 통해서만
+        // 검증할 수 있어 내보낸다 — 테스트가 fake element를 document stub으로 준다.
+        _renderAutoScheduleModal: _renderAutoScheduleModal,
+    };
 }
