@@ -2528,6 +2528,193 @@ function findOverrideCandidates(draft, conflict, employees, groups, autoConfig, 
     return candidates;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 6-1) 관리자용 shortage 진단(read-only) — 조건 재검사 UI 개선
+//
+// ⚠️ 이 섹션은 순수 진단(diagnostic)이다. draft/grid를 절대 mutate하지 않고,
+// solver의 배정 결과나 conflicts 목록도 전혀 바꾸지 않는다 — 오직 이미 확정된
+// work_shortfall conflict를 "왜 채울 수 없는지" 사람이 읽을 수 있게 풀어서
+// 보여주기 위한 read-only adapter다. findOverrideCandidates와 정확히 동일한
+// hard constraint 게이트(코드 상한 → 최소휴무 → 연속근무 → 코드연결, 순서까지
+// 동일)를 재사용해, "실제로 override 가능한 후보 수"가 findOverrideCandidates
+// 결과와 항상 100% 일치하도록 보장한다(판정 로직 이중 구현 금지 원칙).
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * 특정 work_shortfall 하나에 대해, 같은 조 구성원 전원을 훑어 "왜 이 사람은
+ * override 후보가 될 수 없는가"를 사람이 읽을 수 있는 blocker로 분류한다.
+ * annual/petition/기타 fixed 상태는 그 날짜에 상호 배타적(한 사람은 하루에
+ * 정확히 하나의 type만 가짐)이므로 중복 집계가 구조적으로 불가능하다.
+ * "신청 일반휴무" pool 안에서만 codeCap/minOff/streak/codeLink 4가지 hard
+ * gate를 findOverrideCandidates와 동일한 순서로 검사해, 각 사람마다 "처음
+ * 걸리는 gate 하나"만 primary blocker로 기록한다(동일 인원이 여러 blocker
+ * 카운트에 중복 집계되지 않도록 보장).
+ */
+function diagnoseWorkShortfallCandidates(draft, conflict, employees, groups, autoConfig, previousMonthWorkTail, previousMonthLastScheduleCode, scheduleCodes) {
+    var day = conflict.day, group = conflict.group, codeName = conflict.scheduleCode;
+    var dayStr = String(day);
+    var maxConsecutiveWork = Number((autoConfig || {}).maxConsecutiveWork || 0);
+    var codeLinkRestrictions = (autoConfig || {}).codeLinkRestrictions || [];
+    var prevTail = previousMonthWorkTail || {};
+    var prevLastCode = previousMonthLastScheduleCode || {};
+    var codeLimit = _scheduleCodeMonthlyLimit(scheduleCodes, codeName);
+    var monthlyOffMinimum = _monthlyOffMinimum(autoConfig);
+    var monthlyOffTarget = Number((autoConfig || {}).monthlyOffTarget || 0);
+
+    var groupByEmp = {};
+    Object.keys(groups || {}).forEach(function (g) { (groups[g] || []).forEach(function (uid) { groupByEmp[uid] = g; }); });
+
+    var summary = {
+        requestedNormalOff: 0, annual: 0, petition: 0, otherFixed: 0, feasibleNow: 0,
+        blockers: { codeCap: 0, minOff: 0, maxConsecutiveWork: 0, codeLink: 0 },
+    };
+    var employeeDetail = [];
+
+    // ⚠️ Codex Critical 발견 결함 수정 — employee identity는 반드시 UID를
+    // canonical key로 dedupe한다(표시 이름 기준 dedupe 금지 — 동명이인
+    // 가능). 중복 발생 경로: 이 함수가 받는 `employees` 배열 자체에 같은
+    // uid가 두 번 이상 들어올 수 있다(예: 조 편성 데이터 병합 과정에서
+    // 동일 직원이 중복 등록된 경우) — `_autoSortEmployees(employees)`는
+    // 정렬만 할 뿐 dedupe하지 않으므로, 그 결과를 그대로 forEach하면 같은
+    // uid가 direct candidate/blocker 양쪽에 여러 번 push되어 seat 수가
+    // 실제 unique 인원수보다 과대계산된다(gap2에 uid가 [u1,u1,u1]로 3번
+    // 들어오면 feasibleNow=3이 되어 directCandidateSeats가 실제로는 1명뿐인
+    // 좌석을 2로 오판정). 여기서 각 uid를 최초 1회만 처리하도록 막아 이
+    // 문제를 근본에서 차단한다 — 이후의 feasibleNow/blockers 집계와
+    // employeeDetail 목록은 이미 uid당 최대 1건만 쌓이므로 별도의 사후
+    // dedupe 단계가 필요 없다.
+    var seenUids = {};
+
+    _autoSortEmployees(employees || []).forEach(function (emp) {
+        if (groupByEmp[emp.uid] !== group) return;
+        if (seenUids[emp.uid]) return; // 동일 uid 재등장 — canonical 1건만 유지
+        seenUids[emp.uid] = true;
+        var entry = (draft.grid[emp.uid] || {})[dayStr];
+        if (!entry || entry.type === "schedule") return; // 미배정 또는 이미 근무 중 — override 검토 대상 아님(별도 실측 필요)
+        if (entry.type === "normal" && entry.source === "auto_off") return; // solver가 배정한 휴무 — "고정" 아님, 이 진단(신청휴무 override) 대상 아님
+        if (entry.type === "annual") { summary.annual++; return; }
+        if (entry.type === "petition") { summary.petition++; return; }
+        if (entry.type !== "normal" || entry.source !== "requested") { summary.otherFixed++; return; } // 신청 근무코드(schedule/requested)나 override 등 기타 고정 상태
+
+        summary.requestedNormalOff++;
+
+        // ⚠️ 아래 4개 게이트는 findOverrideCandidates(위)와 정확히 동일한 순서/
+        // 조건이다 — 판정 이중 구현을 피하기 위해 같은 helper를 그대로 재사용.
+        if (codeLimit != null && _employeeScheduleCodeCount(draft.grid, emp.uid, codeName) >= codeLimit) {
+            summary.blockers.codeCap++;
+            employeeDetail.push({ uid: emp.uid, name: emp.name, blocker: "CODE_CAP" });
+            return;
+        }
+        if (monthlyOffMinimum < monthlyOffTarget && (draft.monthlyOffCount[emp.uid] || 0) - 1 < monthlyOffMinimum) {
+            summary.blockers.minOff++;
+            employeeDetail.push({ uid: emp.uid, name: emp.name, blocker: "MIN_OFF" });
+            return;
+        }
+        var candidateGrid = Object.assign({}, draft.grid);
+        candidateGrid[emp.uid] = Object.assign({}, draft.grid[emp.uid]);
+        candidateGrid[emp.uid][dayStr] = { type: "schedule", scheduleCode: codeName, source: "override" };
+        if (!_fullMonthStreakOk(candidateGrid, [emp], draft.totalDays, prevTail, maxConsecutiveWork)) {
+            summary.blockers.maxConsecutiveWork++;
+            employeeDetail.push({ uid: emp.uid, name: emp.name, blocker: "MAX_CONSECUTIVE_WORK" });
+            return;
+        }
+        if (!_fullMonthCodeLinkOk(candidateGrid, [emp], draft.totalDays, codeLinkRestrictions, prevLastCode)) {
+            summary.blockers.codeLink++;
+            employeeDetail.push({ uid: emp.uid, name: emp.name, blocker: "CODE_LINK" });
+            return;
+        }
+        summary.feasibleNow++;
+        employeeDetail.push({ uid: emp.uid, name: emp.name, blocker: null });
+    });
+
+    var gap = conflict.needed - conflict.available;
+    // ⚠️ Codex 발견 결함 수정 — "feasible candidate가 1명 이상 존재한다"는 것과
+    // "gap 전체가 해결된다"는 것은 다르다. 한 직원은 같은 날짜/같은 shortage에서
+    // 최대 1석만 채울 수 있으므로, 이 shortage에서 direct override로 채울 수
+    // 있는 최대 좌석 수는 반드시 min(gap, feasibleNow인원수)여야 한다(gap2에
+    // candidate가 1명뿐이면 1석만 채울 수 있고 1석은 남는다). 이 함수는
+    // findOverrideCandidates의 "개별 direct candidate" 판정만 재사용하는
+    // 진단이지 실제 조합 가능성(다른 override와 동시 적용 시 minOff/streak/
+    // codeLink/월코드상한이 상호작용해 개별로는 가능했던 candidate가 동시에는
+    // 불가능해질 수 있음)까지 증명하지 않는다 — 그래서 필드명도 "실제 확정
+    // 해결 가능"이 아니라 "direct candidate 기준"임을 명시한다.
+    var directCandidateSeats = Math.min(gap, summary.feasibleNow);
+    var remainingSeats = gap - directCandidateSeats;
+    // ⚠️ enum 값은 이 신규 diagnostic 전용이며(기존 solver/product API가 참조
+    // 하지 않음을 확인) Codex acceptance가 기대하는 FULL/PARTIAL/
+    // NO_DIRECT_CANDIDATE로 통일한다.
+    var classification = directCandidateSeats <= 0 ? "NO_DIRECT_CANDIDATE"
+        : remainingSeats > 0 ? "PARTIAL"
+        : "FULL";
+
+    return {
+        day: conflict.day, group: conflict.group, scheduleCode: conflict.scheduleCode,
+        needed: conflict.needed, available: conflict.available, gap: gap,
+        summary: summary, employeeDetail: employeeDetail,
+        directCandidateSeats: directCandidateSeats, remainingSeats: remainingSeats,
+        classification: classification,
+        feasibleNow: summary.feasibleNow > 0, // ⚠️ 하위호환용 — "candidate가 1명이라도 있는가"일 뿐, gap 전체 해결을 뜻하지 않는다(사용 시 classification/directCandidateSeats를 우선 참조할 것).
+    };
+}
+
+/**
+ * 월 전체 work_shortfall 요약 — 조건 재검사 화면의 [부족 인원 상세 분석]
+ * 섹션이 그대로 렌더링할 수 있는 단일 read-only 결과를 만든다.
+ * analyzeScheduleFeasibility(기존 함수, 완전 재사용)로 조별 capacity margin을
+ * 함께 반환해 "월간 Capacity 경고"도 같은 호출 한 번으로 커버한다.
+ */
+function summarizeShortageDiagnostics(input, draft) {
+    var feas = analyzeScheduleFeasibility(input, draft);
+    var shortfalls = (draft.conflicts || []).filter(function (c) { return c.kind === "work_shortfall"; });
+
+    var byGroup = {};
+    // ⚠️ Codex 발견 결함 수정 — 이전에는 "feasible candidate가 1명이라도 있으면
+    // gap 전체를 repairable로 합산"하는 과대계산이 있었다(gap2/candidate1이
+    // autoRepairableSeats=2로 잘못 집계됨). 이제 각 shortage마다
+    // diagnoseWorkShortfallCandidates가 이미 min(gap, candidate수)로 정확히
+    // 계산한 directCandidateSeats/remainingSeats를 그대로 합산한다.
+    //
+    // ⚠️ 이 합계는 여전히 "direct candidate 기준" 진단일 뿐, 여러 shortage에
+    // 동시에 override를 적용했을 때의 상호작용(같은 직원이 여러 shortage에
+    // 중복 후보로 등장하거나, minOff/streak/codeLink/월코드상한이 조합되며
+    // 개별로는 가능했던 candidate가 동시에는 불가능해지는 경우)까지 검증하지
+    // 않는다 — planBulkOverrides를 매 렌더링마다 실행하지 않기로 한 이번
+    // 결정(STEP4) 때문에 의도적으로 검증하지 않는다. 따라서 필드명도
+    // "확정 해결 가능"이 아니라 direct candidate 기준임을 나타내도록
+    // directCandidateSeats/noDirectCandidateSeats로 명명한다 — 실제 최종
+    // 해결 가능 여부는 기존 [신청휴무 일괄 자동조정] 버튼(planBulkOverrides)
+    // 실행 결과만을 authoritative source로 삼는다.
+    var totalGapSeats = 0, directCandidateSeats = 0, noDirectCandidateSeats = 0;
+    var details = shortfalls.map(function (c) {
+        var d = diagnoseWorkShortfallCandidates(
+            draft, c, input.employees, input.groups, input.autoConfig,
+            input.previousMonthWorkTail, input.previousMonthLastScheduleCode, (input.config || {}).scheduleCodes
+        );
+        byGroup[c.group] = (byGroup[c.group] || 0) + d.gap;
+        totalGapSeats += d.gap;
+        directCandidateSeats += d.directCandidateSeats;
+        noDirectCandidateSeats += d.remainingSeats;
+        return d;
+    });
+
+    var groupCapacityWarnings = [];
+    Object.keys(feas.groupRequiredWork || {}).forEach(function (g) {
+        var margin = feas.groupMaxWork[g] - feas.groupRequiredWork[g];
+        if (margin < 0) {
+            groupCapacityWarnings.push({ group: g, requiredWork: feas.groupRequiredWork[g], maxWork: feas.groupMaxWork[g], deficit: -margin });
+        }
+    });
+
+    return {
+        totalGapSeats: totalGapSeats, byGroup: byGroup,
+        directCandidateSeats: directCandidateSeats, noDirectCandidateSeats: noDirectCandidateSeats,
+        details: details,
+        totalRequiredWork: feas.totalRequiredWork, totalMaxWork: feas.totalMaxWork,
+        groupRequiredWork: feas.groupRequiredWork, groupMaxWork: feas.groupMaxWork,
+        groupCapacityWarnings: groupCapacityWarnings,
+    };
+}
+
 /**
  * override 적용 — draft를 복제해 새 draft를 반환한다(원본 draft/원 신청 데이터는 변형하지 않음).
  * originalRequest는 override 메타데이터 안에 보존된다.
@@ -3225,6 +3412,8 @@ return {
     _aggregateConflicts: _aggregateConflicts,
     generateDraft: generateDraft,
     findOverrideCandidates: findOverrideCandidates,
+    diagnoseWorkShortfallCandidates: diagnoseWorkShortfallCandidates,
+    summarizeShortageDiagnostics: summarizeShortageDiagnostics,
     applyOverride: applyOverride,
     revalidateDraft: revalidateDraft,
     planBulkOverrides: planBulkOverrides,

@@ -1960,6 +1960,61 @@ body {
 .auto-schedule-revalidation-summary.is-pass { color: #065f46; }
 .auto-schedule-revalidation-summary.is-fail { color: var(--danger); }
 
+/* [부족 인원 상세 분석] — 조건 재검사 하단 진단 섹션(관리자용, read-only). */
+.auto-schedule-shortage-section {
+  margin-top: 8px;
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+}
+.auto-schedule-shortage-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 6px;
+}
+.auto-schedule-shortage-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 11px;
+  color: var(--text-sub);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+}
+.auto-schedule-shortage-list {
+  max-height: 260px;
+  overflow-y: auto;
+}
+.auto-schedule-shortage-row {
+  font-size: 12px;
+  color: var(--text-main);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--danger);
+  border-radius: 4px;
+  padding: 6px 10px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  background: var(--bg-card);
+}
+.auto-schedule-shortage-blocker-box {
+  font-size: 11px;
+  color: var(--text-sub);
+  padding: 4px 10px 8px 12px;
+  margin-top: -4px;
+  margin-bottom: 6px;
+  border-left: 3px solid var(--border);
+}
+.auto-schedule-shortage-feasible { color: #065f46; font-weight: 600; }
+.auto-schedule-shortage-partial { color: #92400e; font-weight: 600; }
+.auto-schedule-shortage-infeasible { color: var(--danger); font-weight: 600; }
+.auto-schedule-shortage-suggestion {
+  margin-top: 4px;
+  color: var(--text-sub);
+}
+
 /* 신청휴무 조정 후보 클릭 → "선택"만 된 상태의 미리보기 박스. 여기서 [적용]을 눌러야만
    실제로 draft가 바뀐다 — 후보 이름 클릭 자체는 이 박스를 보여주는 것 말고 아무 효과가 없다. */
 .auto-schedule-override-preview {
