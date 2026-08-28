@@ -442,9 +442,21 @@ function generateAutoScheduleDraft() {
     _renderAutoScheduleModal();
 }
 
-function revalidateAutoSchedule() {
+/**
+ * ⚠️ 문제2(적용 후 자동 재검사) — [조건 재검사] 버튼(revalidateAutoSchedule)과
+ * 직접조정/일괄조정 적용 직후(confirmApplyAutoScheduleCandidate/
+ * confirmBulkAutoAdjustment) 양쪽 모두 이 한 함수만 사용한다(중복 검증 로직을
+ * 새로 만들지 않는다 — 기존 authoritative AutoScheduleEngine.revalidateDraft를
+ * 정확히 동일한 인자로 재사용). draft/input이 없으면 아무 것도 하지 않는다.
+ */
+function _recomputeAutoScheduleRevalidation() {
     if (!_autoScheduleState.draft || !_autoScheduleState.input) return;
     _autoScheduleState.revalidation = AutoScheduleEngine.revalidateDraft(_autoScheduleState.draft, _autoScheduleState.input);
+}
+
+function revalidateAutoSchedule() {
+    if (!_autoScheduleState.draft || !_autoScheduleState.input) return;
+    _recomputeAutoScheduleRevalidation();
     _renderAutoScheduleModal();
 }
 
@@ -662,12 +674,39 @@ function _renderAutoScheduleWarningAccordionHtml(draft, revalidation, ui) {
 
 /** work_shortfall이 아닌 나머지 conflict만 그대로 카드로 보여준다(STEP6 — 같은
  *  근무 인원 부족 정보를 상단에 카드로 반복하지 않고 Hero+조별 accordion으로만 표시). */
+// ⚠️ 문제3(search_limit_exceeded 개발자 문구) — engine.js가 만드는 원문(kind:
+// "search_limit_exceeded", message: "fallback 탐색이 시간/반복 한도 내에 대체
+// 배정을 찾지 못했습니다(진짜 infeasible일 수도 있습니다).")은 그대로 두고(계산/
+// data 무변경), UI에서만 이 kind를 사용자 친화 제목/설명으로 바꿔 보여준다.
+// "탐색 시간/반복 한도 안에서 대체 배정을 찾지 못함"이라는 의미를 "해결
+// 불가능/인력 부족 확정/절대 배정 불가"처럼 단정하지 않고 "자동으로 해결하지
+// 못했습니다" 정도로만 표현한다(engine.js 원문의 의미 그대로, 더 강하게도
+// 약하게도 바꾸지 않음).
+var AUTO_SCHEDULE_SEARCH_LIMIT_TITLE = "일부 부족 항목 자동 조정 미완료";
+var AUTO_SCHEDULE_SEARCH_LIMIT_DESC = "자동 재배정을 시도했지만 현재 조건에서 일부 부족 인원을 자동으로 해결하지 못했습니다. 자세한 부족 날짜와 원인은 아래 「부족 인원 상세 분석」에서 확인해 주세요.";
+
 function _renderAutoScheduleOtherConflictsHtml(draft) {
     var others = (draft.conflicts || []).filter(function (c) { return c.kind !== "work_shortfall"; });
     if (!others.length) return "";
+    // search_limit_exceeded는 여러 건이어도 빨간 카드를 반복하지 않고 요약 카드
+    // 1개로 묶는다(건수는 잃지 않고 "N건"으로 표시) — 다른 kind는 기존과 동일하게
+    // 카드별로 그대로 렌더(이번 작업 범위 밖, 대규모 번역 아님).
+    var searchLimitCount = 0;
+    var rest = [];
+    others.forEach(function (c) {
+        if (c.kind === "search_limit_exceeded") { searchLimitCount++; return; }
+        rest.push(c);
+    });
+
     var html = "<div class='auto-schedule-result-section-title'>기타 조건 미충족(" + others.length + "건)</div>";
     html += "<div class='auto-schedule-conflict-list'>";
-    others.forEach(function (c) {
+    if (searchLimitCount > 0) {
+        html += "<div class='auto-schedule-conflict-card'><strong>⚠ " + _escapeHtml(AUTO_SCHEDULE_SEARCH_LIMIT_TITLE) + "</strong>"
+            + "<span class='auto-schedule-hint'> — " + searchLimitCount + "건</span>"
+            + "<div class='auto-schedule-hint' style='margin-top:2px;'>" + _escapeHtml(AUTO_SCHEDULE_SEARCH_LIMIT_DESC) + "</div>"
+            + "</div>";
+    }
+    rest.forEach(function (c) {
         var label = AUTO_SCHEDULE_CONFLICT_LABEL[c.kind] || c.kind;
         html += "<div class='auto-schedule-conflict-card'><strong>[" + _escapeHtml(label) + "]</strong> " + _escapeHtml(c.message || "") + "</div>";
     });
@@ -686,16 +725,17 @@ function _renderAutoScheduleCheckListHtml(revalidation, shortageDiagnostic, ui) 
     revalidation.checks.forEach(function (check, globalIdx) {
         if (check.ok) return; // PASS는 아래 accordion에서 한 번만
         if (check.name === AUTO_SCHEDULE_QUOTA_CHECK_NAME && shortageDiagnostic) {
-            // raw "A/P@6(0!=2), ..." 문자열은 삭제하지 않고 [부족 항목 보기]에서 그대로 노출(STEP3)
-            var rawOpen = !!ui.rawFailOpen[globalIdx];
+            // ⚠️ 문제1(raw shortage 문자열 노출) — "A/P@3(1!=2), ..." 같은 raw
+            // diagnostic 문자열(check.detail)은 [부족 인원 상세 분석]에서 이미
+            // 사람이 읽을 수 있는 조/날짜/근무코드별 표로 제공되므로 중복이다.
+            // check.detail 값 자체(원본 데이터)는 revalidation 객체에 그대로
+            // 남아 있다(계산/데이터는 무변경) — 여기서는 그 문자열을 HTML로
+            // interpolate하지 않을 뿐이다(펼치기 버튼도 제거 — 펼쳐도 raw 문자열이
+            // 안 나오면 버튼 자체가 의미 없으므로).
             html += "<div class='auto-schedule-check-fail-row'>❌ 근무 인원 정원 미충족"
                 + "<span class='auto-schedule-hint'> — " + shortageDiagnostic.details.length + "개 항목 / 총 " + shortageDiagnostic.totalGapSeats + "석 부족</span>"
-                + " <button type='button' class='auto-schedule-result-mini-toggle' aria-expanded='" + (rawOpen ? "true" : "false")
-                + "' aria-controls='autoScheduleRawFail_" + globalIdx + "' onclick='toggleAutoScheduleRawFail(" + globalIdx + ")'>" + (rawOpen ? "숨기기" : "부족 항목 보기") + "</button>"
-                + "<div class='auto-schedule-hint'>※ 조/날짜별 상세는 아래 [부족 인원 상세 분석]에서도 확인할 수 있습니다.</div>"
+                + "<div class='auto-schedule-hint'>조·날짜별 부족 현황과 원인은 아래 「부족 인원 상세 분석」에서 확인할 수 있습니다.</div>"
                 + "</div>";
-            html += "<div id='autoScheduleRawFail_" + globalIdx + "'" + (rawOpen ? "" : " style='display:none;'") + " class='auto-schedule-hint'>"
-                + (rawOpen ? _escapeHtml(check.detail || "") : "") + "</div>";
             return;
         }
         var rawOpen2 = !!ui.rawFailOpen[globalIdx];
@@ -1141,7 +1181,11 @@ function confirmApplyAutoScheduleCandidate() {
     _autoScheduleState.input = input;
     _autoScheduleState.forcedOverrides = forcedOverrides;
     _autoScheduleState.draft = AutoScheduleEngine.generateDraft(input); // 월 전체 재편성(re-solve)
-    _autoScheduleState.revalidation = null; // 이전 draft 기준 재검사 결과는 절대 재사용하지 않는다
+    // ⚠️ 문제2 — 이전에는 revalidation을 null로만 남겨 두어 사용자가 [조건 재검사]를
+    // 다시 눌러야 했다. 이제 fresh draft를 만든 직후 같은 렌더 사이클 안에서 바로
+    // authoritative 재검사를 자동 실행한다(로직은 revalidateAutoSchedule과 완전히
+    // 동일한 _recomputeAutoScheduleRevalidation 재사용 — 새 검증 로직 없음).
+    _recomputeAutoScheduleRevalidation();
     _autoScheduleState.selectedCandidate = null;
     _autoScheduleState.ui = _freshAutoScheduleUiState(); // 새 draft → shortageDiagnostic.details 인덱스가 바뀌므로 접기 상태 초기화
     _renderAutoScheduleModal();
@@ -1213,7 +1257,8 @@ function confirmBulkAutoAdjustment() {
     _autoScheduleState.input = input;
     _autoScheduleState.forcedOverrides = forcedOverrides;
     _autoScheduleState.draft = AutoScheduleEngine.generateDraft(input); // 월 전체 재편성(re-solve)
-    _autoScheduleState.revalidation = null; // 이전 draft 기준 재검사 결과는 절대 재사용하지 않는다
+    // ⚠️ 문제2-B(일괄조정도 동일) — manual apply와 완전히 같은 helper 재사용.
+    _recomputeAutoScheduleRevalidation();
     _autoScheduleState.selectedCandidate = null;
     _autoScheduleState.bulkPlan = null;
     _autoScheduleState.bulkPreviewActive = false;
@@ -1483,6 +1528,10 @@ if (typeof module === "object" && module.exports) {
         selectAutoScheduleCandidate: selectAutoScheduleCandidate,
         cancelAutoScheduleCandidateSelection: cancelAutoScheduleCandidateSelection,
         confirmApplyAutoScheduleCandidate: confirmApplyAutoScheduleCandidate,
+        confirmBulkAutoAdjustment: confirmBulkAutoAdjustment,
+        revalidateAutoSchedule: revalidateAutoSchedule,
+        _recomputeAutoScheduleRevalidation: _recomputeAutoScheduleRevalidation,
+        _renderAutoScheduleOtherConflictsHtml: _renderAutoScheduleOtherConflictsHtml,
         _autoOpenAutoScheduleShortageFor: _autoOpenAutoScheduleShortageFor,
         _autoScheduleShortageKey: _autoScheduleShortageKey,
         _renderAutoScheduleCandidatePreviewHtml: _renderAutoScheduleCandidatePreviewHtml,
